@@ -279,7 +279,7 @@ function runClaude(t, name, model, worker, opts = {}) {
     child.stderr.on("data", (d) => ws.write(d));
     child.on("close", (code) => {
       let cost = 0, u = {}, blocked = false;
-      if (resultLine) { try { const o = JSON.parse(resultLine); cost = o.total_cost_usd || 0; u = o.usage || {}; if (/BLOCKED:/.test(o.result || "")) blocked = true; } catch { /* */ } }
+      if (resultLine) { try { const o = JSON.parse(resultLine); cost = o.total_cost_usd || 0; u = o.usage || {}; if (/^[\s>*-]*BLOCKED:/m.test(o.result || "")) blocked = true; } catch { /* */ } }
       if (blocked) ws.write(`\n# ⚠ ESCALATION: agent ตอบ BLOCKED (บริบทใน scope ไม่พอ) — surface ไม่ใช่เดาเงียบ\n`);
       ws.write(`\n# exit ${code}\n`); ws.end();
       recordUsage({ id: t.id, model, mode, cost, inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, cache: (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) });
@@ -321,7 +321,7 @@ async function runOllama(t, name, model, worker, opts = {}) {
         if (o.done) { inTok = o.prompt_eval_count || 0; outTok = o.eval_count || 0; ok = true; }
       }
     }
-    if (/BLOCKED:/.test(acc)) { blocked = true; ws.write(`\n# ⚠ ESCALATION: worker ตอบ BLOCKED (บริบทไม่พอ) — surface ไม่ใช่เดา\n`); }
+    if (/^[\s>*-]*BLOCKED:/m.test(acc)) { blocked = true; ws.write(`\n# ⚠ ESCALATION: worker ตอบ BLOCKED (บริบทไม่พอ) — surface ไม่ใช่เดา\n`); }
     if (ok && !acc.trim()) { empty = true; ws.write(`\n# ⚠ ไม่มี answer/content (โมเดลใช้โทเค็นไปกับ reasoning จน num_predict หมด หรือเป็น thinking model) — ถือว่าไม่สำเร็จ. ลอง profile ใหญ่ขึ้น หรือสลับเป็น non-thinking model เช่น ollama:gemma4:latest\n`); }
     ws.write(`\n\n# done · ${inTok} in / ${outTok} out tokens (local, $0) · profile=${scopeFor(t).profile}${empty ? " · EMPTY" : ""}\n`);
   } catch (e) {
@@ -504,6 +504,19 @@ export async function executeWithReview(t, model, worker) {
     setStatus(t.id, "needs-rework");
     return "needs-rework";
   }
+}
+
+// review output ที่ worker ผลิตไว้แล้ว (ไม่รัน worker ซ้ำ) — ใช้กรณีงานเสร็จแล้วแต่ยังไม่ผ่าน gate
+export async function reviewExisting(id) {
+  const t = byId(id); if (!t) return { ok: false, error: `ไม่พบ task ${id}` };
+  const m = modelFor(t, loadState());
+  if (!requireReviewFor(t)) { setStatus(id, "done"); return { ok: true, status: "done", skipped: true }; }
+  setStatus(id, "reviewing");
+  const review = await runReview(t, m, "reviewonly");
+  if (!review.ran) { return { ok: true, status: "reviewing", review }; }
+  const status = review.pass ? "done" : "needs-rework";
+  setStatus(id, status);
+  return { ok: true, status, review };
 }
 
 // dispatch หนึ่ง task แบบ async (claim->running->produce->review->done/needs-rework). ใช้โดย UI ปุ่ม ▶
