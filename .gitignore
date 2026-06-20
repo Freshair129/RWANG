@@ -1,0 +1,5 @@
+# orchestrator runtime artifacts (ไม่ commit)
+state.json
+usage.jsonl
+.state.lock
+logs/

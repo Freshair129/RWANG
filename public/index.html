@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>G-Maiden · Orchestrator</title>
+<style>
+  :root {
+    --bg: #08090c; --panel: rgba(18,20,28,0.72); --panel-2: rgba(28,32,44,0.6);
+    --line: rgba(120,180,230,0.14); --ice: #8fd4ff; --ice-dim: #5b8fb0;
+    --txt: #e7eef6; --mut: #8794a6; --ok: #5be3a7; --warn: #ffcf6b; --bad: #ff7b85;
+    --run: #6fb3ff; --opus: #c69bff; --sonnet: #7fd4ff; --haiku: #6ee7c7; --manual:#7a8696;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:
+      radial-gradient(900px 500px at 80% -10%, rgba(80,150,210,0.10), transparent 60%),
+      radial-gradient(700px 400px at -10% 20%, rgba(120,90,210,0.08), transparent 60%), var(--bg);
+    color:var(--txt); font:14px/1.5 "Segoe UI",system-ui,sans-serif; min-height:100vh; }
+  a{color:var(--ice)}
+  .wrap{ max-width:1180px; margin:0 auto; padding:22px 18px 60px; }
+
+  header.top{ display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:16px 20px; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 8px 40px rgba(0,0,0,0.4); }
+  .brand{ display:flex; align-items:center; gap:11px; }
+  .gem{ width:26px;height:26px;border-radius:7px; transform:rotate(45deg);
+    background:linear-gradient(135deg,var(--ice),#3f7fb0); box-shadow:0 0 18px rgba(143,212,255,0.5); }
+  .brand h1{ font-size:16px; margin:0; letter-spacing:.4px; font-weight:600; }
+  .brand small{ color:var(--mut); display:block; font-size:11px; letter-spacing:.5px; }
+  .prog{ flex:1; min-width:220px; }
+  .prog .meta{ display:flex; justify-content:space-between; font-size:12px; color:var(--mut); margin-bottom:6px; }
+  .track{ height:9px; background:rgba(255,255,255,0.06); border-radius:99px; overflow:hidden; }
+  .fill{ height:100%; width:0; border-radius:99px; transition:width .5s ease;
+    background:linear-gradient(90deg,var(--ice),#56e0b0); box-shadow:0 0 12px rgba(143,212,255,0.6); }
+  .ctrls{ display:flex; align-items:center; gap:8px; }
+  button,select,input{ font:inherit; color:var(--txt); }
+  .btn{ background:var(--panel-2); border:1px solid var(--line); border-radius:9px;
+    padding:7px 12px; cursor:pointer; transition:.15s; white-space:nowrap; }
+  .btn:hover{ border-color:var(--ice-dim); background:rgba(143,212,255,0.10); }
+  .btn.x{ color:var(--bad); border-color:rgba(255,123,133,0.3); }
+  .btn.go{ color:#06121a; background:linear-gradient(135deg,var(--ice),#56c8e0); border:none; font-weight:600; }
+  .toggle{ display:flex; align-items:center; gap:7px; color:var(--mut); font-size:12px; cursor:pointer; user-select:none; }
+
+  .counts{ display:flex; gap:8px; flex-wrap:wrap; margin:16px 0 12px; }
+  .pill{ background:var(--panel); border:1px solid var(--line); border-radius:99px;
+    padding:5px 13px; font-size:12px; color:var(--mut); }
+  .pill b{ color:var(--txt); }
+
+  .tabs{ display:flex; gap:6px; margin:6px 0 16px; }
+  .tab{ background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:8px 16px; cursor:pointer; color:var(--mut); transition:.15s; font-size:13px; }
+  .tab:hover{ border-color:var(--ice-dim); }
+  .tab.active{ color:var(--ice); border-color:var(--ice-dim); background:rgba(143,212,255,0.08);
+    box-shadow:0 0 16px rgba(143,212,255,0.12); }
+  .tab .n{ color:var(--mut); font-size:11px; }
+
+  .filters{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; align-items:center; }
+  .filters select,.filters input{ background:var(--panel); border:1px solid var(--line);
+    border-radius:9px; padding:7px 11px; outline:none; }
+  .filters input{ min-width:180px; }
+
+  .grid{ display:flex; flex-direction:column; gap:8px; }
+  .row{ display:grid; grid-template-columns:62px 1fr auto; gap:14px; align-items:center;
+    background:var(--panel); border:1px solid var(--line); border-radius:13px; padding:12px 15px;
+    backdrop-filter:blur(8px); transition:.18s; }
+  .row:hover{ border-color:var(--ice-dim); }
+  .row.ready{ box-shadow:inset 3px 0 0 var(--ice); }
+  .row.running{ box-shadow:inset 3px 0 0 var(--run); animation:pulse 1.6s infinite; }
+  .row.done{ opacity:.55; }
+  .row.failed{ box-shadow:inset 3px 0 0 var(--bad); }
+  @keyframes pulse{ 50%{ background:rgba(111,179,255,0.10);} }
+  .id{ font-weight:700; letter-spacing:.3px; }
+  .id small{ display:block; color:var(--mut); font-weight:400; font-size:10px; }
+  .ti{ min-width:0; }
+  .ti .t{ font-weight:500; }
+  .ti .d{ display:flex; gap:5px; flex-wrap:wrap; margin-top:5px; }
+  .dep{ font-size:10.5px; color:var(--mut); background:rgba(255,255,255,0.05);
+    border:1px solid var(--line); border-radius:6px; padding:1px 6px; }
+  .dep.ok{ color:var(--ok); border-color:rgba(91,227,167,0.3); }
+  .badges{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .bdg{ font-size:11px; padding:3px 9px; border-radius:7px; border:1px solid var(--line); white-space:nowrap; }
+  .m-opus{ color:var(--opus); border-color:rgba(198,155,255,0.35); }
+  .m-sonnet{ color:var(--sonnet); border-color:rgba(127,212,255,0.35); }
+  .m-haiku{ color:var(--haiku); border-color:rgba(110,231,199,0.35); }
+  .m-ollama{ color:#7ee0a0; border-color:rgba(126,224,160,0.4); }
+  .m-manual{ color:var(--manual); }
+  .st{ font-size:10.5px; text-transform:uppercase; letter-spacing:.5px; }
+  .st-todo{ color:var(--mut);} .st-ready{ color:var(--ice);} .st-claimed{ color:var(--warn);}
+  .st-running{ color:var(--run);} .st-done{ color:var(--ok);} .st-failed{ color:var(--bad);}
+  .acts{ display:flex; gap:6px; align-items:center; }
+  .acts .btn{ padding:5px 10px; font-size:12px; }
+
+  /* DAG */
+  .dagwrap{ background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:8px; overflow:auto; max-height:74vh; }
+  .dagwrap svg{ display:block; }
+  .node rect{ transition:.15s; cursor:pointer; }
+  .node:hover rect{ filter:brightness(1.4); }
+  .node text{ font:600 11px "Segoe UI",sans-serif; fill:var(--txt); pointer-events:none; }
+  .node text.sub{ font-weight:400; font-size:9px; fill:var(--mut); }
+  .wlabel{ fill:var(--mut); font:600 10px sans-serif; letter-spacing:1px; }
+
+  /* Agent Room */
+  .room{ display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:12px; }
+  .tile{ background:var(--panel); border:1px solid var(--line); border-radius:13px; overflow:hidden;
+    display:flex; flex-direction:column; }
+  .tile.live{ box-shadow:inset 0 0 0 1px rgba(111,179,255,0.35), 0 0 26px rgba(111,179,255,0.10); }
+  .tile.done{ opacity:.78; } .tile.failed{ box-shadow:inset 0 0 0 1px rgba(255,123,133,0.35); }
+  .tile h4{ margin:0; padding:11px 14px; display:flex; align-items:center; gap:8px; font-size:13px;
+    border-bottom:1px solid var(--line); }
+  .tile h4 .grow{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--mut); font-weight:400; font-size:12px; }
+  .dot{ width:8px;height:8px;border-radius:50%; flex:none; }
+  .dot.live{ background:var(--run); box-shadow:0 0 8px var(--run); animation:blink 1.2s infinite; }
+  .dot.done{ background:var(--ok);} .dot.failed{ background:var(--bad);} .dot.claimed{ background:var(--warn);}
+  @keyframes blink{ 50%{opacity:.35;} }
+  .tile pre{ margin:0; padding:12px 14px; height:240px; overflow:auto; font:11.5px/1.5 "Cascadia Code",Consolas,monospace;
+    color:#cfe3f2; white-space:pre-wrap; word-break:break-word; }
+  .empty{ background:var(--panel); border:1px dashed var(--line); border-radius:14px; padding:40px;
+    text-align:center; color:var(--mut); }
+
+  .legend{ margin-top:18px; color:var(--mut); font-size:11.5px; display:flex; gap:14px; flex-wrap:wrap; }
+  .hidden{ display:none !important; }
+
+  /* auth + usage */
+  .metabar{ display:flex; gap:12px; flex-wrap:wrap; align-items:stretch; margin:0 0 14px; }
+  .authbox{ background:var(--panel); border:1px solid var(--line); border-radius:13px;
+    padding:11px 15px; display:flex; align-items:center; gap:11px; flex-wrap:wrap; }
+  .authbox .lbl{ color:var(--mut); font-size:11px; text-transform:uppercase; letter-spacing:.6px; }
+  .seg{ display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+  .seg button{ background:transparent; border:none; padding:7px 13px; cursor:pointer; color:var(--mut); font:inherit; transition:.15s; }
+  .seg button:hover:not(:disabled){ color:var(--txt); }
+  .seg button.on{ background:rgba(143,212,255,.14); color:var(--ice); box-shadow:inset 0 0 0 1px rgba(143,212,255,.3); }
+  .seg button:disabled{ opacity:.35; cursor:not-allowed; }
+  .hint{ color:var(--mut); font-size:11.5px; }
+  .ucard{ background:var(--panel); border:1px solid var(--line); border-radius:13px; padding:10px 16px; min-width:170px; flex:1; }
+  .ucard.warnear{ border-color:rgba(255,207,107,.4); } .ucard.warover{ border-color:rgba(255,123,133,.5); }
+  .ul{ color:var(--mut); font-size:10.5px; text-transform:uppercase; letter-spacing:.6px; display:flex; justify-content:space-between; }
+  .ul .win{ opacity:.65; }
+  .uv{ font-size:21px; font-weight:700; color:var(--ice); margin:3px 0 1px; }
+  .us{ color:var(--mut); font-size:11px; }
+  .ubar{ height:5px; background:rgba(255,255,255,.06); border-radius:99px; margin-top:7px; overflow:hidden; }
+  .ubar i{ display:block; height:100%; background:linear-gradient(90deg,var(--ice),#56e0b0); border-radius:99px; }
+
+  .ov{ position:fixed; inset:0; background:rgba(4,6,10,0.7); backdrop-filter:blur(4px);
+    display:none; align-items:center; justify-content:center; padding:24px; z-index:50; }
+  .ov.on{ display:flex; }
+  .modal{ background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    width:min(860px,100%); max-height:84vh; display:flex; flex-direction:column; box-shadow:0 20px 80px rgba(0,0,0,.6); }
+  .modal h3{ margin:0; padding:16px 20px; border-bottom:1px solid var(--line); font-size:14px; display:flex; justify-content:space-between; align-items:center; }
+  .modal pre{ margin:0; padding:18px 20px; overflow:auto; font:12px/1.55 "Cascadia Code",Consolas,monospace; color:#cfe3f2; white-space:pre-wrap; }
+  .toast{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--panel); border:1px solid var(--line); border-radius:11px; padding:11px 18px;
+    opacity:0; transition:.3s; z-index:60; backdrop-filter:blur(10px); }
+  .toast.on{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .toast.err{ border-color:rgba(255,123,133,0.4); color:var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><div class="gem"></div><div><h1>G-Maiden Orchestrator</h1><small>MULTI-AGENT TASK CONTROL</small></div></div>
+    <div class="prog">
+      <div class="meta"><span id="pmeta">—</span><span id="pupd"></span></div>
+      <div class="track"><div class="fill" id="pfill"></div></div>
+    </div>
+    <div class="ctrls">
+      <button class="btn go" id="runwave" title="ปล่อย agent ทำทุก task ที่ ready ตอนนี้">▶ Run wave</button>
+      <button class="btn" id="runauto" title="ปล่อยต่อเนื่องทั้ง DAG จนกว่าจะหมด/กด stop">⏯ Auto</button>
+      <button class="btn x hidden" id="stop">⏹ Stop</button>
+      <label class="toggle"><input type="checkbox" id="auto" checked> live</label>
+      <button class="btn" id="refresh">↻</button>
+      <button class="btn x" id="reset">reset</button>
+    </div>
+  </header>
+  <div id="poolbar" class="hidden" style="margin-top:10px"></div>
+
+  <div class="counts" id="counts"></div>
+  <div class="metabar" id="metabar"></div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-v="list">📋 List</div>
+    <div class="tab" data-v="waves">🕸 Waves / DAG</div>
+    <div class="tab" data-v="room">🛰 Agent Room <span class="n" id="roomn"></span></div>
+  </div>
+
+  <div class="filters" id="filters">
+    <input id="q" placeholder="ค้นหา id / ชื่องาน…" />
+    <select id="fphase"><option value="">ทุก phase</option></select>
+    <select id="fstatus">
+      <option value="">ทุกสถานะ</option><option value="ready">ready</option>
+      <option value="todo">todo</option><option value="claimed">claimed</option>
+      <option value="running">running</option><option value="done">done</option><option value="failed">failed</option>
+    </select>
+    <select id="fmodel"><option value="">ทุก model</option><option>opus</option><option>sonnet</option><option>haiku</option><option value="manual">manual</option></select>
+  </div>
+
+  <div class="grid" id="grid"></div>
+  <div class="dagwrap hidden" id="dag"></div>
+  <div class="room hidden" id="room"></div>
+
+  <div class="legend">
+    <span>model: <b style="color:var(--opus)">opus</b>=วางแผน/architecture · <b style="color:var(--sonnet)">sonnet</b>=coding · <b style="color:var(--haiku)">haiku</b>=งานง่าย</span>
+    <span>○ ready · ▶ running · ✓ done · ✗ failed</span>
+  </div>
+</div>
+
+<div class="ov" id="ov"><div class="modal">
+  <h3><span id="mtitle">log</span><button class="btn" onclick="closeModal()">✕</button></h3>
+  <pre id="mbody">…</pre>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+let DATA = null, VIEW = "list", modalId = null, OLLAMA = {enabled:false,up:false,models:[]};
+const streams = {};                       // id -> {offset, partial, pretty}
+const MCOL = { opus:"#c69bff", sonnet:"#7fd4ff", haiku:"#6ee7c7", manual:"#7a8696", ollama:"#7ee0a0" };
+const isOll = (m)=> typeof m==="string" && m.startsWith("ollama:");
+const mcls = (m)=> m==null ? "m-manual" : isOll(m) ? "m-ollama" : "m-"+m;
+const mlabel = (m)=> m==null ? "manual" : isOll(m) ? "🦙 "+m.slice(7) : m;
+
+async function api(action, body){
+  const r = await fetch("/api/cmd",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,...body})});
+  const j = await r.json();
+  if(j.ok===false) toast(j.error||"error", true); else toast(action+" · "+(body.id||""));
+  load(); return j;
+}
+function toast(msg, err){ const t=$("#toast"); t.textContent=msg; t.className="toast on"+(err?" err":""); clearTimeout(t._h); t._h=setTimeout(()=>t.className="toast",2200); }
+
+async function load(){ DATA = await (await fetch("/api/state")).json(); render(); }
+
+function setView(v){
+  VIEW=v;
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.v===v));
+  $("#filters").classList.toggle("hidden", v!=="list");
+  $("#grid").classList.toggle("hidden", v!=="list");
+  $("#dag").classList.toggle("hidden", v!=="waves");
+  $("#room").classList.toggle("hidden", v!=="room");
+  render();
+}
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>setView(t.dataset.v));
+
+function render(){
+  if(!DATA) return;
+  const p = DATA.progress;
+  $("#pfill").style.width = p.pct+"%";
+  $("#pmeta").textContent = `${p.done}/${p.total} done · ${p.pct}%`;
+  $("#pupd").textContent = "อัปเดต "+new Date(DATA.updatedAt).toLocaleTimeString();
+  $("#counts").innerHTML = Object.entries(DATA.counts).map(([k,v])=>`<span class="pill">${k} <b>${v}</b></span>`).join("")
+    + `<span class="pill" style="color:var(--ice)">ready <b>${DATA.tasks.filter(t=>t.ready).length}</b></span>`;
+  const active = DATA.tasks.filter(t=>t.status==="running"||t.status==="claimed").length;
+  $("#roomn").textContent = active?`(${active})`:"";
+  renderPool(); renderMeta();
+  if($("#fphase").children.length<=1) fillSelect();
+  if(VIEW==="list") renderList();
+  else if(VIEW==="waves") renderWaves();
+  else renderRoom();
+}
+function fillSelect(){
+  const ph=[...new Set(DATA.tasks.map(t=>t.phase))], sel=$("#fphase"), cur=sel.value;
+  sel.innerHTML='<option value="">ทุก phase</option>'+ph.map(p=>`<option ${p===cur?'selected':''}>${p}</option>`).join("");
+}
+
+/* ---------- LIST ---------- */
+function renderList(){
+  const q=$("#q").value.toLowerCase(), fp=$("#fphase").value, fs=$("#fstatus").value, fm=$("#fmodel").value;
+  const rows = DATA.tasks.filter(t=>{
+    if(q && !(t.id.toLowerCase().includes(q)||t.title.toLowerCase().includes(q))) return false;
+    if(fp && t.phase!==fp) return false;
+    if(fs==="ready" ? !t.ready : fs && t.status!==fs) return false;
+    if(fm && (t.model||"manual")!==fm) return false;
+    return true;
+  });
+  $("#grid").innerHTML = rows.map(rowHTML).join("") || `<div class="empty">ไม่พบงานตามตัวกรอง</div>`;
+}
+function rowHTML(t){
+  const stClass = t.ready && t.status==="todo" ? "ready" : t.status;
+  const deps = t.deps.map(d=>{ const dt=DATA.tasks.find(x=>x.id===d); const ok=dt&&dt.status==="done"; return `<span class="dep ${ok?'ok':''}">${ok?'✓':'•'} ${d}</span>`;}).join("");
+  const model=t.model||"manual"; let acts="";
+  if(t.model===null){ acts = t.status==="done"?'<span class="st st-done">done</span>':`<button class="btn" onclick="api('done',{id:'${t.id}'})">mark done</button>`; }
+  else if(t.status==="todo" && t.ready){ acts=`<button class="btn" onclick="api('claim',{id:'${t.id}'})">claim</button><button class="btn go" onclick="api('dispatch',{id:'${t.id}'})">▶ dispatch</button>${assignSel(t)}`; }
+  else if(t.status==="claimed"||t.status==="running"){ acts=`<button class="btn" onclick="api('done',{id:'${t.id}'})">done</button><button class="btn x" onclick="api('fail',{id:'${t.id}'})">fail</button><button class="btn" onclick="api('release',{id:'${t.id}'})">release</button><button class="btn" onclick="showLog('${t.id}')">log</button>`; }
+  else if(t.status==="failed"){ acts=`<button class="btn" onclick="api('release',{id:'${t.id}'})">retry</button><button class="btn" onclick="showLog('${t.id}')">log</button>`; }
+  else if(t.status==="done"){ acts=`<button class="btn" onclick="showLog('${t.id}')">log</button><button class="btn" onclick="api('release',{id:'${t.id}'})" title="กลับเป็น todo เพื่อสั่งใหม่">↻ re-run</button>`; }
+  else { acts=`<span class="st st-todo">รอ dep</span>`; }
+  return `<div class="row ${stClass}">
+    <div class="id">${t.id}<small>P${t.phase}</small></div>
+    <div class="ti"><div class="t">${t.title}</div>
+      <div class="d"><span class="st st-${t.ready&&t.status==='todo'?'ready':t.status}">${t.ready&&t.status==='todo'?'ready':t.status}</span>
+        ${t.worker?`<span class="dep">@${t.worker}</span>`:''}${deps}</div></div>
+    <div class="badges"><span class="bdg ${mcls(t.model)}">${mlabel(t.model)}${t.modelOverride?' *':''}</span>
+      <div class="acts">${acts}</div></div></div>`;
+}
+function assignSel(t){
+  const claude=DATA.modelOptions.map(m=>`<option ${t.modelOverride===m?'selected':''}>${m}</option>`).join("");
+  const oll=(OLLAMA.models||[]).map(m=>`ollama:${m}`).map(m=>`<option ${t.modelOverride===m?'selected':''}>${m}</option>`).join("");
+  return `<select class="btn" onchange="api('assign',{id:'${t.id}',model:this.value})"><option value="">model…</option>${claude}${oll?`<optgroup label="🦙 ollama (local)">${oll}</optgroup>`:''}</select>`;
+}
+
+/* ---------- WAVES / DAG ---------- */
+function renderWaves(){
+  const W=DATA.waves, byId={}; DATA.tasks.forEach(t=>byId[t.id]=t);
+  const cellW=128,cellH=44,gx=16,gy=34,padX=58,padY=18;
+  const maxLen=Math.max(...W.map(w=>w.length));
+  const width=padX+maxLen*(cellW+gx), height=padY*2+W.length*(cellH+gy);
+  const pos={};
+  W.forEach((w,i)=>w.forEach((id,j)=>{ pos[id]={x:padX+j*(cellW+gx), y:padY+i*(cellH+gy)}; }));
+  let edges="";
+  DATA.tasks.forEach(t=>(t.deps||[]).forEach(d=>{
+    const a=pos[d],b=pos[t.id]; if(!a||!b) return;
+    const x1=a.x+cellW/2,y1=a.y+cellH, x2=b.x+cellW/2,y2=b.y;
+    const my=(y1+y2)/2;
+    edges+=`<path d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}" fill="none" stroke="rgba(120,180,230,.16)" stroke-width="1.2"/>`;
+  }));
+  let nodes="";
+  W.forEach((w,i)=>{
+    nodes+=`<text class="wlabel" x="6" y="${padY+i*(cellH+gy)+cellH/2+4}">W${i}</text>`;
+    w.forEach(id=>{
+      const t=byId[id], pX=pos[id].x, pY=pos[id].y;
+      const stat = t.ready&&t.status==="todo"?"ready":t.status;
+      const fill = ({done:"rgba(91,227,167,.13)",running:"rgba(111,179,255,.18)",failed:"rgba(255,123,133,.15)",ready:"rgba(143,212,255,.13)",claimed:"rgba(255,207,107,.15)"})[stat]||"rgba(255,255,255,.04)";
+      const stroke = MCOL[t.model==null?"manual":isOll(t.model)?"ollama":t.model] || MCOL.manual;
+      nodes+=`<g class="node" onclick="showLog('${id}')"><title>${esc(t.title)}\n${stat} · ${t.model||"manual"}\naccept: ${esc(t.accept||"")}</title>
+        <rect x="${pX}" y="${pY}" width="${cellW}" height="${cellH}" rx="9" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>
+        <circle cx="${pX+12}" cy="${pY+cellH/2}" r="4" fill="${stroke}"/>
+        <text x="${pX+24}" y="${pY+19}">${id}</text>
+        <text class="sub" x="${pX+24}" y="${pY+33}">${stat}</text></g>`;
+    });
+  });
+  $("#dag").innerHTML=`<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${edges}${nodes}</svg>`;
+}
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+/* ---------- AGENT ROOM (live streaming) ---------- */
+let roomSig="";
+function renderRoom(){
+  const live = DATA.tasks.filter(t=>t.status==="running"||t.status==="claimed");
+  const recent = DATA.tasks.filter(t=>(t.status==="done"||t.status==="failed") && t.attempts>0).slice(-6);
+  const list=[...live,...recent];
+  const sig=list.map(t=>t.id+t.status).join(",");
+  if(sig!==roomSig){
+    roomSig=sig;
+    if(!list.length){ $("#room").innerHTML=`<div class="empty">ยังไม่มี agent ทำงาน<br><span style="font-size:12px">กด <b>▶ dispatch</b> ที่ List view เพื่อส่งงานให้ agent (ต้องตั้ง permission ใน config.json ก่อน)</span></div>`; return; }
+    $("#room").innerHTML=list.map(tileHTML).join("");
+  }
+  list.forEach(t=>{ if(t.status==="running"||t.status==="claimed") pump(t.id); });
+}
+function tileHTML(t){
+  const liveCls = (t.status==="running"||t.status==="claimed")?"live":t.status;
+  const dotCls = t.status==="running"||t.status==="claimed" ? (t.status==="running"?"live":"claimed") : t.status;
+  return `<div class="tile ${liveCls}" id="tile-${t.id}">
+    <h4><span class="dot ${dotCls}"></span><b>${t.id}</b><span class="bdg ${mcls(t.model)}">${mlabel(t.model)}</span>
+      <span class="grow">${t.title}</span>${t.worker?`<span class="dep">@${t.worker}</span>`:''}</h4>
+    <pre id="log-${t.id}">${streams[t.id]?esc(streams[t.id].pretty):"กำลังเริ่ม…"}</pre></div>`;
+}
+async function pump(id){
+  const s = streams[id] ||= {offset:0, partial:"", pretty:""};
+  const j = await (await fetch(`/api/log?id=${id}&offset=${s.offset}`)).json();
+  if(j.text){ s.offset=j.offset; s.partial+=j.text;
+    const lines=s.partial.split("\n"); s.partial=lines.pop();
+    for(const ln of lines){ const pr=prettyLine(ln); if(pr) s.pretty+=pr+"\n"; }
+    const el=$("#log-"+id); if(el){ const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<40; el.textContent=s.pretty; if(atBottom) el.scrollTop=el.scrollHeight; }
+    const mel=(modalId===id)?$("#mbody"):null; if(mel){ mel.textContent=s.pretty; }
+  }
+}
+function prettyLine(ln){
+  ln=ln.replace(/\r$/,""); if(!ln.trim()) return "";
+  if(ln.startsWith("#")) return ln;
+  let o; try{ o=JSON.parse(ln); }catch{ return ln; }
+  if(o.type==="system") return `● session ${o.subtype||"start"}`;
+  if(o.type==="assistant"){ const c=o.message?.content||[];
+    return c.map(p=> p.type==="text"?p.text : p.type==="tool_use"?`  ⚙ ${p.name} ${shortInput(p.input)}`:"").filter(Boolean).join("\n"); }
+  if(o.type==="user"){ const c=o.message?.content||[]; return c.some(p=>p.type==="tool_result")?"  ↳ tool result":""; }
+  if(o.type==="result") return `\n✓ ${o.subtype==="success"?"done":o.subtype}${o.result?" · "+String(o.result).slice(0,240):""}${o.total_cost_usd?` · $${o.total_cost_usd.toFixed(4)}`:""}`;
+  return "";
+}
+function shortInput(o){ try{ const s=JSON.stringify(o); return s.length>70?s.slice(0,70)+"…":s; }catch{ return ""; } }
+
+/* ---------- log modal (also streams) ---------- */
+async function showLog(id){
+  modalId=id; streams[id]={offset:0,partial:"",pretty:""};
+  $("#mtitle").textContent="log · "+id; $("#mbody").textContent="กำลังโหลด…"; $("#ov").classList.add("on");
+  await pump(id);
+  if(!streams[id].pretty) $("#mbody").textContent="(ยังไม่มี log — task นี้ยังไม่ถูก dispatch)";
+}
+function closeModal(){ modalId=null; $("#ov").classList.remove("on"); }
+$("#ov").addEventListener("click",e=>{ if(e.target.id==="ov") closeModal(); });
+
+function fmtTok(n){ n=n||0; return n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(n); }
+function renderMeta(){
+  const a=DATA.auth||{mode:"plan",apiKeyAvailable:false};
+  const u=DATA.usage||{session:{},weekly:{},sessionWindowH:5,weekWindowD:7};
+  const lim=DATA.usageLimits||{};
+  const seg=`<div class="seg">
+    <button class="${a.mode==='plan'?'on':''}" onclick="api('setauth',{mode:'plan'})">💳 Plan quota</button>
+    <button class="${a.mode==='apikey'?'on':''}" ${a.apiKeyAvailable?'':'disabled title="ไม่พบ ANTHROPIC_API_KEY ใน env"'} onclick="api('setauth',{mode:'apikey'})">🔑 API key</button>
+  </div>`;
+  const note = a.mode==='apikey'
+    ? '<span class="hint">บิลแยกตาม API key (ไม่แตะโควต้า Plan)</span>'
+    : '<span class="hint">ดึงจากโควต้า subscription/Plan</span>';
+  const card=(label,win,b,cap)=>{
+    let bar="", cls="";
+    if(cap){ const pct=Math.min(100,(b.cost||0)/cap*100); cls=pct>=100?"warover":pct>=80?"warnear":"";
+      bar=`<div class="ubar"><i style="width:${pct}%"></i></div><div class="us">${pct.toFixed(0)}% ของงบ $${cap}</div>`; }
+    const bm=Object.entries(b.byModel||{}).map(([m,v])=>`${m} ${v.agents}`).join(" · ")||"—";
+    return `<div class="ucard ${cls}"><div class="ul">${label}<span class="win">${win}</span></div>
+      <div class="uv">$${(b.cost||0).toFixed(3)}</div>
+      <div class="us">${b.agents||0} agents · ${fmtTok(b.in)}↓ ${fmtTok(b.out)}↑ ${b.cache?('· '+fmtTok(b.cache)+' cache'):''}</div>
+      <div class="us">${bm}</div>${bar}</div>`;
+  };
+  const oll = OLLAMA.enabled
+    ? (OLLAMA.up
+        ? `<span class="hint" style="color:#7ee0a0">🦙 ollama up · ${OLLAMA.models.length} model${OLLAMA.models.length!==1?'s':''}</span>`
+        : `<span class="hint" style="color:var(--bad)">🦙 ollama down</span>`)
+    : "";
+  $("#metabar").innerHTML =
+    `<div class="authbox"><span class="lbl">auth</span>${seg}${note}${oll?` · ${oll}`:""}</div>`
+    + card("Current session","≤"+(u.sessionWindowH||5)+"h", u.session, lim.sessionUsd)
+    + card("Weekly","≤"+(u.weekWindowD||7)+"d", u.weekly, lim.weeklyUsd);
+}
+function refreshOllama(){ fetch("/api/ollama").then(r=>r.json()).then(j=>{ OLLAMA=j; if(DATA) renderMeta(); }).catch(()=>{}); }
+function renderPool(){
+  const p=DATA.pool||{}; const bar=$("#poolbar");
+  $("#stop").classList.toggle("hidden", !p.active);
+  $("#runwave").classList.toggle("hidden", !!p.active);
+  $("#runauto").classList.toggle("hidden", !!p.active);
+  if(p.active){ bar.classList.remove("hidden");
+    bar.innerHTML=`<span class="pill" style="color:var(--run);border-color:rgba(111,179,255,.4)">🛰 pool <b>${p.mode}</b> · running ${p.running}/${p.max}</span> <span class="pill">ดูสด → Agent Room</span>`;
+  } else bar.classList.add("hidden");
+}
+$("#runwave").onclick=()=>{ api("run",{mode:"wave"}); setView("room"); };
+$("#runauto").onclick=()=>{ if(confirm("Auto-run: ปล่อย agent ไล่ทั้ง DAG จนจบ (ใช้โทเค็นจริงต่อเนื่อง)\nเริ่มเลยไหม?")){ api("run",{mode:"auto"}); setView("room"); } };
+$("#stop").onclick=()=>api("stop",{});
+$("#refresh").onclick=load;
+$("#reset").onclick=()=>{ if(confirm("ล้าง state กลับ todo ทั้งหมด?")){ Object.keys(streams).forEach(k=>delete streams[k]); roomSig=""; api("reset",{}); } };
+["q","fphase","fstatus","fmodel"].forEach(id=>$("#"+id).addEventListener("input",renderList));
+
+// poll: state ทุก 1.5s ; log streaming เร็วกว่า (900ms) เมื่ออยู่ room หรือเปิด modal ; ollama ทุก 10s
+setInterval(()=>{ if($("#auto").checked) load(); },1500);
+setInterval(()=>{ if(VIEW==="room") renderRoom(); if(modalId) pump(modalId); },900);
+setInterval(refreshOllama, 10000);
+load(); refreshOllama();
+</script>
+</body>
+</html>

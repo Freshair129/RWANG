@@ -1,0 +1,15 @@
+{
+  "name": "g-maiden-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-agent task orchestrator + web UI for building G-Maiden",
+  "scripts": {
+    "ui": "node server.mjs",
+    "status": "node orchestrator.mjs status",
+    "next": "node orchestrator.mjs next",
+    "graph": "node orchestrator.mjs graph",
+    "run": "node orchestrator.mjs run",
+    "reset": "node orchestrator.mjs reset"
+  }
+}

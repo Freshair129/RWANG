@@ -1,0 +1,78 @@
+{
+  "concurrency": 3,
+  "leaseMs": 1800000,
+  "models": {
+    "architect": "opus",
+    "coder": "sonnet",
+    "worker": "haiku",
+    "local": "ollama:gemma4-rust-coder:latest"
+  },
+  "routing": {
+    "manual": null,
+    "spike": "architect",
+    "plan": "architect",
+    "architecture": "architect",
+    "design": "architect",
+    "process": "architect",
+    "code": "coder",
+    "impl": "coder",
+    "integration": "coder",
+    "test": "coder",
+    "scaffold": "worker",
+    "config": "worker",
+    "docs": "worker"
+  },
+  "executor": {
+    "command": "claude",
+    "baseArgs": ["-p", "--output-format", "stream-json", "--verbose"],
+    "extraArgs": ["--permission-mode", "acceptEdits"],
+    "_comment": "stream-json+verbose = log ไหลสด ๆ ให้ Agent Room tail ได้. เพิ่ม permission flag ที่ extraArgs ตอนพร้อมให้ agent แก้ไฟล์จริง เช่น [\"--permission-mode\",\"acceptEdits\"]. ปล่อยว่าง = ถามสิทธิ์."
+  },
+  "auth": {
+    "mode": "plan",
+    "apiKey": "",
+    "_comment": "mode: 'plan' = ใช้โควต้า subscription (ลบ ANTHROPIC_API_KEY ออกจาก env ของ agent), 'apikey' = ใช้ API billing (ตั้ง ANTHROPIC_API_KEY ให้ agent). apiKey ว่าง = ใช้ค่าจาก env ปัจจุบัน. สลับได้สดผ่าน UI."
+  },
+  "ollama": {
+    "enabled": true,
+    "host": "http://127.0.0.1:11434",
+    "think": false,
+    "defaultProfile": "balanced",
+    "profiles": {
+      "fast": { "temperature": 0.3, "num_predict": 2048 },
+      "balanced": { "temperature": 0.4, "num_predict": 4096 },
+      "ui-heavy": { "temperature": 0.5, "num_predict": 8192 }
+    },
+    "_comment": "local model ฟรี ไม่กินโควต้า. model = 'ollama:<name>'. gen ข้อความล้วน (แก้ไฟล์เองไม่ได้). profile คุม temperature/num_predict; เลือกต่อ task ด้วย scope.profile."
+  },
+  "usageLimits": {
+    "sessionUsd": null,
+    "weeklyUsd": null,
+    "_comment": "ตั้งงบเพดาน (USD) เพื่อให้การ์ด usage โชว์แถบ % + เตือนเมื่อใกล้/เกิน. null = โชว์แค่ยอดที่ใช้ไป. หมายเหตุ: Max plan ไม่เปิด API ให้ดึง limit จริง จึงใช้งบที่คุณตั้งเองเป็นเกณฑ์."
+  },
+  "docsForContext": [
+    { "path": "docs/01-Tech-Stack.md", "tier": "shared" },
+    { "path": "docs/02-Engineering-Spec.md", "tier": "shared" },
+    { "path": "docs/03-Technical-Design-Document.md", "tier": "shared" },
+    { "path": "docs/04-Roadmap.md", "tier": "shared" },
+    { "path": "docs/05-Ultraplan.md", "tier": "shared" },
+    { "path": "docs/CONCEPT--SUBAGENT-CONTEXT-SCOPING.md", "tier": "orchestrator-only" },
+    { "path": "docs/GUIDE--SMALL-MODEL-PROMPTING.md", "tier": "worker-guide" }
+  ],
+  "scope": {
+    "_comment": "POLA: parent ประกาศ scope ต่อ task. ดีฟอลต์ตาม phase, override ได้ที่ task.scope ใน backlog. tier 'orchestrator-only' จะไม่เข้า worker prompt เด็ดขาด.",
+    "default": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 8000 },
+    "byPhase": {
+      "spike": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 12000 },
+      "0": { "docs": ["docs/01-Tech-Stack.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 8000 },
+      "1": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 9000 },
+      "2": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 10000 },
+      "3": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 12000 },
+      "4": { "docs": ["docs/01-Tech-Stack.md", "docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 10000 },
+      "5": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 9000 },
+      "6": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 9000 },
+      "7": { "docs": ["docs/01-Tech-Stack.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 9000 },
+      "8": { "docs": ["docs/01-Tech-Stack.md", "docs/04-Roadmap.md"], "budgetTokens": 8000 }
+    }
+  }
+}

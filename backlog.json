@@ -1,0 +1,65 @@
+{
+  "$schema": "./backlog.schema (id,title,type,phase,deps,est,accept)",
+  "tasks": [
+    { "id": "PRE",  "title": "Toolchain setup (Rust+MSVC, pnpm, Tauri CLI, WebView2)", "type": "manual", "phase": "pre", "deps": [], "est": 1, "accept": "cargo build + pnpm build ผ่านบน Windows สะอาด" },
+
+    { "id": "S-1", "title": "Spike: minimap CV feasibility (detect enemy icons)", "type": "spike", "phase": "spike", "deps": ["PRE"], "est": 4, "accept": "template match แม่น >=80% เกมจริง และ capture+detect loop <=80ms, CPU +<=2.5% @~6Hz",
+      "scope": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "needs": ["latency budget §1", "minimap CV §5 / R-02"], "excludes": ["cloud Gemini", "persona prompts", "G-Log schema"], "budgetTokens": 12000 } },
+    { "id": "S-2", "title": "Spike: audio interrupt latency", "type": "spike", "phase": "spike", "deps": ["PRE"], "est": 2, "accept": "trigger->ได้ยินคลิปใหม่ <=80ms, ตัดที่ word-boundary ไม่กระตุก" },
+    { "id": "S-3", "title": "Spike: GSI round-trip on :3000", "type": "spike", "phase": "spike", "deps": ["PRE"], "est": 1, "accept": "tick ไหลเข้าทุก ~100-500ms จากเกมจริง; ยืนยันไม่มีตำแหน่งศัตรูใน payload" },
+
+    { "id": "G0.1", "title": "Scaffold Tauri v2 + React/Vite/Tailwind monorepo", "type": "scaffold", "phase": "0", "deps": ["S-1", "S-2", "S-3"], "est": 1, "accept": "pnpm tauri dev เปิดหน้าต่างได้" },
+    { "id": "G0.2", "title": "Overlay window: transparent/undecorated/always-on-top/click-through", "type": "code", "phase": "0", "deps": ["G0.1"], "est": 1, "accept": "หน้าต่างใส คลิกทะลุไปเกมได้" },
+    { "id": "G0.3", "title": "CI: clippy + eslint + tauri build", "type": "config", "phase": "0", "deps": ["G0.1"], "est": 1, "accept": "PR เขียว ได้ artifact MSI", "model": "local",
+      "scope": { "docs": ["docs/01-Tech-Stack.md"], "budgetTokens": 4000, "profile": "balanced", "scaffold": "name: ci\non: [push, pull_request]\njobs:\n  build:\n    runs-on: windows-latest\n    steps:\n      - uses: actions/checkout@v4\n      # TODO: setup pnpm+node, rust toolchain (msvc); run clippy, eslint, tauri build" } },
+    { "id": "G0.4", "title": "Logging/tracing base + timestamp_ms helper", "type": "code", "phase": "0", "deps": ["G0.1"], "est": 0.5, "accept": "log มี monotonic ts" },
+
+    { "id": "G1.1", "title": "axum GSI server + parser -> GameTick", "type": "code", "phase": "1", "deps": ["G0.1", "S-3"], "est": 2, "accept": "parse net worth/clock/hero ครบ" },
+    { "id": "G1.2", "title": "Event bus core->UI ผ่าน Tauri events (CoreEvent)", "type": "code", "phase": "1", "deps": ["G1.1"], "est": 1.5, "accept": "UI รับ GameTick real-time" },
+    { "id": "G1.3", "title": "Overlay HUD glassmorphism (ice palette)", "type": "code", "phase": "1", "deps": ["G1.2"], "est": 2, "accept": "แสดง net worth/clock/hero ไม่บัง minimap/skill bar" },
+    { "id": "G1.4", "title": "Control dashboard (toggle module, sensitivity)", "type": "code", "phase": "1", "deps": ["G1.2"], "est": 2, "accept": "toggle ส่ง command ถึง core" },
+    { "id": "G1.5", "title": "Vercel web build (target web)", "type": "config", "phase": "1", "deps": ["G1.4"], "est": 1, "accept": "dashboard ขึ้น Vercel preview", "model": "local",
+      "scope": { "docs": ["docs/01-Tech-Stack.md"], "budgetTokens": 4000, "profile": "fast", "excludes": ["GSI data", "player stats", "G-Log"], "scaffold": "// vercel.json + vite build target 'web' (ไม่มี Tauri API)\n{\n  \"buildCommand\": \"pnpm build:web\",\n  \"outputDirectory\": \"dist\"\n}\n// TODO: แยก entry web ออกจาก overlay; ห้าม bundle ข้อมูลส่วนตัวผู้เล่น" } },
+
+    { "id": "G2.1", "title": "Capture module: DXGI minimap region", "type": "code", "phase": "2", "deps": ["S-1", "G0.1"], "est": 2, "accept": "ได้ frame minimap ~6Hz" },
+    { "id": "G2.2", "title": "Detector: template match 10 heroes", "type": "code", "phase": "2", "deps": ["G2.1"], "est": 3, "accept": "แม่น >=80% เกมจริง" },
+    { "id": "G2.3", "title": "Pixel->game coord mapping", "type": "code", "phase": "2", "deps": ["G2.2"], "est": 1, "accept": "พิกัดตรงตำแหน่งจริง +-tolerance" },
+    { "id": "G2.4", "title": "G-Sentry: missing>5s -> EnemyMissing", "type": "code", "phase": "2", "deps": ["G2.3"], "est": 2, "accept": "ตรวจ mid หาย ได้ในเกมจริง" },
+    { "id": "G2.5", "title": "Adaptive capture rate + วัด CPU", "type": "code", "phase": "2", "deps": ["G2.4"], "est": 1.5, "accept": "CPU <=2.5% ขณะทำงานปกติ (GATE P2)" },
+    { "id": "G2.6", "title": "Overlay enemy-missing indicator", "type": "code", "phase": "2", "deps": ["G2.4", "G1.3"], "est": 1, "accept": "เห็นไฟเตือนเมื่อศัตรูหาย" },
+
+    { "id": "G3.1", "title": "Ring buffer ตำแหน่งศัตรู 5 นาที", "type": "code", "phase": "3", "deps": ["G2.3"], "est": 1, "accept": "เก็บ/หมุนถูก RAM ไม่โต" },
+    { "id": "G3.2", "title": "G-Motion probability เส้น gank (heuristic)", "type": "architecture", "phase": "3", "deps": ["G3.1"], "est": 3, "accept": "ออก GankRisk{probability} สมเหตุผล" },
+    { "id": "G3.3", "title": "Audio cache pipeline + slot-splicing", "type": "code", "phase": "3", "deps": ["S-2"], "est": 2, "accept": "เล่นคลิป critical จาก cache <=40ms" },
+    { "id": "G3.4", "title": "G-Signal: threshold>85% + interrupt channel", "type": "code", "phase": "3", "deps": ["G3.2", "G3.3"], "est": 2, "accept": "trigger เตือนเมื่อข้าม 85%" },
+    { "id": "G3.5", "title": "Belief Revision mid-sentence state machine", "type": "code", "phase": "3", "deps": ["G3.4"], "est": 2, "accept": "เปลี่ยนคำเตือนกลางประโยคที่ word-boundary" },
+    { "id": "G3.6", "title": "Latency harness p50/p99 ทุก hop", "type": "test", "phase": "3", "deps": ["G3.4"], "est": 1.5, "accept": "GATE P3: G-Signal p99<=300ms, p50<=250ms" },
+
+    { "id": "G4.1", "title": "Brain Router (online->Cloud, fail->Template)", "type": "code", "phase": "4", "deps": ["G3.6"], "est": 2, "accept": "เลือกแหล่งถูกตาม health" },
+    { "id": "G4.2", "title": "Gemini 2.0 Flash streaming + circuit breaker", "type": "code", "phase": "4", "deps": ["G4.1"], "est": 2, "accept": "narration streaming เข้า queue" },
+    { "id": "G4.3", "title": "Redaction ก่อนส่ง cloud", "type": "code", "phase": "4", "deps": ["G4.2"], "est": 1, "accept": "payload ออกไม่มี PII/G-Log ดิบ" },
+    { "id": "G4.4", "title": "Piper local TTS (น้ำเสียงนักพากย์)", "type": "code", "phase": "4", "deps": ["G3.3"], "est": 2.5, "accept": "สังเคราะห์สดน้ำเสียงตรง persona" },
+    { "id": "G4.5", "title": "Persona layer (gentle + Nerf-CM + continuity)", "type": "design", "phase": "4", "deps": ["G4.2"], "est": 2, "accept": "น้ำเสียงคงเส้นคงวาตาม PRD" },
+    { "id": "G4.6", "title": "Narration queue preemptible", "type": "code", "phase": "4", "deps": ["G3.4", "G4.4"], "est": 1, "accept": "alert วิกฤตตัด narration ทั่วไปได้ (GATE P4 cloud-loss)" },
+
+    { "id": "G5.1", "title": "G-Master state (net worth/items เรา+ศัตรู)", "type": "code", "phase": "5", "deps": ["G1.1"], "est": 1.5, "accept": "state ครบพอแนะนำ" },
+    { "id": "G5.2", "title": "Meta dataset + advice engine (item แก้ทาง)", "type": "architecture", "phase": "5", "deps": ["G5.1"], "est": 3, "accept": "คำแนะนำตรงบริบทเกมจริง" },
+    { "id": "G5.3", "title": "Hotkey Alt+M -> situation summary", "type": "code", "phase": "5", "deps": ["G0.2"], "est": 1, "accept": "กดแล้ว Maiden สรุปทันที" },
+    { "id": "G5.4", "title": "Overlay advice panel", "type": "code", "phase": "5", "deps": ["G5.2", "G1.3"], "est": 1.5, "accept": "แสดงคำแนะนำ + rationale" },
+
+    { "id": "G6.1", "title": "SQLite schema + write layer (batched)", "type": "code", "phase": "6", "deps": ["G0.1"], "est": 2, "accept": "เขียน matches/decisions/signals ได้", "model": "local",
+      "scope": { "docs": ["docs/02-Engineering-Spec.md"], "excludes": ["cloud egress", "network upload"], "scaffold": "-- G-Log (อ้าง Eng-Spec §6) · local-only ห้าม egress\nCREATE TABLE matches (id, hero, started_at, ended_at, result);\n-- TODO: decisions, signals, tuning_state", "budgetTokens": 5000 } },
+    { "id": "G6.2", "title": "Outcome capture เทียบคำแนะนำ", "type": "code", "phase": "6", "deps": ["G6.1", "G3.4"], "est": 2, "accept": "จับคู่ decision<->outcome ถูก" },
+    { "id": "G6.3", "title": "Tuning loop ป้อนกลับ G-Sentry/G-Signal", "type": "architecture", "phase": "6", "deps": ["G6.2"], "est": 2, "accept": "params ปรับข้ามแมตช์ (GATE P6 no-egress)" },
+
+    { "id": "G7.1", "title": "Local SLM fallback (Qwen2.5, lazy-load)", "type": "code", "phase": "7", "deps": ["G4.1"], "est": 3, "accept": "cloud หลุด -> persona text ยังออกจาก SLM" },
+    { "id": "G7.2", "title": "Resource Governor เต็มรูปแบบ", "type": "code", "phase": "7", "deps": ["G2.5"], "est": 2.5, "accept": "บังคับ budget ได้จริงใต้โหลด" },
+    { "id": "G7.3", "title": "Perf suite: RAM<=400MB, FPS drop<=3%", "type": "test", "phase": "7", "deps": ["G7.2"], "est": 2, "accept": "GATE P7: ผ่านทุกตัวเลข + DoD ครบ" },
+
+    { "id": "G8.1", "title": "Installer (MSI/NSIS) + วาง GSI cfg + auto-update", "type": "config", "phase": "8", "deps": ["G7.3"], "est": 3, "accept": "ติดตั้งเครื่องสะอาดแล้วใช้ได้" },
+    { "id": "G8.2", "title": "Onboarding flow", "type": "code", "phase": "8", "deps": ["G8.1"], "est": 2, "accept": "ผู้ใช้ใหม่ตั้งค่าจบ <2 นาที" },
+    { "id": "G8.3", "title": "Landing + download + user docs (Vercel)", "type": "docs", "phase": "8", "deps": ["G1.5"], "est": 2, "accept": "หน้า public ใช้งานได้", "model": "local",
+      "scope": { "docs": ["docs/01-Tech-Stack.md", "docs/04-Roadmap.md"], "budgetTokens": 6000, "profile": "ui-heavy", "scaffold": "<!-- landing: hero 'Maiden' + ดาวน์โหลด installer + ฟีเจอร์ G-Series -->\n<!-- ธีม: bg #08090c, panel rgba(18,20,28,0.72), ice palette, glassmorphism -->\n<section class=\"hero\"><h1>G-Maiden</h1><p>AI co-pilot สำหรับ Dota 2</p></section>\n<!-- TODO: ส่วนฟีเจอร์ 6 โมดูล, ปุ่มดาวน์โหลด, footer -->" } },
+    { "id": "G8.4", "title": "Closed beta + จูน persona/sensitivity", "type": "process", "phase": "8", "deps": ["G8.2"], "est": 10, "accept": "GATE P8: v1.0 NFR ครบบนเครื่องจริง" }
+  ]
+}
