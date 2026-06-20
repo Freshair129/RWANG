@@ -74,9 +74,8 @@ async function cmdRun({ max, execute, worker }) {
       E.setStatus(t.id, "running", { worker: w, claimedAt: E.now() });
       console.log(`  ▶ ${w} dispatch ${t.id} -> ${c.model}`);
       running++;
-      const p = E.runAgent(E.byId(t.id), c.model, w).then((r) => {
-        E.setStatus(t.id, r.ok ? "done" : "failed");
-        console.log(`  ${r.ok ? "✓" : "✗"} ${t.id} (${r.ok ? "done" : "failed"}) -> ${r.logFile}`);
+      const p = E.executeWithReview(E.byId(t.id), c.model, w).then((status) => {
+        console.log(`  ${status === "done" ? "✓" : status === "needs-rework" ? "⚠" : "✗"} ${t.id} (${status})`);
         running--; inflight.delete(p);
       });
       inflight.add(p);

@@ -59,6 +59,16 @@
     { "path": "docs/CONCEPT--SUBAGENT-CONTEXT-SCOPING.md", "tier": "orchestrator-only" },
     { "path": "docs/GUIDE--SMALL-MODEL-PROMPTING.md", "tier": "worker-guide" }
   ],
+  "review": {
+    "enabled": true,
+    "requireReviewDefault": true,
+    "failOn": "critical",
+    "autoRework": true,
+    "maxReworkRounds": 1,
+    "skipForDraft": false,
+    "reviewerByTier": { "ollama": "sonnet", "haiku": "sonnet", "sonnet": "opus", "opus": "opus" },
+    "_comment": "Verify Gate (ADR-O-001). reviewer อิสระตรวจ output เทียบ acceptance ก่อน done. skipForDraft=false -> รีวิวงาน local ด้วย (จับ draft ผิด). failOn: critical|major."
+  },
   "scope": {
     "_comment": "POLA: parent ประกาศ scope ต่อ task. ดีฟอลต์ตาม phase, override ได้ที่ task.scope ใน backlog. tier 'orchestrator-only' จะไม่เข้า worker prompt เด็ดขาด.",
     "default": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 8000 },

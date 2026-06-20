@@ -69,6 +69,8 @@
   .row.running{ box-shadow:inset 3px 0 0 var(--run); animation:pulse 1.6s infinite; }
   .row.done{ opacity:.55; }
   .row.failed{ box-shadow:inset 3px 0 0 var(--bad); }
+  .row.reviewing{ box-shadow:inset 3px 0 0 #c9a0ff; animation:pulse 1.6s infinite; }
+  .row.needs-rework{ box-shadow:inset 3px 0 0 var(--warn); }
   @keyframes pulse{ 50%{ background:rgba(111,179,255,0.10);} }
   .id{ font-weight:700; letter-spacing:.3px; }
   .id small{ display:block; color:var(--mut); font-weight:400; font-size:10px; }
@@ -88,6 +90,7 @@
   .st{ font-size:10.5px; text-transform:uppercase; letter-spacing:.5px; }
   .st-todo{ color:var(--mut);} .st-ready{ color:var(--ice);} .st-claimed{ color:var(--warn);}
   .st-running{ color:var(--run);} .st-done{ color:var(--ok);} .st-failed{ color:var(--bad);}
+  .st-reviewing{ color:#c9a0ff;} .st-needs-rework{ color:var(--warn);}
   .acts{ display:flex; gap:6px; align-items:center; }
   .acts .btn{ padding:5px 10px; font-size:12px; }
 
@@ -113,6 +116,7 @@
   .dot{ width:8px;height:8px;border-radius:50%; flex:none; }
   .dot.live{ background:var(--run); box-shadow:0 0 8px var(--run); animation:blink 1.2s infinite; }
   .dot.done{ background:var(--ok);} .dot.failed{ background:var(--bad);} .dot.claimed{ background:var(--warn);}
+  .dot.reviewing{ background:#c9a0ff; box-shadow:0 0 8px #c9a0ff; animation:blink 1.2s infinite;} .dot.needs-rework{ background:var(--warn);}
   @keyframes blink{ 50%{opacity:.35;} }
   .tile pre{ margin:0; padding:12px 14px; height:240px; overflow:auto; font:11.5px/1.5 "Cascadia Code",Consolas,monospace;
     color:#cfe3f2; white-space:pre-wrap; word-break:break-word; }
@@ -281,6 +285,8 @@ function rowHTML(t){
   if(t.model===null){ acts = t.status==="done"?'<span class="st st-done">done</span>':`<button class="btn" onclick="api('done',{id:'${t.id}'})">mark done</button>`; }
   else if(t.status==="todo" && t.ready){ acts=`<button class="btn" onclick="api('claim',{id:'${t.id}'})">claim</button><button class="btn go" onclick="api('dispatch',{id:'${t.id}'})">▶ dispatch</button>${assignSel(t)}`; }
   else if(t.status==="claimed"||t.status==="running"){ acts=`<button class="btn" onclick="api('done',{id:'${t.id}'})">done</button><button class="btn x" onclick="api('fail',{id:'${t.id}'})">fail</button><button class="btn" onclick="api('release',{id:'${t.id}'})">release</button><button class="btn" onclick="showLog('${t.id}')">log</button>`; }
+  else if(t.status==="reviewing"){ acts=`<span class="st st-reviewing">reviewing…</span><button class="btn" onclick="showLog('${t.id}')">log</button>`; }
+  else if(t.status==="needs-rework"){ acts=`<button class="btn go" onclick="api('dispatch',{id:'${t.id}'})">▶ rework</button><button class="btn" onclick="showLog('${t.id}')" title="ดู verdict + issues">verdict</button><button class="btn" onclick="api('done',{id:'${t.id}'})" title="ยอมรับทั้งที่ reviewer ตีกลับ">accept</button>`; }
   else if(t.status==="failed"){ acts=`<button class="btn" onclick="api('release',{id:'${t.id}'})">retry</button><button class="btn" onclick="showLog('${t.id}')">log</button>`; }
   else if(t.status==="done"){ acts=`<button class="btn" onclick="showLog('${t.id}')">log</button><button class="btn" onclick="api('release',{id:'${t.id}'})" title="กลับเป็น todo เพื่อสั่งใหม่">↻ re-run</button>`; }
   else { acts=`<span class="st st-todo">รอ dep</span>`; }
@@ -335,8 +341,9 @@ function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").repla
 /* ---------- AGENT ROOM (live streaming) ---------- */
 let roomSig="";
 function renderRoom(){
-  const live = DATA.tasks.filter(t=>t.status==="running"||t.status==="claimed");
-  const recent = DATA.tasks.filter(t=>(t.status==="done"||t.status==="failed") && t.attempts>0).slice(-6);
+  const isLive=(s)=>["running","claimed","reviewing"].includes(s);
+  const live = DATA.tasks.filter(t=>isLive(t.status));
+  const recent = DATA.tasks.filter(t=>["done","failed","needs-rework"].includes(t.status) && t.attempts>0).slice(-6);
   const list=[...live,...recent];
   const sig=list.map(t=>t.id+t.status).join(",");
   if(sig!==roomSig){
@@ -344,11 +351,12 @@ function renderRoom(){
     if(!list.length){ $("#room").innerHTML=`<div class="empty">ยังไม่มี agent ทำงาน<br><span style="font-size:12px">กด <b>▶ dispatch</b> ที่ List view เพื่อส่งงานให้ agent (ต้องตั้ง permission ใน config.json ก่อน)</span></div>`; return; }
     $("#room").innerHTML=list.map(tileHTML).join("");
   }
-  list.forEach(t=>{ if(t.status==="running"||t.status==="claimed") pump(t.id); });
+  list.forEach(t=>{ if(isLive(t.status)) pump(t.id); });
 }
 function tileHTML(t){
-  const liveCls = (t.status==="running"||t.status==="claimed")?"live":t.status;
-  const dotCls = t.status==="running"||t.status==="claimed" ? (t.status==="running"?"live":"claimed") : t.status;
+  const isLive=["running","claimed","reviewing"].includes(t.status);
+  const liveCls = isLive?"live":t.status;
+  const dotCls = t.status==="running"?"live":t.status==="reviewing"?"reviewing":t.status==="claimed"?"claimed":t.status;
   return `<div class="tile ${liveCls}" id="tile-${t.id}">
     <h4><span class="dot ${dotCls}"></span><b>${t.id}</b><span class="bdg ${mcls(t.model)}">${mlabel(t.model)}</span>
       <span class="grow">${t.title}</span>${t.worker?`<span class="dep">@${t.worker}</span>`:''}</h4>

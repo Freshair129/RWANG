@@ -24,7 +24,7 @@ export function reload() {
   try { CONFIG = loadJson(join(__dir, "config.json")); BACKLOG = loadJson(join(__dir, "backlog.json")).tasks; } catch { /* keep last good */ }
 }
 
-export const ACTIVE = new Set(["claimed", "running"]);
+export const ACTIVE = new Set(["claimed", "running", "reviewing"]);
 
 function loadJson(p) { return JSON.parse(readFileSync(p, "utf8")); }
 export function now() { return Date.now(); }
@@ -217,7 +217,7 @@ export function scopeFor(task) {
   };
 }
 
-export function buildPrompt(t, model, provider = "claude") {
+export function buildPrompt(t, model, provider = "claude", reworkNote = null) {
   const s = scopeFor(t);
   const deps = (t.deps || []).join(", ") || "(none)";
   const head = [
@@ -227,6 +227,7 @@ export function buildPrompt(t, model, provider = "claude") {
     `Dependencies (เสร็จแล้ว): ${deps}`, ``,
     `## เกณฑ์ผ่าน (acceptance — ต้องครบ)`, t.accept, ``,
   ];
+  if (reworkNote) head.push(reworkNote, ``);
   if (provider === "ollama") {
     const p = [...head];
     if (s.needs.length) p.push(`## บริบทที่เกี่ยวข้อง`, s.needs.map((n) => `- ${n}`).join("\n"), ``);
@@ -254,20 +255,22 @@ export function parseModel(model) {
   return { provider: "claude", name: model };
 }
 
-export function runAgent(t, model, worker) {
+export function runAgent(t, model, worker, opts = {}) {
   const { provider, name } = parseModel(model);
-  return provider === "ollama" ? runOllama(t, name, model, worker) : runClaude(t, name, model, worker);
+  return provider === "ollama" ? runOllama(t, name, model, worker, opts) : runClaude(t, name, model, worker, opts);
 }
 
-function runClaude(t, name, model, worker) {
+function runClaude(t, name, model, worker, opts = {}) {
   return new Promise((res) => {
     if (!existsSync(PATHS.LOGS)) mkdirSync(PATHS.LOGS, { recursive: true });
     const logFile = join(PATHS.LOGS, `${t.id}.${worker}.log`);
     const mode = getAuthMode();
     const ws = createWriteStream(logFile, { flags: "w" });
     ws.write(`# ${t.id} · ${worker} · ${model} · auth=${mode} · started ${new Date().toISOString()}\n\n`);
-    const args = [...CONFIG.executor.baseArgs, "--model", name, ...CONFIG.executor.extraArgs, buildPrompt(t, model, "claude")];
+    // prompt ส่งทาง stdin (ไม่ใช่ arg) — กัน shell metachar (| ` { } ( )) ทำ prompt พังใต้ shell:true
+    const args = [...CONFIG.executor.baseArgs, "--model", name, ...CONFIG.executor.extraArgs];
     const child = spawn(CONFIG.executor.command, args, { cwd: PATHS.ROOT, shell: true, env: childEnv(mode) });
+    child.stdin.write(buildPrompt(t, model, "claude", opts.reworkNote)); child.stdin.end();
     let lineBuf = "", resultLine = null;
     child.stdout.on("data", (d) => {
       ws.write(d); lineBuf += d; let i;
@@ -287,7 +290,7 @@ function runClaude(t, name, model, worker) {
 }
 
 // Ollama: ยิง /api/chat แบบ stream → เขียนลง log สดให้ Agent Room tail ได้ (cost $0)
-async function runOllama(t, name, model, worker) {
+async function runOllama(t, name, model, worker, opts = {}) {
   if (!existsSync(PATHS.LOGS)) mkdirSync(PATHS.LOGS, { recursive: true });
   const logFile = join(PATHS.LOGS, `${t.id}.${worker}.log`);
   const ws = createWriteStream(logFile, { flags: "w" });
@@ -296,7 +299,7 @@ async function runOllama(t, name, model, worker) {
   const options = (CONFIG.ollama?.profiles || {})[scopeFor(t).profile] || {};
   let inTok = 0, outTok = 0, ok = false, acc = "", blocked = false, empty = false;
   try {
-    const payload = { model: name, stream: true, options, messages: [{ role: "user", content: buildPrompt(t, model, "ollama") }] };
+    const payload = { model: name, stream: true, options, messages: [{ role: "user", content: buildPrompt(t, model, "ollama", opts.reworkNote) }] };
     if (typeof CONFIG.ollama?.think === "boolean") payload.think = CONFIG.ollama.think; // ปิด thinking สำหรับงาน draft -> ตอบ content ตรง
     const resp = await fetch(`${host}/api/chat`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -393,8 +396,7 @@ export function runPool({ mode = "wave", max = CONFIG.concurrency, worker = "poo
       if (!c.ok) continue;
       setStatus(t.id, "running", { worker: w, claimedAt: now() });
       POOL.running++;
-      const p = runAgent(byId(t.id), c.model, w).then((r) => {
-        setStatus(t.id, r.ok ? "done" : "failed");
+      const p = executeWithReview(byId(t.id), c.model, w).then(() => {
         POOL.running--; inflight.delete(p);
         if (!POOL.stop) tick();           // เมื่อมีคนว่าง ดึงงานต่อ (auto = cascade, wave = ในชุดเดิม)
       });
@@ -412,15 +414,108 @@ export function runPool({ mode = "wave", max = CONFIG.concurrency, worker = "poo
   return { ok: true, started: true, mode, max };
 }
 
-// dispatch หนึ่ง task แบบ async (claim->running->run->done/failed). ใช้โดย UI ปุ่ม ▶
+// ---------- Verify Gate (ADR-O-001 / SPEC--VERIFY-GATE) ----------
+function reviewerTierFor(workerModel) {
+  const map = CONFIG.review?.reviewerByTier || {};
+  const key = (typeof workerModel === "string" && workerModel.startsWith("ollama:")) ? "ollama" : workerModel;
+  return map[key] || "sonnet";
+}
+export function requireReviewFor(t) {
+  if (!CONFIG.review?.enabled) return false;
+  if (typeof t.requireReview === "boolean") return t.requireReview;
+  const m = modelFor(t, loadState());
+  if (CONFIG.review?.skipForDraft && typeof m === "string" && m.startsWith("ollama:")) return false;
+  return CONFIG.review?.requireReviewDefault !== false;
+}
+function parseVerdict(text) {
+  if (!text) return null;
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try { const o = JSON.parse(m[0]); return o.verdict ? o : null; } catch { return null; }
+}
+function buildReviewPrompt(t, output) {
+  const s = scopeFor(t);
+  const docs = s.docs.length ? s.docs.map((d) => `- ${d}`).join("\n") : "(none)";
+  return [
+    `คุณคือ reviewer อิสระ ตรวจ output ของ task เทียบ acceptance อย่างเข้มงวด — พยายามหาข้อผิดก่อน ไม่ใช่หาเหตุผลให้ผ่าน. ไม่มั่นใจให้ fail.`, ``,
+    `# Task ${t.id}: ${t.title}`,
+    `## Acceptance (เกณฑ์ผ่าน)`, t.accept, ``,
+    `## บริบทอ้างอิง (อ่านได้ถ้าจำเป็น)`, docs, ``,
+    `## OUTPUT ที่ worker ผลิต (ตรวจอันนี้)`, "```", String(output || "(ว่าง)").slice(-6000), "```", ``,
+    `## ตอบเป็น JSON ล้วนเท่านั้น (ห้ามมีข้อความนอก JSON) ตาม schema:`,
+    `{"verdict":"pass|fail","score":0,"issues":[{"severity":"critical|major|minor","area":"correctness|security|nfr|style","detail":"...","fix":"..."}],"summary":"หนึ่งบรรทัด"}`, ``,
+    `เกณฑ์: ถ้ามีข้อผิดที่ทำให้ไม่ผ่าน acceptance หรือเป็นของปลอม/ใช้ไม่ได้จริง (เช่น GitHub Action ที่ไม่มีอยู่จริง) -> verdict=fail + issue severity critical.`,
+  ].join("\n");
+}
+function runReview(t, workerModel, worker) {
+  return new Promise((res) => {
+    const reviewerModel = reviewerTierFor(workerModel);
+    const output = readLog(t.id)?.text || "";
+    const logFile = join(PATHS.LOGS, `${t.id}.${worker}.review.log`);
+    const ws = createWriteStream(logFile, { flags: "w" });
+    const mode = getAuthMode();
+    ws.write(`# REVIEW ${t.id} · reviewer=${reviewerModel} (worker=${workerModel}) · auth=${mode} · ${new Date().toISOString()}\n\n`);
+    const args = [...CONFIG.executor.baseArgs, "--model", reviewerModel, ...CONFIG.executor.extraArgs];
+    const child = spawn(CONFIG.executor.command, args, { cwd: PATHS.ROOT, shell: true, env: childEnv(mode) });
+    child.stdin.write(buildReviewPrompt(t, output)); child.stdin.end();   // prompt ทาง stdin กัน shell metachar
+    let lineBuf = "", resultLine = null;
+    child.stdout.on("data", (d) => { ws.write(d); lineBuf += d; let i; while ((i = lineBuf.indexOf("\n")) >= 0) { const ln = lineBuf.slice(0, i); lineBuf = lineBuf.slice(i + 1); if (ln.includes('"type":"result"')) resultLine = ln; } });
+    child.stderr.on("data", (d) => ws.write(d));
+    child.on("close", (code) => {
+      let text = "", cost = 0, u = {};
+      if (resultLine) { try { const o = JSON.parse(resultLine); text = o.result || ""; cost = o.total_cost_usd || 0; u = o.usage || {}; } catch { /* */ } }
+      recordUsage({ id: t.id + "#review", model: reviewerModel, mode, cost, inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, cache: (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) });
+      if (code !== 0 || !text) { ws.write(`\n# ⚠ reviewer ใช้ไม่ได้ (exit ${code}) — ไม่ auto-pass (fail-safe)\n`); ws.end(); return res({ ran: false }); }
+      const v = parseVerdict(text);
+      if (!v) { ws.write(`\n# ⚠ verdict UNPARSEABLE -> fail-safe (needs-rework)\n`); ws.end(); return res({ ran: true, pass: false, issues: [{ severity: "major", area: "review", detail: "reviewer output ไม่เป็น JSON" }], summary: "unparseable" }); }
+      const failOn = CONFIG.review?.failOn || "critical";
+      const issues = v.issues || [];
+      const bad = issues.some((i) => i.severity === "critical" || (failOn === "major" && i.severity === "major"));
+      const pass = v.verdict === "pass" && !bad;
+      ws.write(`\n\n# verdict: ${v.verdict} · ${issues.length} issues · pass=${pass} · ${v.summary || ""}\n`);
+      ws.end();
+      res({ ran: true, pass, verdict: v.verdict, issues, summary: v.summary, reviewerModel });
+    });
+    child.on("error", (e) => { ws.write("\n# reviewer spawn error: " + e + "\n"); ws.end(); res({ ran: false }); });
+  });
+}
+function formatReworkNote(review, attempt) {
+  const lines = (review.issues || []).map((i) => `- [${i.severity || "?"}] ${i.area || ""}: ${i.detail || ""}${i.fix ? " → " + i.fix : ""}`);
+  return `## ROUND ${attempt} — reviewer ตีกลับ แก้ตาม issues ให้ครบ:\n${lines.join("\n")}\n(reviewer summary: ${review.summary || ""})`;
+}
+
+// produce -> (review) -> done | needs-rework. จัดการ state เองทั้งหมด. ใช้โดย dispatchOne และ runPool
+export async function executeWithReview(t, model, worker) {
+  let round = 0, reworkNote = null;
+  while (true) {
+    const r = await runAgent(t, model, worker, { reworkNote });
+    if (!r.ok) { setStatus(t.id, "failed"); return "failed"; }              // empty/blocked/exit≠0
+    if (!requireReviewFor(t)) { setStatus(t.id, "done"); return "done"; }
+    setStatus(t.id, "reviewing");
+    const review = await runReview(t, model, worker);
+    if (!review.ran) return "reviewing";                                    // reviewer ใช้ไม่ได้ -> ค้าง (lease reclaim ภายหลัง)
+    if (review.pass) { setStatus(t.id, "done"); return "done"; }
+    if (CONFIG.review?.autoRework && round < (CONFIG.review?.maxReworkRounds || 0)) {
+      round++;
+      reworkNote = formatReworkNote(review, round + 1);
+      setStatus(t.id, "running", { worker, claimedAt: now() });
+      continue;
+    }
+    setStatus(t.id, "needs-rework");
+    return "needs-rework";
+  }
+}
+
+// dispatch หนึ่ง task แบบ async (claim->running->produce->review->done/needs-rework). ใช้โดย UI ปุ่ม ▶
 export function dispatchOne(id, worker = "ui") {
   const t = byId(id); if (!t) return { ok: false, error: `ไม่พบ task ${id}` };
+  const cur = loadState().tasks[id]?.status;
+  if (["needs-rework", "failed", "reviewing"].includes(cur)) setStatus(id, "todo"); // re-dispatch
   const c = claim(id, worker);
   if (!c.ok) return c;
   const model = c.model;
   setStatus(id, "running", { worker, claimedAt: now() });
-  // ทำงานเบื้องหลัง — UI poll /api/state เห็นสถานะเปลี่ยนเอง
-  runAgent(t, model, worker).then((r) => setStatus(id, r.ok ? "done" : "failed"));
+  executeWithReview(t, model, worker);   // ทำงานเบื้องหลัง + จัดการ review/state เอง
   return { ok: true, task: id, model, dispatched: true };
 }
 
