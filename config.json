@@ -69,6 +69,17 @@
     "reviewerByTier": { "ollama": "sonnet", "haiku": "sonnet", "sonnet": "opus", "opus": "opus" },
     "_comment": "Verify Gate (ADR-O-001). reviewer อิสระตรวจ output เทียบ acceptance ก่อน done. skipForDraft=false -> รีวิวงาน local ด้วย (จับ draft ผิด). failOn: critical|major."
   },
+  "store": {
+    "knowledge": "file",
+    "_comment": "ADR-O-003: execution core = file เสมอ (zero-dep). knowledge = 'file' (default) | 'genesisdb' (N-API anti-error loop). L0 = failure write-only -> brain/failures.jsonl. เปลี่ยนโหมดต้อง restart.",
+    "genesisdb": {
+      "bindingPath": "G:/GenesisBlock_Dev/GenesisBlock/index.js",
+      "path": "",
+      "vectorDim": 1024,
+      "embedModel": "bge-m3:latest",
+      "ollamaHost": "http://127.0.0.1:11434"
+    }
+  },
   "scope": {
     "_comment": "POLA: parent ประกาศ scope ต่อ task. ดีฟอลต์ตาม phase, override ได้ที่ task.scope ใน backlog. tier 'orchestrator-only' จะไม่เข้า worker prompt เด็ดขาด.",
     "default": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 8000 },
