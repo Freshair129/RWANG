@@ -1,6 +1,6 @@
 # SPEC — Verify Gate (per-task code review)
 
-> **Status:** Proposed (ยังไม่ implement — เอกสารนี้กำกับการสร้าง)
+> **Status:** Approved (2026-06-21, USER/Boss · RUNBOOK Gate 2) — implement แล้วใน engine.mjs
 > **Scope:** orchestration/ (multi-agent task orchestrator) — ไม่ใช่ตัวผลิตภัณฑ์ G-Maiden
 > **Governed by:** [ADR-O-001](ADR-O-001--verify-gate.md)
 > **อ้างอิง:** `docs/CONCEPT--SUBAGENT-CONTEXT-SCOPING.md` (reviewer scoping),

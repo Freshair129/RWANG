@@ -9,6 +9,7 @@
  *   node orchestrator.mjs run [--max N] [--execute] [-w name]
  */
 import * as E from "./engine.mjs";
+import { runAutonomous, stopAutonomous } from "./auto-wave.mjs";
 
 const ACTIVE = E.ACTIVE;
 
@@ -86,6 +87,41 @@ async function cmdRun({ max, execute, worker }) {
   console.log("\n  รอบนี้จบ — ดู status\n");
 }
 
+async function cmdAutoWave({ maxWaves, supervisorModel, concurrency, dryRun }) {
+  E.detectCycle();
+  if (dryRun) {
+    const snap = E.snapshot();
+    const done = new Set(snap.tasks.filter((t) => t.status === "done").map((t) => t.id));
+    const remaining = new Set(snap.tasks.filter((t) => t.status !== "done").map((t) => t.id));
+    const planned = [];
+    let wave = 0;
+    while (remaining.size) {
+      const batch = [...remaining].map(E.byId).filter((t) => (t.deps || []).every((d) => done.has(d)));
+      if (!batch.length) break;
+      planned.push(batch.map((t) => t.id));
+      for (const t of batch) { done.add(t.id); remaining.delete(t.id); }
+      wave++;
+    }
+    console.log(`\n  AUTO-WAVE DRY-RUN — supervisor=${supervisorModel || "(default)"}  concurrency=${concurrency}\n`);
+    planned.forEach((ids, i) => console.log(`  Wave ${i + 1}: ${ids.join(", ")}`));
+    console.log(`\n  ${planned.length} waves คาดว่าจะรัน. ใช้ \`node orchestrator.mjs auto-wave\` (ไม่มี --dry-run) เพื่อรันจริง.\n`);
+    return;
+  }
+  console.log(`\n  🤖 AUTO-WAVE  —  supervisor=${supervisorModel || "(default)"}  max-waves=${maxWaves}  concurrency=${concurrency}\n`);
+  console.log(`  รัน wave -> supervisor review -> ผ่านก็ wave ถัดไป. กด Ctrl+C ในระหว่างทาง (หรือ \`node orchestrator.mjs stop\` จาก terminal อื่น) เพื่อหยุด.\n`);
+  const opts = { maxWaves, concurrency };
+  if (supervisorModel) opts.supervisorModel = supervisorModel;
+  opts.onLog = (line) => console.log("  " + line);
+  const res = await runAutonomous(opts);
+  console.log(`\n  === DONE ===`);
+  console.log(`  waves run: ${res.waves.length}`);
+  if (res.completedAt != null) console.log(`  ✅ all tasks done at wave ${res.completedAt}`);
+  if (res.holdAt != null) console.log(`  🛑 supervisor HOLD at wave ${res.holdAt + 1}`);
+  if (res.stoppedAt != null) console.log(`  ⏸ stopped at wave ${res.stoppedAt + 1}`);
+  if (res.exhaustedAt != null) console.log(`  ⚠ max-waves reached`);
+  console.log(`  report: ${res.reportFile}\n`);
+}
+
 const [cmd, a1, a2] = process.argv.slice(2);
 try {
   switch (cmd) {
@@ -99,6 +135,13 @@ try {
     case "assign": out(E.assign(a1, a2)); console.log(`→ ${a1} model=${a2}`); break;
     case "reset": E.reset(); console.log("state ล้างกลับ todo ทั้งหมด"); break;
     case "run": await cmdRun({ max: Number(arg(["--max"], 0)) || 0, execute: process.argv.includes("--execute"), worker: arg(["-w", "--worker"], "worker") }); break;
-    default: console.log("commands: status | next | graph [--mermaid] | claim <id> [-w name] | release|done|fail <id> | assign <id> <model> | run [--max N] [--execute] | reset");
+    case "auto-wave": await cmdAutoWave({
+      maxWaves: Number(arg(["--max-waves"], 0)) || 100,
+      supervisorModel: arg(["--supervisor", "--reviewer"], null),
+      concurrency: Number(arg(["--max", "--concurrency"], 0)) || E.CONFIG.concurrency,
+      dryRun: process.argv.includes("--dry-run"),
+    }); break;
+    case "stop": stopAutonomous(); console.log("→ pool stop requested"); break;
+    default: console.log("commands: status | next | graph [--mermaid] | claim <id> [-w name] | release|done|fail <id> | assign <id> <model> | run [--max N] [--execute] | auto-wave [--max-waves N] [--supervisor MODEL] [--max N] [--dry-run] | stop | reset");
   }
 } catch (e) { console.error("ERROR: " + e.message); process.exitCode = 1; }

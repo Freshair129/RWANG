@@ -2,7 +2,7 @@
 
 > **Series:** ADR-O (orchestrator-scoped — แยกจาก ADR-01..07 ของตัวผลิตภัณฑ์ G-Maiden ใน
 > `docs/03-Technical-Design-Document.md`)
-> **Status:** Proposed
+> **Status:** Approved (2026-06-21, USER/Boss · RUNBOOK Gate 3)
 > **Date:** 2026-06-21
 > **Spec:** [SPEC--VERIFY-GATE.md](SPEC--VERIFY-GATE.md)
 
