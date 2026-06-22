@@ -400,13 +400,20 @@
     {
       "id": "G5.2",
       "title": "Meta dataset + advice engine (item แก้ทาง)",
-      "type": "architecture",
+      "type": "code",
       "phase": "5",
       "deps": [
         "G5.1"
       ],
       "est": 3,
-      "accept": "คำแนะนำตรงบริบทเกมจริง"
+      "accept": "build_prompt() ใน master.rs ใส่คำแนะนำ counter-item จาก dataset ได้ถูกต้อง (เช่น enemy PA → แนะ MKB, enemy magic burst → แนะ BKB/Pipe)",
+      "scope": {
+        "needs": [
+          "src-tauri/src/master.rs — G-Master module, build_prompt() at line 36, Advice struct at line 25",
+          "src-tauri/data/item_counters.json — meta dataset hero/item counters (สร้างแล้ว)"
+        ],
+        "scaffold": "งานนี้ให้สร้างไฟล์ใหม่ src-tauri/src/counter_advice.rs เท่านั้น — ห้ามแก้ไข master.rs\n\nตัวอย่างโครงสร้างไฟล์ใหม่:\n```rust\n// src-tauri/src/counter_advice.rs\nuse serde_json::Value;\n\nconst COUNTERS_JSON: &str = include_str!(\"../data/item_counters.json\");\n\npub fn counter_advice_text(enemies: &[String]) -> String {\n    // TODO: parse COUNTERS_JSON, match enemies, return advice string\n    // example output: \"ศัตรูมี PA → ซื้อ MKB | magic burst → BKB/Pipe\"\n    todo!()\n}\n```\n\nเมื่อเสร็จแล้วให้รายงาน:\n1. ฟังก์ชัน counter_advice_text() ทำงานอะไร\n2. ตัวอย่าง input: enemies=[\"phantom_assassin\"] → output คืออะไร\n3. ตัวอย่าง input: enemies=[\"lina\",\"storm_spirit\"] → output คืออะไร"
+      }
     },
     {
       "id": "G5.3",

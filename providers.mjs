@@ -6,9 +6,9 @@
  *
  * Flow: task.type → routing[type] → role → roles[role].preferred → first enabled & capable provider
  */
-import { existsSync, mkdirSync, createWriteStream, readFileSync } from "node:fs";
-import { spawn } from "node:child_process";
-import { join } from "node:path";
+import { existsSync, mkdirSync, createWriteStream, readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { join, resolve, isAbsolute } from "node:path";
 
 // ─── capability tags ───
 export const CAPS = Object.freeze({
@@ -209,6 +209,7 @@ function runClaude(t, model, worker, prompt, config, paths, opts) {
 //  OLLAMA — HTTP streaming (/api/chat)
 // ─────────────────────────────────────────────
 async function runOllama(t, model, worker, prompt, config, paths, opts) {
+  if (config.providers.ollama?.tools) return runOllamaTools(t, model, worker, prompt, config, paths, opts);
   if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
   const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
   const ws = createWriteStream(logFile, { flags: "w" });
@@ -260,6 +261,160 @@ async function runOllama(t, model, worker, prompt, config, paths, opts) {
     ok: good, blocked, empty, logFile, code: good ? 0 : 1, provider: "ollama",
     usage: { cost: 0, inTok, outTok, cache: 0 },
   };
+}
+
+// ─────────────────────────────────────────────
+//  OLLAMA TOOL LOOP — function-calling mode
+// ─────────────────────────────────────────────
+const OLLAMA_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "read_file",
+      description: "Read the full content of a file on disk.",
+      parameters: { type: "object", properties: { path: { type: "string", description: "Absolute or project-relative path" } }, required: ["path"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "write_file",
+      description: "Write (overwrite) content to a file. Creates parent directories if needed.",
+      parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_dir",
+      description: "List files and subdirectories at a path.",
+      parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "bash",
+      description: "Run a shell command in the project root directory. Avoid long-running processes.",
+      parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
+    },
+  },
+];
+
+function execOllamaTool(name, args, root) {
+  // normalize model output: /G:/foo → G:/foo (model sometimes prepends / on Windows paths)
+  const safePath = (p) => { const c = p.replace(/^\/([A-Za-z]:)/, "$1"); return isAbsolute(c) ? c : resolve(root, c); };
+  try {
+    switch (name) {
+      case "read_file": {
+        const p = safePath(args.path);
+        if (!existsSync(p)) return `ERROR: file not found: ${p}`;
+        const content = readFileSync(p, "utf8");
+        return content.length > 12000 ? content.slice(0, 12000) + "\n... (truncated)" : content;
+      }
+      case "write_file": {
+        const p = safePath(args.path);
+        // Safety: refuse to silently shrink an existing file — model must read first then write full merged content
+        if (existsSync(p)) {
+          const existing = readFileSync(p, "utf8");
+          if (existing.length > 300 && args.content.length < existing.length * 0.5) {
+            return `ERROR: refusing to overwrite ${p} (existing ${existing.length} chars) with much smaller content (${args.content.length} chars). Use read_file first, then write the complete merged file.`;
+          }
+        }
+        const dir = p.slice(0, p.lastIndexOf("/") < 0 ? p.lastIndexOf("\\") : p.lastIndexOf("/")) || ".";
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+        writeFileSync(p, args.content, "utf8");
+        return `OK: wrote ${args.content.length} chars to ${p}`;
+      }
+      case "list_dir": {
+        const p = safePath(args.path);
+        if (!existsSync(p)) return `ERROR: path not found: ${p}`;
+        const entries = readdirSync(p).map((n) => {
+          try { return statSync(join(p, n)).isDirectory() ? n + "/" : n; } catch { return n; }
+        });
+        return entries.join("\n") || "(empty)";
+      }
+      case "bash": {
+        // use bash explicitly so Unix commands (find, grep, ls) work on Windows
+        const r = spawnSync("bash", ["-c", args.command], { cwd: root, timeout: 30000, encoding: "utf8" });
+        const out = ((r.stdout || "") + (r.stderr || "")).slice(0, 8000);
+        return out || `(exit ${r.status ?? r.error?.message ?? "?"})`;
+      }
+      default:
+        return `ERROR: unknown tool ${name}`;
+    }
+  } catch (e) {
+    return `ERROR: ${e.message}`;
+  }
+}
+
+async function runOllamaTools(t, model, worker, prompt, config, paths, opts) {
+  if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
+  const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
+  const ws = createWriteStream(logFile, { flags: "w" });
+  const prov = config.providers.ollama;
+  const host = (prov.host || "http://127.0.0.1:11434").replace(/\/$/, "");
+  const profile = opts.profile || prov.defaultToolsProfile || prov.defaultProfile || "balanced";
+  const options = (prov.profiles || {})[profile] || {};
+  ws.write(`# ${t.id} · ${worker} · ollama:${model} · provider=ollama(tools) · profile=${profile} · started ${new Date().toISOString()}\n# ● ollama ${model} (no quota / $0)\n\n`);
+
+  const messages = [{ role: "user", content: prompt }];
+  let inTok = 0, outTok = 0, acc = "", blocked = false, ok = false;
+  const maxIter = prov.toolsMaxIter || 20;
+
+  try {
+    for (let iter = 0; iter < maxIter; iter++) {
+      const payload = { model, stream: false, tools: OLLAMA_TOOLS, messages, options };
+      if (typeof prov.think === "boolean") payload.think = prov.think;
+      const resp = await fetch(`${host}/api/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) { const err = await resp.text(); throw new Error(`ollama HTTP ${resp.status}: ${err.slice(0, 200)}`); }
+      const o = await resp.json();
+      inTok += o.prompt_eval_count || 0;
+      outTok += o.eval_count || 0;
+
+      const msg = o.message || {};
+      messages.push(msg);
+
+      // log thinking if present
+      if (msg.thinking) ws.write(`# ── thinking (iter ${iter}) ──\n${msg.thinking}\n\n`);
+
+      if (msg.tool_calls?.length) {
+        for (const tc of msg.tool_calls) {
+          const fn = tc.function?.name || tc.name;
+          const fnArgs = tc.function?.arguments ?? tc.arguments ?? {};
+          const parsed = typeof fnArgs === "string" ? JSON.parse(fnArgs) : fnArgs;
+          ws.write(`# → tool: ${fn}(${JSON.stringify(parsed)})\n`);
+          const result = execOllamaTool(fn, parsed, paths.ROOT);
+          ws.write(`# ← ${result.slice(0, 300)}${result.length > 300 ? "..." : ""}\n\n`);
+          messages.push({ role: "tool", content: result });
+        }
+      } else {
+        // no more tool calls — final answer
+        acc = msg.content || "";
+        // Qwen3 sometimes returns only thinking with empty content — use thinking as fallback
+        if (!acc && msg.thinking) { acc = msg.thinking; ws.write("# (thinking used as answer fallback)\n"); }
+        ok = true;
+        break;
+      }
+    }
+    if (!ok) ws.write(`\n# ⚠ hit maxIter (${maxIter}) without final answer\n`);
+    if (acc) ws.write(acc);
+    if (/^[\s>*-]*BLOCKED:/m.test(acc)) { blocked = true; ws.write(`\n# ⚠ ESCALATION: worker ตอบ BLOCKED\n`); }
+    const empty = ok && !acc.trim();
+    if (empty) ws.write(`\n# ⚠ ไม่มี answer/content — ถือว่าไม่สำเร็จ\n`);
+    ws.write(`\n\n# done · ${inTok} in / ${outTok} out tokens (local, $0) · profile=${profile}\n`);
+    ws.end();
+    const good = ok && !blocked && !empty;
+    return { ok: good, blocked, empty, logFile, code: good ? 0 : 1, provider: "ollama",
+      usage: { cost: 0, inTok, outTok, cache: 0 } };
+  } catch (e) {
+    ws.write(`\n# ollama error: ${e.message}\n`);
+    ws.end();
+    return { ok: false, logFile, code: 1, provider: "ollama", usage: { cost: 0, inTok, outTok, cache: 0 } };
+  }
 }
 
 // ─────────────────────────────────────────────

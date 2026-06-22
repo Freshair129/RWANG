@@ -228,7 +228,7 @@ export function scopeFor(task) {
     docs, needs: own.needs || [], excludes: own.excludes || [],
     budgetTokens: own.budgetTokens || byPhase.budgetTokens || base.budgetTokens || 8000,
     scaffold: own.scaffold || null,
-    profile: own.profile || CONFIG.ollama?.defaultProfile || "balanced",
+    profile: own.profile || (CONFIG.providers?.ollama?.tools ? CONFIG.providers?.ollama?.defaultToolsProfile : CONFIG.providers?.ollama?.defaultProfile) || "balanced",
   };
 }
 
@@ -253,7 +253,13 @@ function groundedBlock(grounded) {
 }
 
 // provider groups: subprocess agents get doc paths, http-only agents get inline rules
+// ollama is promoted to full-agent when tools:true (can read files directly)
 const TEXT_ONLY_PROVIDERS = new Set(["ollama", "openrouter"]);
+function isTextOnly(provider) {
+  if (!TEXT_ONLY_PROVIDERS.has(provider)) return false;
+  if (provider === "ollama" && CONFIG.providers?.ollama?.tools) return false;
+  return true;
+}
 
 export function buildPrompt(t, model, provider = "claude", reworkNote = null, pastMistakes = null, grounded = null) {
   const s = scopeFor(t);
@@ -270,7 +276,7 @@ export function buildPrompt(t, model, provider = "claude", reworkNote = null, pa
   if (pm) head.push(pm, ``);
   const gb = groundedBlock(grounded);
   if (gb) head.push(gb, ``);
-  if (TEXT_ONLY_PROVIDERS.has(provider)) {
+  if (isTextOnly(provider)) {
     const p = [...head];
     if (s.needs.length) p.push(`## บริบทที่เกี่ยวข้อง`, s.needs.map((n) => `- ${n}`).join("\n"), ``);
     if (s.scaffold) p.push(`## โครงเริ่มต้น (เติมไส้ในให้สมบูรณ์ — scaffold-first)`, "```", s.scaffold, "```", ``);
@@ -278,9 +284,17 @@ export function buildPrompt(t, model, provider = "claude", reworkNote = null, pa
       `อย่าอ้าง/โหลดไฟล์เอกสารทั้งไฟล์ (โมเดลเล็กจะเสียสมาธิ) — ทำตาม acceptance + บริบทด้านบนเท่านั้น.`);
     return p.join("\n");
   }
-  // full-agent providers (claude, codex, antigravity): ชี้ path ให้ agent ไปอ่านเอง
+  // full-agent providers (claude, codex, antigravity, ollama+tools): ชี้ path ให้ agent ไปอ่านเอง
+  const ollamaHint = provider === "ollama" ? [
+    `## โครงสร้างโปรเจกต์ (G-Maiden)`,
+    `- ภาษาหลัก: Rust (src-tauri/src/) + React/TypeScript (src/src/)`,
+    `- stack: Tauri v2, Axum, SQLite`,
+    `- ไม่มีไฟล์ Python ในโปรเจกต์นี้`,
+    `- root = G:/G-Maiden`,
+    `- ใช้ tools (read_file, list_dir, bash, write_file) เพื่ออ่านและแก้ไขไฟล์จริงได้`, ``,
+  ] : [];
   const docs = s.docs.length ? s.docs.map((d) => `- ${d}`).join("\n") : "- (ไม่ระบุ — ถ้าต้องการบริบทเพิ่ม ให้ escalate ด้วย BLOCKED)";
-  const p = [...head, `## อ่านก่อนเริ่ม (scope ที่ parent อนุญาตเท่านั้น — POLA)`, docs];
+  const p = [...head, ...ollamaHint, `## อ่านก่อนเริ่ม (scope ที่ parent อนุญาตเท่านั้น — POLA)`, docs];
   if (s.excludes.length) p.push(`ห้ามแตะ/ดึง: ${s.excludes.join(", ")}`);
   if (s.scaffold) p.push(``, `## โครงเริ่มต้น`, "```", s.scaffold, "```");
   p.push(``, `## ข้อกำหนด`,
@@ -410,11 +424,35 @@ export function requireReviewFor(t) {
   }
   return CONFIG.review?.requireReviewDefault !== false;
 }
+function jsonEnd(s) {
+  // walk s from index 0, return index of matching closing } (handles strings correctly)
+  let depth = 0, inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (esc) { esc = false; continue; }
+    if (c === "\\" && inStr) { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === "{") depth++;
+    else if (c === "}") { if (--depth === 0) return i; }
+  }
+  return -1;
+}
 function parseVerdict(text) {
   if (!text) return null;
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return null;
-  try { const o = JSON.parse(m[0]); return o.verdict ? o : null; } catch { return null; }
+  // 1. prefer ```json ... ``` fenced block (models often wrap verdict in markdown)
+  const fence = text.match(/```(?:json)?\s*\n?(\{[\s\S]*?\})\s*\n?```/);
+  if (fence) {
+    try { const o = JSON.parse(fence[1]); if (o.verdict) return o; } catch {}
+  }
+  // 2. find every { working right-to-left; parse the first one that has a verdict key
+  const opens = [...text.matchAll(/\{/g)].map((m) => m.index);
+  for (let i = opens.length - 1; i >= 0; i--) {
+    const end = jsonEnd(text.slice(opens[i]));
+    if (end < 0) continue;
+    try { const o = JSON.parse(text.slice(opens[i], opens[i] + end + 1)); if (o.verdict) return o; } catch {}
+  }
+  return null;
 }
 function buildReviewPrompt(t, output) {
   const s = scopeFor(t);

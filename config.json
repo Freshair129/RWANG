@@ -23,16 +23,20 @@
     },
     "ollama": {
       "enabled": true,
-      "capabilities": ["text_gen"],
+      "capabilities": ["text_gen", "file_edit"],
       "transport": "http",
       "host": "http://127.0.0.1:11434",
       "think": false,
+      "tools": true,
+      "toolsMaxIter": 20,
       "defaultProfile": "balanced",
       "profiles": {
         "fast": { "temperature": 0.3, "num_predict": 2048 },
         "balanced": { "temperature": 0.4, "num_predict": 4096 },
-        "ui-heavy": { "temperature": 0.5, "num_predict": 8192 }
-      }
+        "ui-heavy": { "temperature": 0.5, "num_predict": 8192 },
+        "tools": { "temperature": 0.3, "num_predict": 8192 }
+      },
+      "defaultToolsProfile": "tools"
     },
     "codex": {
       "enabled": false,
@@ -72,7 +76,7 @@
     "coder": {
       "description": "Implementation, testing, integration — needs file access",
       "requires": ["file_edit"],
-      "preferred": ["claude:sonnet", "codex:o4-mini", "antigravity:default", "ollama:gemma4-rust-coder:latest"]
+      "preferred": ["claude:sonnet", "codex:o4-mini", "antigravity:default", "ollama:gemma4-rust-coder:latest", "ollama:qwen3.5:4b"]
     },
     "worker": {
       "description": "Scaffolding, config files, documentation — light work",
