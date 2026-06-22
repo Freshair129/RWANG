@@ -1,0 +1,383 @@
+/**
+ * G-Orch Provider Registry — role-based multi-agent dispatch
+ *
+ * Provider = ระบบ AI ที่รันได้ (Claude, Ollama, Codex, OpenRouter, Antigravity)
+ * Role     = บทบาท (architect, coder, reviewer, scout, worker) — ผูก capability + fallback chain
+ *
+ * Flow: task.type → routing[type] → role → roles[role].preferred → first enabled & capable provider
+ */
+import { existsSync, mkdirSync, createWriteStream, readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { join } from "node:path";
+
+// ─── capability tags ───
+export const CAPS = Object.freeze({
+  FILE_EDIT:     "file_edit",
+  SHELL_EXEC:    "shell_exec",
+  CODE_REVIEW:   "code_review",
+  TEXT_GEN:      "text_gen",
+  STREAMING:     "streaming",
+  VISION:        "vision",
+  LONG_CONTEXT:  "long_context",
+  SANDBOX:       "sandbox",
+});
+
+// ─── model string parsing ───
+// format: "provider:model" — e.g. "claude:opus", "ollama:gemma4", "openrouter:anthropic/claude-sonnet-4"
+// legacy bare names ("opus", "sonnet", "haiku") → claude:name for backward compat
+const KNOWN_PREFIXES = new Set(["claude", "ollama", "codex", "openrouter", "antigravity"]);
+
+export function parseModel(model) {
+  if (!model || typeof model !== "string") return null;
+  const idx = model.indexOf(":");
+  if (idx > 0) {
+    const prefix = model.slice(0, idx);
+    if (KNOWN_PREFIXES.has(prefix)) return { provider: prefix, model: model.slice(idx + 1) };
+    // "ollama:gemma4-rust-coder:latest" — colon in model name after provider
+    if (prefix === "ollama") return { provider: "ollama", model: model.slice(7) };
+  }
+  // legacy bare name → claude
+  return { provider: "claude", model };
+}
+
+// ─── resolve model for a role using fallback chain ───
+export function resolveForRole(roleName, config) {
+  const role = config.roles?.[roleName];
+  if (!role?.preferred?.length) return null;
+  for (const pref of role.preferred) {
+    const parsed = parseModel(pref);
+    if (!parsed) continue;
+    const provDef = config.providers?.[parsed.provider];
+    if (!provDef || provDef.enabled === false) continue;
+    const required = role.requires || [];
+    const caps = provDef.capabilities || [];
+    if (required.every((r) => caps.includes(r))) return { ...parsed, roleName };
+  }
+  return null;
+}
+
+// ─── provider health checks ───
+export async function checkHealth(providerName, config) {
+  const prov = config.providers?.[providerName];
+  if (!prov || prov.enabled === false) return { up: false, reason: "disabled" };
+  switch (providerName) {
+    case "ollama": return checkOllamaHealth(prov);
+    case "claude": return checkClaudeHealth(prov);
+    case "codex": return checkSubprocessHealth(prov, "codex");
+    case "openrouter": return checkOpenRouterHealth(prov);
+    case "antigravity": return checkSubprocessHealth(prov, "antigravity");
+    default: return { up: false, reason: "unknown provider" };
+  }
+}
+
+async function checkOllamaHealth(prov) {
+  const host = (prov.host || "http://127.0.0.1:11434").replace(/\/$/, "");
+  try {
+    const r = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(1500) });
+    if (!r.ok) return { up: false, reason: `HTTP ${r.status}` };
+    const j = await r.json();
+    return { up: true, models: (j.models || []).map((m) => m.name) };
+  } catch (e) { return { up: false, reason: e.message }; }
+}
+
+function checkClaudeHealth(prov) {
+  const cmd = prov.command || "claude";
+  return new Promise((res) => {
+    const child = spawn(cmd, ["--version"], { shell: true, timeout: 5000 });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.on("close", (code) => res(code === 0 ? { up: true, version: out.trim() } : { up: false, reason: `exit ${code}` }));
+    child.on("error", (e) => res({ up: false, reason: e.message }));
+  });
+}
+
+async function checkOpenRouterHealth(prov) {
+  const host = (prov.host || "https://openrouter.ai/api/v1").replace(/\/$/, "");
+  const key = prov.auth?.apiKey || process.env[prov.auth?.envKey || "OPENROUTER_API_KEY"];
+  if (!key) return { up: false, reason: "no API key" };
+  try {
+    const r = await fetch(`${host}/models`, {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    return r.ok ? { up: true } : { up: false, reason: `HTTP ${r.status}` };
+  } catch (e) { return { up: false, reason: e.message }; }
+}
+
+function checkSubprocessHealth(prov, name) {
+  const cmd = prov.command || name;
+  return new Promise((res) => {
+    const child = spawn(cmd, ["--version"], { shell: true, timeout: 5000 });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.on("close", (code) => res(code === 0 ? { up: true, version: out.trim() } : { up: false, reason: `exit ${code}` }));
+    child.on("error", (e) => res({ up: false, reason: `${name} not found: ${e.message}` }));
+  });
+}
+
+// ─── list all providers with status ───
+export function listProviders(config) {
+  const providers = config.providers || {};
+  return Object.entries(providers).map(([name, def]) => ({
+    name,
+    enabled: def.enabled !== false,
+    capabilities: def.capabilities || [],
+    transport: def.transport || "unknown",
+  }));
+}
+
+// ─── provider auth env ───
+export function childEnvFor(providerName, config) {
+  const env = { ...process.env };
+  const prov = config.providers?.[providerName];
+  if (!prov) return env;
+
+  if (providerName === "claude") {
+    const mode = prov.auth?.mode || "plan";
+    if (mode === "plan") {
+      delete env.ANTHROPIC_API_KEY;
+      delete env.ANTHROPIC_AUTH_TOKEN;
+    } else {
+      const k = prov.auth?.apiKey || process.env.ANTHROPIC_API_KEY;
+      if (k) env.ANTHROPIC_API_KEY = k;
+    }
+  } else if (prov.auth?.envKey) {
+    const k = prov.auth?.apiKey || process.env[prov.auth.envKey];
+    if (k) env[prov.auth.envKey] = k;
+  }
+  return env;
+}
+
+// ─── main dispatch ───
+export function runProvider(providerName, task, model, worker, prompt, config, paths, opts = {}) {
+  switch (providerName) {
+    case "claude":      return runClaude(task, model, worker, prompt, config, paths, opts);
+    case "ollama":      return runOllama(task, model, worker, prompt, config, paths, opts);
+    case "codex":       return runCodex(task, model, worker, prompt, config, paths, opts);
+    case "openrouter":  return runOpenRouter(task, model, worker, prompt, config, paths, opts);
+    case "antigravity": return runAntigravity(task, model, worker, prompt, config, paths, opts);
+    default:            return Promise.resolve({ ok: false, error: `unknown provider: ${providerName}`, code: -1 });
+  }
+}
+
+// ─────────────────────────────────────────────
+//  CLAUDE — subprocess (claude CLI)
+// ─────────────────────────────────────────────
+function runClaude(t, model, worker, prompt, config, paths, opts) {
+  return new Promise((res) => {
+    if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
+    const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
+    const prov = config.providers.claude;
+    const mode = prov.auth?.mode || "plan";
+    const ws = createWriteStream(logFile, { flags: "w" });
+    ws.write(`# ${t.id} · ${worker} · claude:${model} · auth=${mode} · started ${new Date().toISOString()}\n\n`);
+    const args = [...(prov.baseArgs || []), "--model", model, ...(prov.extraArgs || [])];
+    const child = spawn(prov.command || "claude", args, {
+      cwd: paths.ROOT, shell: true, env: childEnvFor("claude", config),
+    });
+    child.stdin.write(prompt); child.stdin.end();
+    let lineBuf = "", resultLine = null;
+    child.stdout.on("data", (d) => {
+      ws.write(d); lineBuf += d; let i;
+      while ((i = lineBuf.indexOf("\n")) >= 0) {
+        const ln = lineBuf.slice(0, i); lineBuf = lineBuf.slice(i + 1);
+        if (ln.includes('"type":"result"')) resultLine = ln;
+      }
+    });
+    child.stderr.on("data", (d) => ws.write(d));
+    child.on("close", (code) => {
+      let cost = 0, u = {}, blocked = false;
+      if (resultLine) {
+        try {
+          const o = JSON.parse(resultLine);
+          cost = o.total_cost_usd || 0; u = o.usage || {};
+          if (/^[\s>*-]*BLOCKED:/m.test(o.result || "")) blocked = true;
+        } catch { /* */ }
+      }
+      if (blocked) ws.write(`\n# ⚠ ESCALATION: agent ตอบ BLOCKED — surface ไม่ใช่เดาเงียบ\n`);
+      ws.write(`\n# exit ${code}\n`); ws.end();
+      res({
+        ok: code === 0 && !blocked, blocked, logFile, code, provider: "claude",
+        usage: { cost, inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, cache: (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) },
+      });
+    });
+    child.on("error", (e) => { ws.write("\n# spawn error: " + e + "\n"); ws.end(); res({ ok: false, logFile, code: -1, provider: "claude", usage: {} }); });
+  });
+}
+
+// ─────────────────────────────────────────────
+//  OLLAMA — HTTP streaming (/api/chat)
+// ─────────────────────────────────────────────
+async function runOllama(t, model, worker, prompt, config, paths, opts) {
+  if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
+  const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
+  const ws = createWriteStream(logFile, { flags: "w" });
+  const prov = config.providers.ollama;
+  ws.write(`# ${t.id} · ${worker} · ollama:${model} · provider=ollama(local) · started ${new Date().toISOString()}\n# ● ollama ${model} (no quota / $0)\n\n`);
+  const host = (prov.host || "http://127.0.0.1:11434").replace(/\/$/, "");
+  const profile = opts.profile || prov.defaultProfile || "balanced";
+  const options = (prov.profiles || {})[profile] || {};
+  let inTok = 0, outTok = 0, ok = false, acc = "", blocked = false, empty = false;
+  try {
+    const payload = {
+      model, stream: true, options,
+      messages: [{ role: "user", content: prompt }],
+    };
+    if (typeof prov.think === "boolean") payload.think = prov.think;
+    const resp = await fetch(`${host}/api/chat`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok || !resp.body) throw new Error(`ollama HTTP ${resp.status}`);
+    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    let inThink = false, sawContent = false;
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true }); let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const ln = buf.slice(0, i); buf = buf.slice(i + 1); if (!ln.trim()) continue;
+        let o; try { o = JSON.parse(ln); } catch { continue; }
+        const think = o.message?.thinking, content = o.message?.content;
+        if (think) { if (!inThink) { ws.write("# ── reasoning (thinking) ──\n"); inThink = true; } ws.write(think); }
+        if (content) {
+          if (inThink && !sawContent) ws.write("\n\n# ── answer ──\n");
+          sawContent = true; ws.write(content); acc += content;
+          if (acc.length > 6000) acc = acc.slice(-6000);
+        }
+        if (o.error) ws.write(`\n# ollama error: ${o.error}\n`);
+        if (o.done) { inTok = o.prompt_eval_count || 0; outTok = o.eval_count || 0; ok = true; }
+      }
+    }
+    if (/^[\s>*-]*BLOCKED:/m.test(acc)) { blocked = true; ws.write(`\n# ⚠ ESCALATION: worker ตอบ BLOCKED\n`); }
+    if (ok && !acc.trim()) { empty = true; ws.write(`\n# ⚠ ไม่มี answer/content — ถือว่าไม่สำเร็จ\n`); }
+    ws.write(`\n\n# done · ${inTok} in / ${outTok} out tokens (local, $0) · profile=${profile}${empty ? " · EMPTY" : ""}\n`);
+  } catch (e) {
+    ws.write(`\n# ollama error: ${e.message}\n# ตรวจว่า ollama รันอยู่ (ollama serve) และมี model '${model}' (ollama pull ${model})\n`);
+  }
+  ws.end();
+  const good = ok && !blocked && !empty;
+  return {
+    ok: good, blocked, empty, logFile, code: good ? 0 : 1, provider: "ollama",
+    usage: { cost: 0, inTok, outTok, cache: 0 },
+  };
+}
+
+// ─────────────────────────────────────────────
+//  CODEX — subprocess (codex CLI, OpenAI)
+// ─────────────────────────────────────────────
+function runCodex(t, model, worker, prompt, config, paths, opts) {
+  return new Promise((res) => {
+    if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
+    const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
+    const prov = config.providers.codex;
+    const ws = createWriteStream(logFile, { flags: "w" });
+    ws.write(`# ${t.id} · ${worker} · codex:${model} · started ${new Date().toISOString()}\n\n`);
+    const args = [...(prov.baseArgs || []), "--model", model, ...(prov.extraArgs || [])];
+    const child = spawn(prov.command || "codex", args, {
+      cwd: paths.ROOT, shell: true, env: childEnvFor("codex", config),
+    });
+    child.stdin.write(prompt); child.stdin.end();
+    let stdout = "";
+    child.stdout.on("data", (d) => { ws.write(d); stdout += d; });
+    child.stderr.on("data", (d) => ws.write(d));
+    child.on("close", (code) => {
+      const blocked = /^[\s>*-]*BLOCKED:/m.test(stdout);
+      ws.write(`\n# exit ${code}\n`); ws.end();
+      res({
+        ok: code === 0 && !blocked, blocked, logFile, code, provider: "codex",
+        usage: { cost: 0, inTok: 0, outTok: 0, cache: 0 },
+      });
+    });
+    child.on("error", (e) => { ws.write("\n# spawn error: " + e + "\n"); ws.end(); res({ ok: false, logFile, code: -1, provider: "codex", usage: {} }); });
+  });
+}
+
+// ─────────────────────────────────────────────
+//  OPENROUTER — HTTP (OpenAI-compatible API)
+// ─────────────────────────────────────────────
+async function runOpenRouter(t, model, worker, prompt, config, paths, opts) {
+  if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
+  const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
+  const ws = createWriteStream(logFile, { flags: "w" });
+  const prov = config.providers.openrouter;
+  const host = (prov.host || "https://openrouter.ai/api/v1").replace(/\/$/, "");
+  const apiKey = prov.auth?.apiKey || process.env[prov.auth?.envKey || "OPENROUTER_API_KEY"];
+  ws.write(`# ${t.id} · ${worker} · openrouter:${model} · started ${new Date().toISOString()}\n\n`);
+  if (!apiKey) {
+    ws.write(`# ⚠ no API key for OpenRouter — set OPENROUTER_API_KEY or config.providers.openrouter.auth.apiKey\n`);
+    ws.end();
+    return { ok: false, logFile, code: -1, provider: "openrouter", usage: {} };
+  }
+  let acc = "", inTok = 0, outTok = 0, ok = false, blocked = false;
+  try {
+    const resp = await fetch(`${host}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://github.com/Freshair129/G-Maiden",
+        "X-Title": "G-Maiden Orchestrator",
+      },
+      body: JSON.stringify({
+        model,
+        stream: true,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true }); let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const ln = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!ln.startsWith("data: ") || ln === "data: [DONE]") continue;
+        let chunk; try { chunk = JSON.parse(ln.slice(6)); } catch { continue; }
+        const delta = chunk.choices?.[0]?.delta?.content || "";
+        if (delta) { ws.write(delta); acc += delta; }
+        if (chunk.usage) { inTok = chunk.usage.prompt_tokens || 0; outTok = chunk.usage.completion_tokens || 0; }
+      }
+    }
+    ok = true;
+    if (/^[\s>*-]*BLOCKED:/m.test(acc)) { blocked = true; ws.write(`\n# ⚠ ESCALATION: agent ตอบ BLOCKED\n`); }
+    ws.write(`\n\n# done · ${inTok} in / ${outTok} out tokens · openrouter:${model}\n`);
+  } catch (e) {
+    ws.write(`\n# openrouter error: ${e.message}\n`);
+  }
+  ws.end();
+  const good = ok && !blocked && !!acc.trim();
+  return {
+    ok: good, blocked, logFile, code: good ? 0 : 1, provider: "openrouter",
+    usage: { cost: 0, inTok, outTok, cache: 0 },
+  };
+}
+
+// ─────────────────────────────────────────────
+//  ANTIGRAVITY — subprocess
+// ─────────────────────────────────────────────
+function runAntigravity(t, model, worker, prompt, config, paths, opts) {
+  return new Promise((res) => {
+    if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
+    const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
+    const prov = config.providers.antigravity;
+    const ws = createWriteStream(logFile, { flags: "w" });
+    ws.write(`# ${t.id} · ${worker} · antigravity:${model} · started ${new Date().toISOString()}\n\n`);
+    const args = [...(prov.baseArgs || []), ...(model && model !== "default" ? ["--model", model] : []), ...(prov.extraArgs || [])];
+    const child = spawn(prov.command || "antigravity", args, {
+      cwd: paths.ROOT, shell: true, env: childEnvFor("antigravity", config),
+    });
+    child.stdin.write(prompt); child.stdin.end();
+    let stdout = "";
+    child.stdout.on("data", (d) => { ws.write(d); stdout += d; });
+    child.stderr.on("data", (d) => ws.write(d));
+    child.on("close", (code) => {
+      const blocked = /^[\s>*-]*BLOCKED:/m.test(stdout);
+      ws.write(`\n# exit ${code}\n`); ws.end();
+      res({
+        ok: code === 0 && !blocked, blocked, logFile, code, provider: "antigravity",
+        usage: { cost: 0, inTok: 0, outTok: 0, cache: 0 },
+      });
+    });
+    child.on("error", (e) => { ws.write("\n# spawn error: " + e + "\n"); ws.end(); res({ ok: false, logFile, code: -1, provider: "antigravity", usage: {} }); });
+  });
+}

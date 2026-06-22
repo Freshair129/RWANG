@@ -1,12 +1,96 @@
 {
   "concurrency": 3,
   "leaseMs": 1800000,
-  "models": {
-    "architect": "opus",
-    "coder": "sonnet",
-    "worker": "haiku",
-    "local": "ollama:gemma4-rust-coder:latest"
+
+  "providers": {
+    "claude": {
+      "enabled": true,
+      "capabilities": ["file_edit", "shell_exec", "code_review", "streaming", "long_context"],
+      "transport": "subprocess",
+      "command": "claude",
+      "baseArgs": ["-p", "--output-format", "stream-json", "--verbose"],
+      "extraArgs": ["--permission-mode", "acceptEdits"],
+      "auth": {
+        "mode": "plan",
+        "apiKey": "",
+        "_comment": "mode: 'plan' = ใช้โควต้า subscription, 'apikey' = ใช้ API billing. สลับได้สดผ่าน UI."
+      },
+      "tiers": {
+        "opus": "opus",
+        "sonnet": "sonnet",
+        "haiku": "haiku"
+      }
+    },
+    "ollama": {
+      "enabled": true,
+      "capabilities": ["text_gen"],
+      "transport": "http",
+      "host": "http://127.0.0.1:11434",
+      "think": false,
+      "defaultProfile": "balanced",
+      "profiles": {
+        "fast": { "temperature": 0.3, "num_predict": 2048 },
+        "balanced": { "temperature": 0.4, "num_predict": 4096 },
+        "ui-heavy": { "temperature": 0.5, "num_predict": 8192 }
+      }
+    },
+    "codex": {
+      "enabled": false,
+      "capabilities": ["file_edit", "shell_exec", "sandbox"],
+      "transport": "subprocess",
+      "command": "codex",
+      "baseArgs": ["--approval-mode", "auto-edit", "--quiet"],
+      "extraArgs": [],
+      "auth": { "envKey": "OPENAI_API_KEY", "apiKey": "" },
+      "_comment": "OpenAI Codex CLI. เปิด enabled=true เมื่อติดตั้งแล้ว + ตั้ง OPENAI_API_KEY."
+    },
+    "openrouter": {
+      "enabled": false,
+      "capabilities": ["text_gen", "streaming", "vision", "long_context"],
+      "transport": "http",
+      "host": "https://openrouter.ai/api/v1",
+      "auth": { "envKey": "OPENROUTER_API_KEY", "apiKey": "" },
+      "_comment": "OpenRouter unified API. model = provider slug เช่น 'anthropic/claude-sonnet-4', 'google/gemma-3-27b'. เปิด enabled + ตั้ง API key."
+    },
+    "antigravity": {
+      "enabled": false,
+      "capabilities": ["text_gen", "file_edit"],
+      "transport": "subprocess",
+      "command": "antigravity",
+      "baseArgs": [],
+      "extraArgs": [],
+      "_comment": "Antigravity IDE agent. เปิด enabled=true เมื่อติดตั้งแล้ว."
+    }
   },
+
+  "roles": {
+    "architect": {
+      "description": "Complex design, planning, spike analysis, architecture decisions",
+      "requires": ["long_context"],
+      "preferred": ["claude:opus", "openrouter:anthropic/claude-sonnet-4", "ollama:gemma4:latest"]
+    },
+    "coder": {
+      "description": "Implementation, testing, integration — needs file access",
+      "requires": ["file_edit"],
+      "preferred": ["claude:sonnet", "codex:o4-mini", "antigravity:default", "ollama:gemma4-rust-coder:latest"]
+    },
+    "worker": {
+      "description": "Scaffolding, config files, documentation — light work",
+      "requires": ["text_gen"],
+      "preferred": ["claude:haiku", "ollama:gemma4:latest", "openrouter:google/gemma-3-27b"]
+    },
+    "reviewer": {
+      "description": "Independent verification of worker output (Verify Gate)",
+      "requires": ["code_review"],
+      "preferred": ["claude:opus", "claude:sonnet"]
+    },
+    "scout": {
+      "description": "Research, drafting, analysis — text generation focus",
+      "requires": ["text_gen"],
+      "preferred": ["ollama:gemma4:latest", "claude:haiku", "openrouter:google/gemma-3-27b"]
+    }
+  },
+
   "routing": {
     "manual": null,
     "spike": "architect",
@@ -20,36 +104,27 @@
     "test": "coder",
     "scaffold": "worker",
     "config": "worker",
-    "docs": "worker"
+    "docs": "worker",
+    "research": "scout",
+    "draft": "scout"
   },
-  "executor": {
-    "command": "claude",
-    "baseArgs": ["-p", "--output-format", "stream-json", "--verbose"],
-    "extraArgs": ["--permission-mode", "acceptEdits"],
-    "_comment": "stream-json+verbose = log ไหลสด ๆ ให้ Agent Room tail ได้. เพิ่ม permission flag ที่ extraArgs ตอนพร้อมให้ agent แก้ไฟล์จริง เช่น [\"--permission-mode\",\"acceptEdits\"]. ปล่อยว่าง = ถามสิทธิ์."
-  },
-  "auth": {
-    "mode": "plan",
-    "apiKey": "",
-    "_comment": "mode: 'plan' = ใช้โควต้า subscription (ลบ ANTHROPIC_API_KEY ออกจาก env ของ agent), 'apikey' = ใช้ API billing (ตั้ง ANTHROPIC_API_KEY ให้ agent). apiKey ว่าง = ใช้ค่าจาก env ปัจจุบัน. สลับได้สดผ่าน UI."
-  },
-  "ollama": {
+
+  "review": {
     "enabled": true,
-    "host": "http://127.0.0.1:11434",
-    "think": false,
-    "defaultProfile": "balanced",
-    "profiles": {
-      "fast": { "temperature": 0.3, "num_predict": 2048 },
-      "balanced": { "temperature": 0.4, "num_predict": 4096 },
-      "ui-heavy": { "temperature": 0.5, "num_predict": 8192 }
-    },
-    "_comment": "local model ฟรี ไม่กินโควต้า. model = 'ollama:<name>'. gen ข้อความล้วน (แก้ไฟล์เองไม่ได้). profile คุม temperature/num_predict; เลือกต่อ task ด้วย scope.profile."
+    "requireReviewDefault": true,
+    "failOn": "critical",
+    "autoRework": true,
+    "maxReworkRounds": 1,
+    "skipForDraft": false,
+    "reviewerRole": "reviewer",
+    "_comment": "Verify Gate (ADR-O-001). reviewerRole กำหนดว่าใช้ role ไหนรีวิว — resolve ผ่าน roles[reviewerRole].preferred."
   },
+
   "usageLimits": {
     "sessionUsd": null,
-    "weeklyUsd": null,
-    "_comment": "ตั้งงบเพดาน (USD) เพื่อให้การ์ด usage โชว์แถบ % + เตือนเมื่อใกล้/เกิน. null = โชว์แค่ยอดที่ใช้ไป. หมายเหตุ: Max plan ไม่เปิด API ให้ดึง limit จริง จึงใช้งบที่คุณตั้งเองเป็นเกณฑ์."
+    "weeklyUsd": null
   },
+
   "docsForContext": [
     { "path": "docs/01-Tech-Stack.md", "tier": "shared" },
     { "path": "docs/02-Engineering-Spec.md", "tier": "shared" },
@@ -59,29 +134,9 @@
     { "path": "docs/CONCEPT--SUBAGENT-CONTEXT-SCOPING.md", "tier": "orchestrator-only" },
     { "path": "docs/GUIDE--SMALL-MODEL-PROMPTING.md", "tier": "worker-guide" }
   ],
-  "review": {
-    "enabled": true,
-    "requireReviewDefault": true,
-    "failOn": "critical",
-    "autoRework": true,
-    "maxReworkRounds": 1,
-    "skipForDraft": false,
-    "reviewerByTier": { "ollama": "sonnet", "haiku": "sonnet", "sonnet": "opus", "opus": "opus" },
-    "_comment": "Verify Gate (ADR-O-001). reviewer อิสระตรวจ output เทียบ acceptance ก่อน done. skipForDraft=false -> รีวิวงาน local ด้วย (จับ draft ผิด). failOn: critical|major."
-  },
-  "store": {
-    "knowledge": "file",
-    "_comment": "ADR-O-003: execution core = file เสมอ (zero-dep). knowledge = 'file' (default) | 'genesisdb' (N-API anti-error loop). L0 = failure write-only -> brain/failures.jsonl. เปลี่ยนโหมดต้อง restart.",
-    "genesisdb": {
-      "bindingPath": "G:/GenesisBlock_Dev/GenesisBlock/index.js",
-      "path": "",
-      "vectorDim": 1024,
-      "embedModel": "bge-m3:latest",
-      "ollamaHost": "http://127.0.0.1:11434"
-    }
-  },
+
   "scope": {
-    "_comment": "POLA: parent ประกาศ scope ต่อ task. ดีฟอลต์ตาม phase, override ได้ที่ task.scope ใน backlog. tier 'orchestrator-only' จะไม่เข้า worker prompt เด็ดขาด.",
+    "_comment": "POLA: parent ประกาศ scope ต่อ task.",
     "default": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 8000 },
     "byPhase": {
       "spike": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 12000 },
@@ -94,6 +149,17 @@
       "6": { "docs": ["docs/02-Engineering-Spec.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 9000 },
       "7": { "docs": ["docs/01-Tech-Stack.md", "docs/03-Technical-Design-Document.md"], "budgetTokens": 9000 },
       "8": { "docs": ["docs/01-Tech-Stack.md", "docs/04-Roadmap.md"], "budgetTokens": 8000 }
+    }
+  },
+
+  "store": {
+    "knowledge": "file",
+    "genesisdb": {
+      "bindingPath": "G:/GenesisBlock_Dev/GenesisBlock/index.js",
+      "path": "",
+      "vectorDim": 1024,
+      "embedModel": "bge-m3:latest",
+      "ollamaHost": "http://127.0.0.1:11434"
     }
   }
 }

@@ -29,6 +29,7 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, E.snapshot());
     if (req.method === "GET" && url.pathname === "/api/ollama") return send(res, 200, await E.ollamaInfo());
+    if (req.method === "GET" && url.pathname === "/api/providers") return send(res, 200, await E.providersInfo());
     if (req.method === "GET" && url.pathname === "/api/log") {
       const id = url.searchParams.get("id") || "";
       const offset = Number(url.searchParams.get("offset") || 0) || 0;

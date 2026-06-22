@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getStore } from "./store/knowledge.mjs";
+import { parseModel, resolveForRole, runProvider, listProviders, checkHealth, childEnvFor } from "./providers.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dir, "..");
@@ -33,13 +34,19 @@ export function byId(id) { return BACKLOG.find((t) => t.id === id); }
 
 export function modelFor(task, state) {
   const st = state?.tasks?.[task.id];
-  if (st && st.modelOverride) return st.modelOverride;        // UI assign ชนะสุด
-  if (task.model) return CONFIG.models[task.model] || task.model; // backlog pin (ชื่อ tier เช่น 'local' หรือ literal 'ollama:x')
-  const role = CONFIG.routing[task.type];
-  if (role === null) return null;
-  return CONFIG.models[role] || CONFIG.models.coder;
+  if (st && st.modelOverride) return st.modelOverride;
+  if (task.model) {
+    const parsed = parseModel(task.model);
+    return parsed ? `${parsed.provider}:${parsed.model}` : task.model;
+  }
+  const role = roleFor(task);
+  if (role === "manual" || role === null) return null;
+  const resolved = resolveForRole(role, CONFIG);
+  return resolved ? `${resolved.provider}:${resolved.model}` : null;
 }
 export function roleFor(task) { return CONFIG.routing[task.type] ?? "manual"; }
+// re-export for other modules
+export { parseModel, resolveForRole, listProviders, checkHealth, childEnvFor };
 
 // ---------- file lock (atomic claim, single-host) ----------
 export function withLock(fn) {
@@ -70,20 +77,18 @@ export function loadState() {
   return s;
 }
 
-// ---------- auth (Plan quota ↔ API key) ----------
-export function getAuthMode() { return loadState().authMode || "plan"; }
+// ---------- auth (Plan quota ↔ API key — claude provider) ----------
+export function getAuthMode() { return loadState().authMode || CONFIG.providers?.claude?.auth?.mode || "plan"; }
 export function setAuthMode(mode) {
   if (!["plan", "apikey"].includes(mode)) return { ok: false, error: "mode ต้องเป็น plan|apikey" };
-  withLock(() => { const s = loadState(); s.authMode = mode; saveState(s); });
+  withLock(() => {
+    const s = loadState(); s.authMode = mode; saveState(s);
+    // sync to live config so childEnvFor picks it up
+    if (CONFIG.providers?.claude?.auth) CONFIG.providers.claude.auth.mode = mode;
+  });
   return { ok: true, mode };
 }
-export function apiKeyAvailable() { return !!(CONFIG.auth?.apiKey || process.env.ANTHROPIC_API_KEY); }
-function childEnv(mode) {
-  const env = { ...process.env };
-  if (mode === "plan") { delete env.ANTHROPIC_API_KEY; delete env.ANTHROPIC_AUTH_TOKEN; }
-  else { const k = CONFIG.auth?.apiKey || process.env.ANTHROPIC_API_KEY; if (k) env.ANTHROPIC_API_KEY = k; }
-  return env;
-}
+export function apiKeyAvailable() { return !!(CONFIG.providers?.claude?.auth?.apiKey || process.env.ANTHROPIC_API_KEY); }
 export function saveState(s) { s.updatedAt = now(); writeFileSync(PATHS.STATE, JSON.stringify(s, null, 2)); }
 
 export function reapStale(s) {
@@ -178,13 +183,22 @@ export function snapshot() {
       accept: t.accept, est: t.est,
     };
   });
+  // build model options from all enabled providers' models
+  const modelOptions = [];
+  for (const [pName, pDef] of Object.entries(CONFIG.providers || {})) {
+    if (pDef.enabled === false) continue;
+    if (pDef.tiers) for (const tier of Object.keys(pDef.tiers)) modelOptions.push(`${pName}:${pDef.tiers[tier]}`);
+    else modelOptions.push(`${pName}:default`);
+  }
   return {
     progress: { done, total, pct: total ? Math.round((done / total) * 100) : 0 },
     counts, reaped, updatedAt: cur.updatedAt,
-    models: CONFIG.models, modelOptions: [...new Set(Object.values(CONFIG.models))],
+    providers: listProviders(CONFIG),
+    roles: CONFIG.roles || {},
+    modelOptions,
     waves: waves().map((w) => w.map((t) => t.id)),
     pool: poolStatus(),
-    auth: { mode: cur.authMode || "plan", apiKeyAvailable: apiKeyAvailable() },
+    auth: { mode: cur.authMode || CONFIG.providers?.claude?.auth?.mode || "plan", apiKeyAvailable: apiKeyAvailable() },
     usage: readUsage(),
     usageLimits: { sessionUsd: CONFIG.usageLimits?.sessionUsd ?? null, weeklyUsd: CONFIG.usageLimits?.weeklyUsd ?? null },
     tasks,
@@ -238,6 +252,9 @@ function groundedBlock(grounded) {
   return [`## บริบทงานที่เกี่ยวข้อง (grounded · ~${grounded.tokenEstimate ?? "?"} tok)`, ...grounded.lines.slice(0, 8).map((l) => `- ${l}`)].join("\n");
 }
 
+// provider groups: subprocess agents get doc paths, http-only agents get inline rules
+const TEXT_ONLY_PROVIDERS = new Set(["ollama", "openrouter"]);
+
 export function buildPrompt(t, model, provider = "claude", reworkNote = null, pastMistakes = null, grounded = null) {
   const s = scopeFor(t);
   const deps = (t.deps || []).join(", ") || "(none)";
@@ -253,7 +270,7 @@ export function buildPrompt(t, model, provider = "claude", reworkNote = null, pa
   if (pm) head.push(pm, ``);
   const gb = groundedBlock(grounded);
   if (gb) head.push(gb, ``);
-  if (provider === "ollama") {
+  if (TEXT_ONLY_PROVIDERS.has(provider)) {
     const p = [...head];
     if (s.needs.length) p.push(`## บริบทที่เกี่ยวข้อง`, s.needs.map((n) => `- ${n}`).join("\n"), ``);
     if (s.scaffold) p.push(`## โครงเริ่มต้น (เติมไส้ในให้สมบูรณ์ — scaffold-first)`, "```", s.scaffold, "```", ``);
@@ -261,7 +278,7 @@ export function buildPrompt(t, model, provider = "claude", reworkNote = null, pa
       `อย่าอ้าง/โหลดไฟล์เอกสารทั้งไฟล์ (โมเดลเล็กจะเสียสมาธิ) — ทำตาม acceptance + บริบทด้านบนเท่านั้น.`);
     return p.join("\n");
   }
-  // claude full-agent: ชี้ path เฉพาะที่อยู่ใน scope (orchestrator-only ถูกกรองออกแล้ว) ให้ agent ไปอ่านเอง
+  // full-agent providers (claude, codex, antigravity): ชี้ path ให้ agent ไปอ่านเอง
   const docs = s.docs.length ? s.docs.map((d) => `- ${d}`).join("\n") : "- (ไม่ระบุ — ถ้าต้องการบริบทเพิ่ม ให้ escalate ด้วย BLOCKED)";
   const p = [...head, `## อ่านก่อนเริ่ม (scope ที่ parent อนุญาตเท่านั้น — POLA)`, docs];
   if (s.excludes.length) p.push(`ห้ามแตะ/ดึง: ${s.excludes.join(", ")}`);
@@ -274,100 +291,38 @@ export function buildPrompt(t, model, provider = "claude", reworkNote = null, pa
   return p.join("\n");
 }
 
-// provider detection: 'ollama:<name>' = local, อื่น ๆ = claude
-export function parseModel(model) {
-  if (typeof model === "string" && model.startsWith("ollama:")) return { provider: "ollama", name: model.slice(7) };
-  return { provider: "claude", name: model };
-}
-
+// ─── provider-backed agent execution (dispatch via providers.mjs) ───
 export function runAgent(t, model, worker, opts = {}) {
-  const { provider, name } = parseModel(model);
-  return provider === "ollama" ? runOllama(t, name, model, worker, opts) : runClaude(t, name, model, worker, opts);
-}
-
-function runClaude(t, name, model, worker, opts = {}) {
-  return new Promise((res) => {
-    if (!existsSync(PATHS.LOGS)) mkdirSync(PATHS.LOGS, { recursive: true });
-    const logFile = join(PATHS.LOGS, `${t.id}.${worker}.log`);
-    const mode = getAuthMode();
-    const ws = createWriteStream(logFile, { flags: "w" });
-    ws.write(`# ${t.id} · ${worker} · ${model} · auth=${mode} · started ${new Date().toISOString()}\n\n`);
-    // prompt ส่งทาง stdin (ไม่ใช่ arg) — กัน shell metachar (| ` { } ( )) ทำ prompt พังใต้ shell:true
-    const args = [...CONFIG.executor.baseArgs, "--model", name, ...CONFIG.executor.extraArgs];
-    const child = spawn(CONFIG.executor.command, args, { cwd: PATHS.ROOT, shell: true, env: childEnv(mode) });
-    child.stdin.write(buildPrompt(t, model, "claude", opts.reworkNote, opts.pastMistakes, opts.grounded)); child.stdin.end();
-    let lineBuf = "", resultLine = null;
-    child.stdout.on("data", (d) => {
-      ws.write(d); lineBuf += d; let i;
-      while ((i = lineBuf.indexOf("\n")) >= 0) { const ln = lineBuf.slice(0, i); lineBuf = lineBuf.slice(i + 1); if (ln.includes('"type":"result"')) resultLine = ln; }
-    });
-    child.stderr.on("data", (d) => ws.write(d));
-    child.on("close", (code) => {
-      let cost = 0, u = {}, blocked = false;
-      if (resultLine) { try { const o = JSON.parse(resultLine); cost = o.total_cost_usd || 0; u = o.usage || {}; if (/^[\s>*-]*BLOCKED:/m.test(o.result || "")) blocked = true; } catch { /* */ } }
-      if (blocked) ws.write(`\n# ⚠ ESCALATION: agent ตอบ BLOCKED (บริบทใน scope ไม่พอ) — surface ไม่ใช่เดาเงียบ\n`);
-      ws.write(`\n# exit ${code}\n`); ws.end();
-      recordUsage({ id: t.id, model, mode, cost, inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, cache: (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) });
-      res({ ok: code === 0 && !blocked, blocked, logFile, code });
-    });
-    child.on("error", (e) => { ws.write("\n# spawn error: " + e + "\n"); ws.end(); res({ ok: false, logFile, code: -1 }); });
-  });
-}
-
-// Ollama: ยิง /api/chat แบบ stream → เขียนลง log สดให้ Agent Room tail ได้ (cost $0)
-async function runOllama(t, name, model, worker, opts = {}) {
-  if (!existsSync(PATHS.LOGS)) mkdirSync(PATHS.LOGS, { recursive: true });
-  const logFile = join(PATHS.LOGS, `${t.id}.${worker}.log`);
-  const ws = createWriteStream(logFile, { flags: "w" });
-  ws.write(`# ${t.id} · ${worker} · ${model} · provider=ollama(local) · started ${new Date().toISOString()}\n# ● ollama ${name} (no quota / $0)\n\n`);
-  const host = (CONFIG.ollama?.host || "http://127.0.0.1:11434").replace(/\/$/, "");
-  const options = (CONFIG.ollama?.profiles || {})[scopeFor(t).profile] || {};
-  let inTok = 0, outTok = 0, ok = false, acc = "", blocked = false, empty = false;
-  try {
-    const payload = { model: name, stream: true, options, messages: [{ role: "user", content: buildPrompt(t, model, "ollama", opts.reworkNote, opts.pastMistakes, opts.grounded) }] };
-    if (typeof CONFIG.ollama?.think === "boolean") payload.think = CONFIG.ollama.think; // ปิด thinking สำหรับงาน draft -> ตอบ content ตรง
-    const resp = await fetch(`${host}/api/chat`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!resp.ok || !resp.body) throw new Error(`ollama HTTP ${resp.status}`);
-    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
-    let inThink = false, sawContent = false;
-    while (true) {
-      const { done, value } = await reader.read(); if (done) break;
-      buf += dec.decode(value, { stream: true }); let i;
-      while ((i = buf.indexOf("\n")) >= 0) {
-        const ln = buf.slice(0, i); buf = buf.slice(i + 1); if (!ln.trim()) continue;
-        let o; try { o = JSON.parse(ln); } catch { continue; }
-        const think = o.message?.thinking, content = o.message?.content;
-        if (think) { if (!inThink) { ws.write("# ── reasoning (thinking) ──\n"); inThink = true; } ws.write(think); }
-        if (content) { if (inThink && !sawContent) ws.write("\n\n# ── answer ──\n"); sawContent = true; ws.write(content); acc += content; if (acc.length > 6000) acc = acc.slice(-6000); }
-        if (o.error) ws.write(`\n# ollama error: ${o.error}\n`);
-        if (o.done) { inTok = o.prompt_eval_count || 0; outTok = o.eval_count || 0; ok = true; }
-      }
-    }
-    if (/^[\s>*-]*BLOCKED:/m.test(acc)) { blocked = true; ws.write(`\n# ⚠ ESCALATION: worker ตอบ BLOCKED (บริบทไม่พอ) — surface ไม่ใช่เดา\n`); }
-    if (ok && !acc.trim()) { empty = true; ws.write(`\n# ⚠ ไม่มี answer/content (โมเดลใช้โทเค็นไปกับ reasoning จน num_predict หมด หรือเป็น thinking model) — ถือว่าไม่สำเร็จ. ลอง profile ใหญ่ขึ้น หรือสลับเป็น non-thinking model เช่น ollama:gemma4:latest\n`); }
-    ws.write(`\n\n# done · ${inTok} in / ${outTok} out tokens (local, $0) · profile=${scopeFor(t).profile}${empty ? " · EMPTY" : ""}\n`);
-  } catch (e) {
-    ws.write(`\n# ollama error: ${e.message}\n# ตรวจว่า ollama รันอยู่ (ollama serve) และมี model '${name}' (ollama pull ${name})\n`);
+  const parsed = parseModel(model);
+  if (!parsed) return Promise.resolve({ ok: false, error: `cannot parse model: ${model}`, code: -1 });
+  // sync auth mode for claude
+  if (parsed.provider === "claude" && CONFIG.providers?.claude?.auth) {
+    CONFIG.providers.claude.auth.mode = getAuthMode();
   }
-  ws.end();
-  recordUsage({ id: t.id, model, mode: "ollama", cost: 0, inTok, outTok, cache: 0 });
-  const good = ok && !blocked && !empty;
-  return { ok: good, blocked, empty, logFile, code: good ? 0 : 1 };
+  const prompt = buildPrompt(t, model, parsed.provider, opts.reworkNote, opts.pastMistakes, opts.grounded);
+  const provOpts = { profile: scopeFor(t).profile };
+  return runProvider(parsed.provider, t, parsed.model, worker, prompt, CONFIG, PATHS, provOpts)
+    .then((r) => {
+      const u = r.usage || {};
+      recordUsage({ id: t.id, model, mode: r.provider || parsed.provider, cost: u.cost || 0, inTok: u.inTok || 0, outTok: u.outTok || 0, cache: u.cache || 0 });
+      return r;
+    });
 }
 
-// เช็คว่า ollama พร้อมไหม + list models
+// provider health check (replaces ollamaInfo for all providers)
 export async function ollamaInfo() {
-  if (!CONFIG.ollama?.enabled) return { enabled: false, up: false, models: [] };
-  const host = (CONFIG.ollama?.host || "http://127.0.0.1:11434").replace(/\/$/, "");
-  try {
-    const r = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(1500) });
-    if (!r.ok) return { enabled: true, up: false, host, models: [] };
-    const j = await r.json();
-    return { enabled: true, up: true, host, models: (j.models || []).map((m) => m.name) };
-  } catch { return { enabled: true, up: false, host, models: [] }; }
+  const prov = CONFIG.providers?.ollama;
+  if (!prov || prov.enabled === false) return { enabled: false, up: false, models: [] };
+  const h = await checkHealth("ollama", CONFIG);
+  return { enabled: true, up: h.up, host: prov.host, models: h.models || [] };
+}
+export async function providersInfo() {
+  const results = {};
+  for (const [name, def] of Object.entries(CONFIG.providers || {})) {
+    if (def.enabled === false) { results[name] = { enabled: false }; continue; }
+    results[name] = { enabled: true, capabilities: def.capabilities || [], ...(await checkHealth(name, CONFIG)) };
+  }
+  return results;
 }
 
 // ---------- usage ledger (token + cost ต่อ agent) ----------
@@ -440,16 +395,19 @@ export function runPool({ mode = "wave", max = CONFIG.concurrency, worker = "poo
 }
 
 // ---------- Verify Gate (ADR-O-001 / SPEC--VERIFY-GATE) ----------
-function reviewerTierFor(workerModel) {
-  const map = CONFIG.review?.reviewerByTier || {};
-  const key = (typeof workerModel === "string" && workerModel.startsWith("ollama:")) ? "ollama" : workerModel;
-  return map[key] || "sonnet";
+function reviewerModelFor(_workerModel) {
+  const reviewerRole = CONFIG.review?.reviewerRole || "reviewer";
+  const resolved = resolveForRole(reviewerRole, CONFIG);
+  return resolved ? `${resolved.provider}:${resolved.model}` : "claude:sonnet";
 }
 export function requireReviewFor(t) {
   if (!CONFIG.review?.enabled) return false;
   if (typeof t.requireReview === "boolean") return t.requireReview;
-  const m = modelFor(t, loadState());
-  if (CONFIG.review?.skipForDraft && typeof m === "string" && m.startsWith("ollama:")) return false;
+  if (CONFIG.review?.skipForDraft) {
+    const m = modelFor(t, loadState());
+    const parsed = m ? parseModel(m) : null;
+    if (parsed && TEXT_ONLY_PROVIDERS.has(parsed.provider)) return false;
+  }
   return CONFIG.review?.requireReviewDefault !== false;
 }
 function parseVerdict(text) {
@@ -472,37 +430,35 @@ function buildReviewPrompt(t, output) {
     `เกณฑ์: ถ้ามีข้อผิดที่ทำให้ไม่ผ่าน acceptance หรือเป็นของปลอม/ใช้ไม่ได้จริง (เช่น GitHub Action ที่ไม่มีอยู่จริง) -> verdict=fail + issue severity critical.`,
   ].join("\n");
 }
-function runReview(t, workerModel, worker) {
-  return new Promise((res) => {
-    const reviewerModel = reviewerTierFor(workerModel);
-    const output = readLog(t.id)?.text || "";
-    const logFile = join(PATHS.LOGS, `${t.id}.${worker}.review.log`);
-    const ws = createWriteStream(logFile, { flags: "w" });
-    const mode = getAuthMode();
-    ws.write(`# REVIEW ${t.id} · reviewer=${reviewerModel} (worker=${workerModel}) · auth=${mode} · ${new Date().toISOString()}\n\n`);
-    const args = [...CONFIG.executor.baseArgs, "--model", reviewerModel, ...CONFIG.executor.extraArgs];
-    const child = spawn(CONFIG.executor.command, args, { cwd: PATHS.ROOT, shell: true, env: childEnv(mode) });
-    child.stdin.write(buildReviewPrompt(t, output)); child.stdin.end();   // prompt ทาง stdin กัน shell metachar
-    let lineBuf = "", resultLine = null;
-    child.stdout.on("data", (d) => { ws.write(d); lineBuf += d; let i; while ((i = lineBuf.indexOf("\n")) >= 0) { const ln = lineBuf.slice(0, i); lineBuf = lineBuf.slice(i + 1); if (ln.includes('"type":"result"')) resultLine = ln; } });
-    child.stderr.on("data", (d) => ws.write(d));
-    child.on("close", (code) => {
-      let text = "", cost = 0, u = {};
-      if (resultLine) { try { const o = JSON.parse(resultLine); text = o.result || ""; cost = o.total_cost_usd || 0; u = o.usage || {}; } catch { /* */ } }
-      recordUsage({ id: t.id + "#review", model: reviewerModel, mode, cost, inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, cache: (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) });
-      if (code !== 0 || !text) { ws.write(`\n# ⚠ reviewer ใช้ไม่ได้ (exit ${code}) — ไม่ auto-pass (fail-safe)\n`); ws.end(); return res({ ran: false }); }
-      const v = parseVerdict(text);
-      if (!v) { ws.write(`\n# ⚠ verdict UNPARSEABLE -> fail-safe (needs-rework)\n`); ws.end(); return res({ ran: true, pass: false, issues: [{ severity: "major", area: "review", detail: "reviewer output ไม่เป็น JSON" }], summary: "unparseable" }); }
-      const failOn = CONFIG.review?.failOn || "critical";
-      const issues = v.issues || [];
-      const bad = issues.some((i) => i.severity === "critical" || (failOn === "major" && i.severity === "major"));
-      const pass = v.verdict === "pass" && !bad;
-      ws.write(`\n\n# verdict: ${v.verdict} · ${issues.length} issues · pass=${pass} · ${v.summary || ""}\n`);
-      ws.end();
-      res({ ran: true, pass, verdict: v.verdict, issues, summary: v.summary, reviewerModel });
-    });
-    child.on("error", (e) => { ws.write("\n# reviewer spawn error: " + e + "\n"); ws.end(); res({ ran: false }); });
-  });
+async function runReview(t, workerModel, worker) {
+  const reviewerFull = reviewerModelFor(workerModel);
+  const parsed = parseModel(reviewerFull);
+  if (!parsed) return { ran: false };
+  const output = readLog(t.id)?.text || "";
+  const prompt = buildReviewPrompt(t, output);
+  // sync auth for claude
+  if (parsed.provider === "claude" && CONFIG.providers?.claude?.auth) {
+    CONFIG.providers.claude.auth.mode = getAuthMode();
+  }
+  const reviewTask = { ...t, id: `${t.id}#review` };
+  const r = await runProvider(parsed.provider, reviewTask, parsed.model, `${worker}.review`, prompt, CONFIG, PATHS);
+  const u = r.usage || {};
+  recordUsage({ id: t.id + "#review", model: reviewerFull, mode: r.provider || parsed.provider, cost: u.cost || 0, inTok: u.inTok || 0, outTok: u.outTok || 0, cache: u.cache || 0 });
+  if (!r.ok && !r.logFile) return { ran: false };
+  const text = r.logFile ? readFileSync(r.logFile, "utf8") : "";
+  // extract result text for claude (stream-json format)
+  let resultText = text;
+  const resultMatch = text.match(/"type":"result".*?"result":"([\s\S]*?)"/);
+  if (resultMatch) {
+    try { const o = JSON.parse(text.split("\n").find((l) => l.includes('"type":"result"'))); resultText = o.result || text; } catch { /* use full text */ }
+  }
+  const v = parseVerdict(resultText);
+  if (!v) return { ran: true, pass: false, issues: [{ severity: "major", area: "review", detail: "reviewer output ไม่เป็น JSON" }], summary: "unparseable" };
+  const failOn = CONFIG.review?.failOn || "critical";
+  const issues = v.issues || [];
+  const bad = issues.some((i) => i.severity === "critical" || (failOn === "major" && i.severity === "major"));
+  const pass = v.verdict === "pass" && !bad;
+  return { ran: true, pass, verdict: v.verdict, issues, summary: v.summary, reviewerModel: reviewerFull };
 }
 function formatReworkNote(review, attempt) {
   const lines = (review.issues || []).map((i) => `- [${i.severity || "?"}] ${i.area || ""}: ${i.detail || ""}${i.fix ? " → " + i.fix : ""}`);

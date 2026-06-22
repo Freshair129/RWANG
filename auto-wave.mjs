@@ -18,6 +18,7 @@ import { join } from "path";
 import {
   PATHS, CONFIG, BACKLOG,
   loadState, waves, runPool, poolStatus, stopPool, byId,
+  parseModel, childEnvFor, getAuthMode,
 } from "./engine.mjs";
 
 // task ที่ถือว่า "settle แล้ว" ในรอบของ wave runner (ไม่นับ todo ที่ถูกข้ามเพราะ skipped/manual)
@@ -46,10 +47,11 @@ verdict "pass" = OK เดินต่อ wave ถัดไปได้.
 
 **ห้าม pass ถ้ามี severity critical หรือ major**. ลังเลให้ hold (fail-safe).`;
 
-function authForCmd(state) {
-  const mode = state.authMode || "plan";
-  return mode === "apikey" ? { ...process.env, ANTHROPIC_API_KEY: CONFIG.auth?.apiKey || process.env.ANTHROPIC_API_KEY }
-                           : { ...process.env, ANTHROPIC_API_KEY: undefined };
+function authForCmd(_state) {
+  // sync auth mode then delegate to provider registry
+  const mode = getAuthMode();
+  if (CONFIG.providers?.claude?.auth) CONFIG.providers.claude.auth.mode = mode;
+  return childEnvFor("claude", CONFIG);
 }
 
 function tailLines(s, n) {
@@ -116,8 +118,9 @@ function parseSupervisorOutput(stdout) {
 function spawnSupervisor({ prompt, model, logFile }) {
   return new Promise((resolve) => {
     const state = loadState();
-    const args = [...CONFIG.executor.baseArgs, "--model", model, ...CONFIG.executor.extraArgs];
-    const child = spawn(CONFIG.executor.command, args, {
+    const prov = CONFIG.providers?.claude || {};
+    const args = [...(prov.baseArgs || []), "--model", model, ...(prov.extraArgs || [])];
+    const child = spawn(prov.command || "claude", args, {
       stdio: ["pipe", "pipe", "pipe"],
       env: authForCmd(state),
     });
@@ -195,7 +198,7 @@ async function waitForWave({ ids, pollMs = 1500, idleMs = 3000, timeoutMs = 60 *
 
 export async function runAutonomous({
   maxWaves = 100,
-  supervisorModel = (CONFIG.review?.reviewerByTier?.opus) || "opus",
+  supervisorModel = "opus",
   concurrency = CONFIG.concurrency,
   workerLabel = "auto-wave",
   onLog = () => {},
