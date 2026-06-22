@@ -71,12 +71,12 @@
     "architect": {
       "description": "Complex design, planning, spike analysis, architecture decisions",
       "requires": ["long_context"],
-      "preferred": ["claude:opus", "openrouter:anthropic/claude-sonnet-4", "ollama:gemma4:latest"]
+      "preferred": ["claude:opus", "openrouter:anthropic/claude-sonnet-4", "ollama:hf.co/unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL", "ollama:gemma4:latest"]
     },
     "coder": {
       "description": "Implementation, testing, integration — needs file access",
       "requires": ["file_edit"],
-      "preferred": ["claude:sonnet", "codex:o4-mini", "antigravity:default", "ollama:gemma4-rust-coder:latest", "ollama:qwen3.5:4b"]
+      "preferred": ["claude:sonnet", "codex:o4-mini", "antigravity:default", "ollama:hf.co/sillykiwi/Aroow-Rust-Coder-9B-Q4_K_S-GGUF:Q4_K_S", "ollama:gemma4-rust-coder:latest"]
     },
     "worker": {
       "description": "Scaffolding, config files, documentation — light work",
