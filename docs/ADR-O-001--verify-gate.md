@@ -1,8 +1,8 @@
-# ADR-O-001 — Verify Gate: independent per-task code review before `done`
+﻿# ADR-O-001 â€” Verify Gate: independent per-task code review before `done`
 
-> **Series:** ADR-O (orchestrator-scoped — แยกจาก ADR-01..07 ของตัวผลิตภัณฑ์ G-Maiden ใน
-> `docs/03-Technical-Design-Document.md`)
-> **Status:** Approved (2026-06-21, USER/Boss · RUNBOOK Gate 3)
+> **Series:** ADR-O (orchestrator-scoped â€” à¹à¸¢à¸à¸ˆà¸²à¸ ADR-01..07 à¸‚à¸­à¸‡à¸•à¸±à¸§à¸œà¸¥à¸´à¸•à¸ à¸±à¸“à¸‘à¹Œ G-Maiden à¹ƒà¸™
+> `docs/architecture/technical-design-document.md`)
+> **Status:** Approved (2026-06-21, USER/Boss Â· RUNBOOK Gate 3)
 > **Date:** 2026-06-21
 > **Spec:** [SPEC--VERIFY-GATE.md](SPEC--VERIFY-GATE.md)
 
@@ -10,63 +10,67 @@
 
 ## Context
 
-orchestrator (`orchestration/`) แจกจ่าย task ให้ AI worker (Claude tiers หรือ local Ollama) แล้ว
-mark `done` จาก **สัญญาณการทำจบ** เท่านั้น (exit code / มี output / ไม่ BLOCKED) — **ไม่ได้ตรวจ
-ความถูกต้องเทียบ `acceptance`**.
+orchestrator (`orchestration/`) à¹à¸ˆà¸à¸ˆà¹ˆà¸²à¸¢ task à¹ƒà¸«à¹‰ AI worker (Claude tiers à¸«à¸£à¸·à¸­ local Ollama) à¹à¸¥à¹‰à¸§
+mark `done` à¸ˆà¸²à¸ **à¸ªà¸±à¸à¸à¸²à¸“à¸à¸²à¸£à¸—à¸³à¸ˆà¸š** à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ (exit code / à¸¡à¸µ output / à¹„à¸¡à¹ˆ BLOCKED) â€” **à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸•à¸£à¸§à¸ˆ
+à¸„à¸§à¸²à¸¡à¸–à¸¹à¸à¸•à¹‰à¸­à¸‡à¹€à¸—à¸µà¸¢à¸š `acceptance`**.
 
-ผลที่สังเกตจริง: task `G0.3` ขึ้น `done` ทั้งที่ output มีข้อผิด (`actions/setup-rust@v3` เป็น action
-ที่ไม่มีจริง, ลืม `pnpm` prefix). output จาก local model เป็น "draft" โดยธรรมชาติ — `done` จึง
-สื่อความหมายผิด ("จบ" ≠ "ผ่าน") และทำให้ progress ที่เห็นเชื่อถือไม่ได้.
+à¸œà¸¥à¸—à¸µà¹ˆà¸ªà¸±à¸‡à¹€à¸à¸•à¸ˆà¸£à¸´à¸‡: task `G0.3` à¸‚à¸¶à¹‰à¸™ `done` à¸—à¸±à¹‰à¸‡à¸—à¸µà¹ˆ output à¸¡à¸µà¸‚à¹‰à¸­à¸œà¸´à¸” (`actions/setup-rust@v3` à¹€à¸›à¹‡à¸™ action
+à¸—à¸µà¹ˆà¹„à¸¡à¹ˆà¸¡à¸µà¸ˆà¸£à¸´à¸‡, à¸¥à¸·à¸¡ `pnpm` prefix). output à¸ˆà¸²à¸ local model à¹€à¸›à¹‡à¸™ "draft" à¹‚à¸”à¸¢à¸˜à¸£à¸£à¸¡à¸Šà¸²à¸•à¸´ â€” `done` à¸ˆà¸¶à¸‡
+à¸ªà¸·à¹ˆà¸­à¸„à¸§à¸²à¸¡à¸«à¸¡à¸²à¸¢à¸œà¸´à¸” ("à¸ˆà¸š" â‰  "à¸œà¹ˆà¸²à¸™") à¹à¸¥à¸°à¸—à¸³à¹ƒà¸«à¹‰ progress à¸—à¸µà¹ˆà¹€à¸«à¹‡à¸™à¹€à¸Šà¸·à¹ˆà¸­à¸–à¸·à¸­à¹„à¸¡à¹ˆà¹„à¸”à¹‰.
 
-เอกสารออกแบบเรียกร้องการตรวจอยู่แล้ว (`docs/02-Engineering-Spec.md` §7 Definition of Done,
-`CONCEPT--SUBAGENT-CONTEXT-SCOPING` §"why escalation is load-bearing") แต่ยังไม่ถูก wire เข้า runtime.
+à¹€à¸­à¸à¸ªà¸²à¸£à¸­à¸­à¸à¹à¸šà¸šà¹€à¸£à¸µà¸¢à¸à¸£à¹‰à¸­à¸‡à¸à¸²à¸£à¸•à¸£à¸§à¸ˆà¸­à¸¢à¸¹à¹ˆà¹à¸¥à¹‰à¸§ (`docs/architecture/engineering-spec.md` Â§7 Definition of Done,
+`CONCEPT--SUBAGENT-CONTEXT-SCOPING` Â§"why escalation is load-bearing") à¹à¸•à¹ˆà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸–à¸¹à¸ wire à¹€à¸‚à¹‰à¸² runtime.
 
 ## Decision
 
-แทรก **Verify Gate** ระหว่าง "produce" กับ "done": หลัง worker ผลิต output จะ spawn
-**reviewer agent อิสระ** (คนละ model tier กับ worker) มาตรวจ output เทียบ `acceptance` แล้วคืน
-verdict แบบ structured. task เป็น `done` **ก็ต่อเมื่อผ่าน review** (ไม่มี critical issue); ไม่ผ่าน →
-`needs-rework` พร้อม issues (auto re-dispatch ได้สูงสุด `maxReworkRounds` รอบ).
+à¹à¸—à¸£à¸ **Verify Gate** à¸£à¸°à¸«à¸§à¹ˆà¸²à¸‡ "produce" à¸à¸±à¸š "done": à¸«à¸¥à¸±à¸‡ worker à¸œà¸¥à¸´à¸• output à¸ˆà¸° spawn
+**reviewer agent à¸­à¸´à¸ªà¸£à¸°** (à¸„à¸™à¸¥à¸° model tier à¸à¸±à¸š worker) à¸¡à¸²à¸•à¸£à¸§à¸ˆ output à¹€à¸—à¸µà¸¢à¸š `acceptance` à¹à¸¥à¹‰à¸§à¸„à¸·à¸™
+verdict à¹à¸šà¸š structured. task à¹€à¸›à¹‡à¸™ `done` **à¸à¹‡à¸•à¹ˆà¸­à¹€à¸¡à¸·à¹ˆà¸­à¸œà¹ˆà¸²à¸™ review** (à¹„à¸¡à¹ˆà¸¡à¸µ critical issue); à¹„à¸¡à¹ˆà¸œà¹ˆà¸²à¸™ â†’
+`needs-rework` à¸žà¸£à¹‰à¸­à¸¡ issues (auto re-dispatch à¹„à¸”à¹‰à¸ªà¸¹à¸‡à¸ªà¸¸à¸” `maxReworkRounds` à¸£à¸­à¸š).
 
-หลักการบังคับ:
-1. **ห้าม self-review** — reviewer ต้องคนละ tier (worker local/haiku → reviewer sonnet; sonnet → opus)
-2. **Reviewer scope แคบ (POLA)** — เห็นเฉพาะ acceptance + output + scope.docs ของ task นั้น ไม่ใช่ทั้ง repo
-3. **Adversarial** — reviewer พยายามหาข้อผิดก่อน, default `fail` เมื่อไม่มั่นใจ
-4. **Fail-safe** — reviewer ใช้ไม่ได้ → ค้าง `reviewing` ไม่ auto-pass
-5. **ไม่วนไม่จบ** — ครบ maxReworkRounds → ค้าง `needs-rework` ให้คน (surface ไม่เงียบ)
+à¸«à¸¥à¸±à¸à¸à¸²à¸£à¸šà¸±à¸‡à¸„à¸±à¸š:
+1. **à¸«à¹‰à¸²à¸¡ self-review** â€” reviewer à¸•à¹‰à¸­à¸‡à¸„à¸™à¸¥à¸° tier (worker local/haiku â†’ reviewer sonnet; sonnet â†’ opus)
+2. **Reviewer scope à¹à¸„à¸š (POLA)** â€” à¹€à¸«à¹‡à¸™à¹€à¸‰à¸žà¸²à¸° acceptance + output + scope.docs à¸‚à¸­à¸‡ task à¸™à¸±à¹‰à¸™ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸—à¸±à¹‰à¸‡ repo
+3. **Adversarial** â€” reviewer à¸žà¸¢à¸²à¸¢à¸²à¸¡à¸«à¸²à¸‚à¹‰à¸­à¸œà¸´à¸”à¸à¹ˆà¸­à¸™, default `fail` à¹€à¸¡à¸·à¹ˆà¸­à¹„à¸¡à¹ˆà¸¡à¸±à¹ˆà¸™à¹ƒà¸ˆ
+4. **Fail-safe** â€” reviewer à¹ƒà¸Šà¹‰à¹„à¸¡à¹ˆà¹„à¸”à¹‰ â†’ à¸„à¹‰à¸²à¸‡ `reviewing` à¹„à¸¡à¹ˆ auto-pass
+5. **à¹„à¸¡à¹ˆà¸§à¸™à¹„à¸¡à¹ˆà¸ˆà¸š** â€” à¸„à¸£à¸š maxReworkRounds â†’ à¸„à¹‰à¸²à¸‡ `needs-rework` à¹ƒà¸«à¹‰à¸„à¸™ (surface à¹„à¸¡à¹ˆà¹€à¸‡à¸µà¸¢à¸š)
 
 ## Alternatives considered
 
-| ทางเลือก | ทำไมไม่เลือก |
+| à¸—à¸²à¸‡à¹€à¸¥à¸·à¸­à¸ | à¸—à¸³à¹„à¸¡à¹„à¸¡à¹ˆà¹€à¸¥à¸·à¸­à¸ |
 | --- | --- |
-| **A. คงเดิม (ไม่ review)** | `done` หลอกตา; draft ผิด ๆ ผ่านได้ — ปัญหาที่กำลังแก้ |
-| **B. self-review (worker ตรวจเอง)** | ลำเอียง — โมเดลเดียวกันมองไม่เห็นข้อผิดตัวเอง; ขัด CONCEPT (independence) |
-| **C. human-only review** | ไม่ scale กับ 45 task / fan-out; คนกลายเป็นคอขวด |
-| **D. static check อย่างเดียว** (lint/compile) | จับได้แค่ syntax ไม่จับ "ตรง acceptance ไหม / action ปลอม / logic"; เสริมได้แต่ไม่พอ |
-| **E. judge panel หลายตัวทุก task** | แพง token เกินจำเป็นสำหรับงานทั่วไป — เก็บไว้เป็น opt-in งานสำคัญ (เฟสถัดไป) |
+| **A. à¸„à¸‡à¹€à¸”à¸´à¸¡ (à¹„à¸¡à¹ˆ review)** | `done` à¸«à¸¥à¸­à¸à¸•à¸²; draft à¸œà¸´à¸” à¹† à¸œà¹ˆà¸²à¸™à¹„à¸”à¹‰ â€” à¸›à¸±à¸à¸«à¸²à¸—à¸µà¹ˆà¸à¸³à¸¥à¸±à¸‡à¹à¸à¹‰ |
+| **B. self-review (worker à¸•à¸£à¸§à¸ˆà¹€à¸­à¸‡)** | à¸¥à¸³à¹€à¸­à¸µà¸¢à¸‡ â€” à¹‚à¸¡à¹€à¸”à¸¥à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™à¸¡à¸­à¸‡à¹„à¸¡à¹ˆà¹€à¸«à¹‡à¸™à¸‚à¹‰à¸­à¸œà¸´à¸”à¸•à¸±à¸§à¹€à¸­à¸‡; à¸‚à¸±à¸” CONCEPT (independence) |
+| **C. human-only review** | à¹„à¸¡à¹ˆ scale à¸à¸±à¸š 45 task / fan-out; à¸„à¸™à¸à¸¥à¸²à¸¢à¹€à¸›à¹‡à¸™à¸„à¸­à¸‚à¸§à¸” |
+| **D. static check à¸­à¸¢à¹ˆà¸²à¸‡à¹€à¸”à¸µà¸¢à¸§** (lint/compile) | à¸ˆà¸±à¸šà¹„à¸”à¹‰à¹à¸„à¹ˆ syntax à¹„à¸¡à¹ˆà¸ˆà¸±à¸š "à¸•à¸£à¸‡ acceptance à¹„à¸«à¸¡ / action à¸›à¸¥à¸­à¸¡ / logic"; à¹€à¸ªà¸£à¸´à¸¡à¹„à¸”à¹‰à¹à¸•à¹ˆà¹„à¸¡à¹ˆà¸žà¸­ |
+| **E. judge panel à¸«à¸¥à¸²à¸¢à¸•à¸±à¸§à¸—à¸¸à¸ task** | à¹à¸žà¸‡ token à¹€à¸à¸´à¸™à¸ˆà¸³à¹€à¸›à¹‡à¸™à¸ªà¸³à¸«à¸£à¸±à¸šà¸‡à¸²à¸™à¸—à¸±à¹ˆà¸§à¹„à¸› â€” à¹€à¸à¹‡à¸šà¹„à¸§à¹‰à¹€à¸›à¹‡à¸™ opt-in à¸‡à¸²à¸™à¸ªà¸³à¸„à¸±à¸ (à¹€à¸Ÿà¸ªà¸–à¸±à¸”à¹„à¸›) |
 
 ## Consequences
 
-**ดี**
-- `done` มีความหมายจริง = "ผ่าน acceptance" → progress เชื่อถือได้
-- จับ draft ผิดของ local model อัตโนมัติก่อนสะสมเป็นหนี้
-- review-reject count เป็น quality signal (ตาม CONCEPT)
-- เข้ากับ pattern เดิม (POLA scope, model-tier routing, BLOCKED escalation)
+**à¸”à¸µ**
+- `done` à¸¡à¸µà¸„à¸§à¸²à¸¡à¸«à¸¡à¸²à¸¢à¸ˆà¸£à¸´à¸‡ = "à¸œà¹ˆà¸²à¸™ acceptance" â†’ progress à¹€à¸Šà¸·à¹ˆà¸­à¸–à¸·à¸­à¹„à¸”à¹‰
+- à¸ˆà¸±à¸š draft à¸œà¸´à¸”à¸‚à¸­à¸‡ local model à¸­à¸±à¸•à¹‚à¸™à¸¡à¸±à¸•à¸´à¸à¹ˆà¸­à¸™à¸ªà¸°à¸ªà¸¡à¹€à¸›à¹‡à¸™à¸«à¸™à¸µà¹‰
+- review-reject count à¹€à¸›à¹‡à¸™ quality signal (à¸•à¸²à¸¡ CONCEPT)
+- à¹€à¸‚à¹‰à¸²à¸à¸±à¸š pattern à¹€à¸”à¸´à¸¡ (POLA scope, model-tier routing, BLOCKED escalation)
 
-**แลกมา**
-- **+1 agent/task** (reviewer ใช้ token tier claude เสมอ แม้ worker เป็น local ฟรี) → ต้นทุนเพิ่ม
-  → บรรเทาด้วย `requireReview:false` ต่อ task และ `skipForDraft` (งาน local draft ข้าม review ได้)
-- เพิ่ม latency ต่อ task (รีวิวก่อนปิด)
-- reviewer เองอาจผิด (false fail/pass) → บรรเทาด้วย adversarial framing + human escalation ที่ปลายทาง
-- เพิ่มความซับซ้อน state machine (`reviewing`, `needs-rework`)
+**à¹à¸¥à¸à¸¡à¸²**
+- **+1 agent/task** (reviewer à¹ƒà¸Šà¹‰ token tier claude à¹€à¸ªà¸¡à¸­ à¹à¸¡à¹‰ worker à¹€à¸›à¹‡à¸™ local à¸Ÿà¸£à¸µ) â†’ à¸•à¹‰à¸™à¸—à¸¸à¸™à¹€à¸žà¸´à¹ˆà¸¡
+  â†’ à¸šà¸£à¸£à¹€à¸—à¸²à¸”à¹‰à¸§à¸¢ `requireReview:false` à¸•à¹ˆà¸­ task à¹à¸¥à¸° `skipForDraft` (à¸‡à¸²à¸™ local draft à¸‚à¹‰à¸²à¸¡ review à¹„à¸”à¹‰)
+- à¹€à¸žà¸´à¹ˆà¸¡ latency à¸•à¹ˆà¸­ task (à¸£à¸µà¸§à¸´à¸§à¸à¹ˆà¸­à¸™à¸›à¸´à¸”)
+- reviewer à¹€à¸­à¸‡à¸­à¸²à¸ˆà¸œà¸´à¸” (false fail/pass) â†’ à¸šà¸£à¸£à¹€à¸—à¸²à¸”à¹‰à¸§à¸¢ adversarial framing + human escalation à¸—à¸µà¹ˆà¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡
+- à¹€à¸žà¸´à¹ˆà¸¡à¸„à¸§à¸²à¸¡à¸‹à¸±à¸šà¸‹à¹‰à¸­à¸™ state machine (`reviewing`, `needs-rework`)
 
 ## Compliance / links
-- POLA reviewer scoping → `docs/CONCEPT--SUBAGENT-CONTEXT-SCOPING.md`
-- Definition of Done ที่ gate ควรบังคับ → `docs/02-Engineering-Spec.md` §7
-- discipline ของ output ที่ reviewer ตรวจ → `docs/GUIDE--SMALL-MODEL-PROMPTING.md`
-- รายละเอียด workflow/schema/config/edge-case → [SPEC--VERIFY-GATE.md](SPEC--VERIFY-GATE.md)
+- POLA reviewer scoping â†’ `docs/research/concepts/subagent-context-scoping.md`
+- Definition of Done à¸—à¸µà¹ˆ gate à¸„à¸§à¸£à¸šà¸±à¸‡à¸„à¸±à¸š â†’ `docs/architecture/engineering-spec.md` Â§7
+- discipline à¸‚à¸­à¸‡ output à¸—à¸µà¹ˆ reviewer à¸•à¸£à¸§à¸ˆ â†’ `docs/guides/small-model-prompting.md`
+- à¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸” workflow/schema/config/edge-case â†’ [SPEC--VERIFY-GATE.md](SPEC--VERIFY-GATE.md)
 
 ## Revisit when
-- ต้นทุน review สูงเกินรับ → พิจารณา static-check-first แล้วค่อย agent-review เฉพาะที่ผ่าน static
-- ต้องการความเชื่อมั่นสูงขึ้นในงานสำคัญ → ยก reviewer เป็น judge panel (majority vote)
-- มี escalate() round-trip จริง (ตาม CONCEPT) → ผูก needs-rework เข้ากับ escalation API
+- à¸•à¹‰à¸™à¸—à¸¸à¸™ review à¸ªà¸¹à¸‡à¹€à¸à¸´à¸™à¸£à¸±à¸š â†’ à¸žà¸´à¸ˆà¸²à¸£à¸“à¸² static-check-first à¹à¸¥à¹‰à¸§à¸„à¹ˆà¸­à¸¢ agent-review à¹€à¸‰à¸žà¸²à¸°à¸—à¸µà¹ˆà¸œà¹ˆà¸²à¸™ static
+- à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸„à¸§à¸²à¸¡à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸±à¹ˆà¸™à¸ªà¸¹à¸‡à¸‚à¸¶à¹‰à¸™à¹ƒà¸™à¸‡à¸²à¸™à¸ªà¸³à¸„à¸±à¸ â†’ à¸¢à¸ reviewer à¹€à¸›à¹‡à¸™ judge panel (majority vote)
+- à¸¡à¸µ escalate() round-trip à¸ˆà¸£à¸´à¸‡ (à¸•à¸²à¸¡ CONCEPT) â†’ à¸œà¸¹à¸ needs-rework à¹€à¸‚à¹‰à¸²à¸à¸±à¸š escalation API
+
+
+
+
