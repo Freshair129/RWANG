@@ -224,6 +224,7 @@ async function runOllama(t, model, worker, prompt, config, paths, opts) {
       model, stream: true, options,
       messages: [{ role: "user", content: prompt }],
     };
+    if (prov.keepAlive) payload.keep_alive = prov.keepAlive;
     if (typeof prov.think === "boolean") payload.think = prov.think;
     const resp = await fetch(`${host}/api/chat`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -365,6 +366,7 @@ async function runOllamaTools(t, model, worker, prompt, config, paths, opts) {
   try {
     for (let iter = 0; iter < maxIter; iter++) {
       const payload = { model, stream: false, tools: OLLAMA_TOOLS, messages, options };
+      if (prov.keepAlive) payload.keep_alive = prov.keepAlive;
       if (typeof prov.think === "boolean") payload.think = prov.think;
       const resp = await fetch(`${host}/api/chat`, {
         method: "POST", headers: { "Content-Type": "application/json" },

@@ -10,6 +10,8 @@
     "next": "node orchestrator.mjs next",
     "graph": "node orchestrator.mjs graph",
     "run": "node orchestrator.mjs run",
-    "reset": "node orchestrator.mjs reset"
+    "reset": "node orchestrator.mjs reset",
+    "prewarm": "node prewarm.mjs",
+    "vram": "node vram-mode.mjs"
   }
 }

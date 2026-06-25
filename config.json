@@ -29,12 +29,14 @@
       "think": false,
       "tools": true,
       "toolsMaxIter": 20,
+      "keepAlive": "30m",
       "defaultProfile": "balanced",
+      "_perfComment": "num_ctx sized for micro-tasks to keep KV small (12GB GPU is VRAM-contended ~5GB free when Chrome open). Do NOT set OLLAMA_KV_CACHE_TYPE=q8_0 — it tanks prefill to ~7 tok/s on this box.",
       "profiles": {
-        "fast": { "temperature": 0.3, "num_predict": 2048 },
-        "balanced": { "temperature": 0.4, "num_predict": 4096 },
-        "ui-heavy": { "temperature": 0.5, "num_predict": 8192 },
-        "tools": { "temperature": 0.3, "num_predict": 8192 }
+        "fast": { "temperature": 0.3, "num_predict": 2048, "num_ctx": 8192 },
+        "balanced": { "temperature": 0.4, "num_predict": 4096, "num_ctx": 8192 },
+        "ui-heavy": { "temperature": 0.5, "num_predict": 8192, "num_ctx": 12288 },
+        "tools": { "temperature": 0.3, "num_predict": 8192, "num_ctx": 16384 }
       },
       "defaultToolsProfile": "tools"
     },
@@ -81,7 +83,7 @@
     "worker": {
       "description": "Scaffolding, config files, documentation â€” light work",
       "requires": ["text_gen"],
-      "preferred": ["claude:haiku", "ollama:gemma4:latest", "openrouter:google/gemma-3-27b"]
+      "preferred": ["claude:haiku", "ollama:qwen3.5:4b", "ollama:gemma4:latest", "openrouter:google/gemma-3-27b"]
     },
     "reviewer": {
       "description": "Independent verification of worker output (Verify Gate)",
@@ -91,7 +93,7 @@
     "scout": {
       "description": "Research, drafting, analysis â€” text generation focus",
       "requires": ["text_gen"],
-      "preferred": ["ollama:gemma4:latest", "claude:haiku", "openrouter:google/gemma-3-27b"]
+      "preferred": ["ollama:qwen3.5:4b", "claude:haiku", "openrouter:google/gemma-3-27b"]
     }
   },
 
