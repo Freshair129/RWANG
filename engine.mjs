@@ -28,7 +28,7 @@ export function reload() {
 
 export const ACTIVE = new Set(["claimed", "running", "reviewing"]);
 
-function loadJson(p) { return JSON.parse(readFileSync(p, "utf8")); }
+function loadJson(p) { return JSON.parse(readFileSync(p, "utf8").replace(/^\uFEFF/, "")); }
 export function now() { return Date.now(); }
 export function byId(id) { return BACKLOG.find((t) => t.id === id); }
 

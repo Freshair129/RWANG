@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>G-Maiden · Orchestrator</title>
+<title>G-Orchestra · Multi-Agent Orchestrator</title>
+<link rel="icon" href="data:," />
 <style>
   :root {
     --bg: #08090c; --panel: rgba(18,20,28,0.72); --panel-2: rgba(28,32,44,0.6);
@@ -17,17 +18,28 @@
       radial-gradient(700px 400px at -10% 20%, rgba(120,90,210,0.08), transparent 60%), var(--bg);
     color:var(--txt); font:14px/1.5 "Segoe UI",system-ui,sans-serif; min-height:100vh; }
   a{color:var(--ice)}
-  .wrap{ max-width:1180px; margin:0 auto; padding:22px 18px 60px; }
+  .wrap{ max-width:1180px; margin:0 auto; padding:22px 18px 60px; position:relative; }
+  .wrap:before{ content:""; position:fixed; inset:0; pointer-events:none; opacity:.42;
+    background:
+      linear-gradient(120deg, transparent 0 24%, rgba(143,212,255,.06) 25%, transparent 26% 52%, rgba(86,224,176,.045) 53%, transparent 54%),
+      radial-gradient(circle at 12% 78%, rgba(143,212,255,.09), transparent 28%);
+    background-size:260px 260px, 900px 620px; animation:wallpaper 18s linear infinite; }
+  @keyframes wallpaper{ from{ transform:translate3d(0,0,0);} to{ transform:translate3d(-80px,40px,0);} }
 
-  header.top{ display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+  header.top{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; position:relative; overflow:hidden;
     background:var(--panel); border:1px solid var(--line); border-radius:16px;
     padding:16px 20px; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
     box-shadow:0 8px 40px rgba(0,0,0,0.4); }
+  header.top:after{ content:""; position:absolute; inset:-1px; pointer-events:none;
+    background:linear-gradient(115deg, transparent 0 34%, rgba(143,212,255,.13) 45%, transparent 56% 100%);
+    transform:translateX(-60%); animation:sweep 7s ease-in-out infinite; }
+  @keyframes sweep{ 0%,55%{ transform:translateX(-65%);} 100%{ transform:translateX(70%);} }
   .brand{ display:flex; align-items:center; gap:11px; }
   .gem{ width:26px;height:26px;border-radius:7px; transform:rotate(45deg);
     background:linear-gradient(135deg,var(--ice),#3f7fb0); box-shadow:0 0 18px rgba(143,212,255,0.5); }
   .brand h1{ font-size:16px; margin:0; letter-spacing:.4px; font-weight:600; }
   .brand small{ color:var(--mut); display:block; font-size:11px; letter-spacing:.5px; }
+  .brand,.prog,.ctrls{ position:relative; z-index:1; }
   .prog{ flex:1; min-width:220px; }
   .prog .meta{ display:flex; justify-content:space-between; font-size:12px; color:var(--mut); margin-bottom:6px; }
   .track{ height:9px; background:rgba(255,255,255,0.06); border-radius:99px; overflow:hidden; }
@@ -158,12 +170,28 @@
     opacity:0; transition:.3s; z-index:60; backdrop-filter:blur(10px); }
   .toast.on{ opacity:1; transform:translateX(-50%) translateY(0); }
   .toast.err{ border-color:rgba(255,123,133,0.4); color:var(--bad); }
+  @media (max-width: 680px) {
+    .wrap{ padding:12px 10px 44px; }
+    header.top{ border-radius:13px; padding:14px; }
+    .ctrls,.filters,.acts,.badges{ width:100%; flex-wrap:wrap; }
+    .ctrls .btn,.filters select,.filters input{ flex:1 1 calc(50% - 8px); min-width:0; }
+    .filters input{ flex-basis:100%; }
+    .tabs{ overflow-x:auto; padding-bottom:2px; }
+    .tab{ white-space:nowrap; }
+    .row{ grid-template-columns:1fr; gap:9px; padding:12px; }
+    .id small{ display:inline; margin-left:6px; }
+    .acts .btn{ flex:1 1 calc(50% - 6px); }
+    .room{ grid-template-columns:minmax(0, 1fr); }
+    .tile pre{ height:210px; }
+    .metabar{ display:block; }
+    .authbox,.ucard{ margin-bottom:10px; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand"><div class="gem"></div><div><h1>G-Maiden Orchestrator</h1><small>MULTI-AGENT TASK CONTROL</small></div></div>
+    <div class="brand"><div class="gem"></div><div><h1>G-Orchestra</h1><small>MULTI-AGENT DEV TOOL · G-MAIDEN BUILD SYSTEM</small></div></div>
     <div class="prog">
       <div class="meta"><span id="pmeta">—</span><span id="pupd"></span></div>
       <div class="track"><div class="fill" id="pfill"></div></div>
@@ -204,6 +232,7 @@
   <div class="room hidden" id="room"></div>
 
   <div class="legend">
+    <span>G-Orchestra = multi-agent orchestrator ที่อ่าน backlog/config/state และสั่ง agent ผ่าน engine.mjs</span>
     <span>model: <b style="color:var(--opus)">opus</b>=วางแผน/architecture · <b style="color:var(--sonnet)">sonnet</b>=coding · <b style="color:var(--haiku)">haiku</b>=งานง่าย</span>
     <span>○ ready · ▶ running · ✓ done · ✗ failed</span>
   </div>
