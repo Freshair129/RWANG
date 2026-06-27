@@ -1,0 +1,176 @@
+{
+  "entity--atom-schema": {
+    "id": "entity--atom-schema",
+    "state": "exists",
+    "evidence": "gks/atom-schema.mjs:6-110 (CORE_TYPES/EXTENSION_TYPES/TIERS H0-H6/STATUSES, SLUG_RE :21, validateAtom :24-33, toBacklogTask :68-81, renderAtomMarkdown :84-97, parseAtomMarkdown :100-110)",
+    "note": "Just built in gks/. Complete GenesisAtom shape, validators, backlog + markdown projections, round-trip parse. Self-hosting: the 29 atoms ARE gks/atoms.gorch.json. Only open thread: owner/borrow/lease/fence fields named as TODO in the schema atom title (belongs to algo--ownership-borrow-checker, not this atom)."
+  },
+  "algo--genesis-compile": {
+    "id": "algo--genesis-compile",
+    "state": "exists",
+    "evidence": "gks/compile.mjs:1-51 (validate/assemble/render/round-trip self-check, loud non-zero exit); validateSet in atom-schema.mjs:36-65 (GKS-001 unique :41, unresolved dep :43, GKS-002 acyclic Kahn :53-57, GKS-003 >6-hop :61, waves :62-63)",
+    "note": "Just built in gks/. Decompose/validate/assemble runtime is complete and runs: compiles this very 29-atom plan into backlog.gorch.json + per-atom .md with markdown<->object round-trip self-check. Matches the atom DoD."
+  },
+  "runbook--doc-to-code-pipeline": {
+    "id": "runbook--doc-to-code-pipeline",
+    "state": "extend",
+    "evidence": "run.mjs:37-74 (one-shot intent->plan->execute->Verify-Gate->cost/diff); gks/compile.mjs (authored-atom->backlog->build path)",
+    "note": "Two working pipeline implementations exist (run.mjs freeform loop + gks compile path), but the atom asks for a DOCUMENTED canonical loop (every step + owning module + worked end-to-end atom trace) plus a supersede/asOf provenance rule. The runbook doc itself and the provenance trace-back are absent (gks/atoms/runbook--doc-to-code-pipeline.md:16-17 DoD unmet)."
+  },
+  "tech_stack--tauri-shell": {
+    "id": "tech_stack--tauri-shell",
+    "state": "extend",
+    "evidence": "Game shell only: package.json:2-4, src-tauri/Cargo.toml:2, tauri.conf.json:3-5 (name=g-maiden, Dota companion); orchestrator UI is server.mjs:24-58 + public/index.html (Node :4577 web SPA, NOT Tauri)",
+    "note": "A verified working Tauri v2 + React 18 + Vite + TS + Tailwind two-window shell exists but is bound to the G-Maiden GAME domain — a reusable reference pattern, not the orchestrator shell. Orchestrator runs today as a plain Node-http SPA. Build = new Tauri shell for the orchestrator, reusing the proven game scaffold pattern."
+  },
+  "protocol--engine-ipc": {
+    "id": "protocol--engine-ipc",
+    "state": "extend",
+    "evidence": "server.mjs:24-58 (full HTTP command vocabulary claim/done/fail/release/assign/dispatch/run/stop/setauth/reset + /api/state + /api/log chunked); engine.mjs:570-580,591-607; Tauri IPC pattern proven in game app (main.rs:287-313, App.tsx:334-371)",
+    "note": "The IPC CONTRACT (action set + snapshot/log-stream shapes) is fully defined and battle-tested over Node-http, and an idiomatic Tauri command/event/capabilities pattern exists in the game app. What's missing: the actual Tauri-commands/events binding to the engine sidecar — no Tauri<->engine IPC exists. Port the REST seam to invoke()/listen()."
+  },
+  "tech_stack--genesisdb-sidecar": {
+    "id": "tech_stack--genesisdb-sidecar",
+    "state": "extend",
+    "evidence": "store/knowledge.mjs:60-85 (genesisStore lazy createRequire N-API, GenesisDatabase.open), :62-78 (bge-m3 1024-dim embeddings via Ollama); compiled binding on disk G:/GenesisBlock_Dev/GenesisBlock/index.* (18.5MB .node); poc/genesis-roundtrip.mjs proves load",
+    "note": "In-process N-API require works and embeddings pipeline is built. Missing if the atom means a managed Node HOST process: no child_process/server lifecycle, no rest/mcp transport (config declares them; knowledge.mjs implements napi-only). Windows-only binary today."
+  },
+  "algo--knowledge-adapter": {
+    "id": "algo--knowledge-adapter",
+    "state": "extend",
+    "evidence": "store/knowledge.mjs:39-136 (getStore dispatch file|genesisdb, fileStore :40-57, genesisStore :60-127); engine.mjs:511-535 (recordOutcome/queryPastMistakes/queryGrounded wired into executeWithReview); brain/failures.jsonl = 28 real production rows; L0/L1/L2 smoke-tested (poc/l0,l1,l2-smoke.mjs)",
+    "note": "Adapter interface + mandatory zero-dep file fallback + L0/L1/L2 anti-error loop are REAL and production-wired (28 live recorded outcomes), not a stub. Remaining vs atom spec: asOf + linkTrace adapter methods (ADR-O-003:127 named, absent) and an atom-ingestion/rebuild-from-markdown index path ('markdown=source of truth, GenesisDB=rebuildable derived index') — the store only ingests failures/tasks at dispatch time."
+  },
+  "config--cost-cap-tiers": {
+    "id": "config--cost-cap-tiers",
+    "state": "extend",
+    "evidence": "engine.mjs:347-368 (recordUsage/readUsage ledger + 5h/7d windows), :208 (usageLimits surfaced); cost-meter.mjs + savings-report.mjs; config.json:129-131 usageLimits both NULL; public/index.html:439-457 (gauge w/ 80%/100% thresholds)",
+    "note": "Metering half fully built (128 real usage.jsonl rows, windowed rollups, savings/VRAM tooling, gauge UI). Enforcement half absent: usageLimits are null, NO pre-dispatch cost check in runPool/executeWithReview/dispatchOne, NO tier-bound seeding, NO real kill-switch (stopPool sets a cooperative flag, does not terminate children). DESIGN doc confirms 'nothing reads the caps'."
+  },
+  "guard--governance-gate": {
+    "id": "guard--governance-gate",
+    "state": "new",
+    "evidence": "requiresConfirm only set in projection gks/atom-schema.mjs:77, never read pre-dispatch; orchestration/gates/ dir VERIFIED MISSING; SPEC--GOVIBE-INTEGRATION.md §4.3 (gates/ preDispatch/postDone/blockOn) is spec-only",
+    "note": "No gate code exists. requiresConfirm flag is plumbed onto tasks but the engine never checks it before dispatch; no auto-approve Safety/deploy/merge logic; gates/ module is spec-only. The only adjacent primitive is the cooperative POLA scope filter, which is not a governance gate."
+  },
+  "feature--atom-store": {
+    "id": "feature--atom-store",
+    "state": "extend",
+    "evidence": "engine.mjs:72-211 (per-task state + snapshot projection consumed by UI); public/index.html:298-334 (renderList data-driven off snapshot); src/src/store/.gitkeep (empty zustand scaffold, no atom store)",
+    "note": "A server-side normalized task/state model + snapshot exists and drives the current web UI's data-driven rendering. But there is NO normalized CLIENT store of Genesis atoms (game app uses localStorage Settings + react-query; zustand installed but unused for atoms). The client-side normalized atom store is the build work."
+  },
+  "feature--board": {
+    "id": "feature--board",
+    "state": "extend",
+    "evidence": "public/index.html:213-228,298-334 (filterable task list w/ status/phase/deps/model/worker + per-task action buttons), backed by snapshot tasks engine.mjs:180-190",
+    "note": "A working board EXISTS as a filterable row-based list with all task states, dependency checks, and inline actions (claim/dispatch/done/fail/release/retry/accept/rework). Missing for Jira/Trello/Linear parity: drag-between-columns, swimlanes, true column board. It is a vanilla-JS web surface, not the planned React/Tauri client."
+  },
+  "feature--loadout": {
+    "id": "feature--loadout",
+    "state": "extend",
+    "evidence": "config.json:72-98 (5 roles x preferred chains) + providers.mjs:44-57 (resolveForRole); engine.mjs:40-51 (modelOverride>task.model>role precedence); public/index.html:330-334 (per-task model dropdown); providers.mjs:130-149 (dual-mode auth)",
+    "note": "Only the MODEL/auth dimension is built (provider:model selection, per-task override, live plan/apikey switch, ollama local tier). Missing the rest of the agent inventory: tools, skills, memoryos, persona dimensions — none of these are modeled or selectable. No unified loadout entity."
+  },
+  "feature--copilot-console": {
+    "id": "feature--copilot-console",
+    "state": "new",
+    "evidence": "ui-current area: NO chat input anywhere in public/index.html; only structured buttons + a search filter box. No chat-to-command surface in game app either.",
+    "note": "Greenfield. There is zero chat-to-command surface; the only command entry is structured action buttons. No NL->command translation layer exists."
+  },
+  "feature--cockpit": {
+    "id": "feature--cockpit",
+    "state": "extend",
+    "evidence": "public/index.html:370-415 (live agent tiles + streaming log pane polling /api/log), :427-458 (session/weekly cost gauge cards w/ thresholds), :460-468 (pool status); engine.mjs:370-414 runPool",
+    "note": "Live agent tiles + streaming logs + cost gauge + pool-running indicator all EXIST in the web UI. Missing: aggregate provider-health bars (the /api/providers endpoint exists but is not rendered), and intervene controls (pause/kill-switch). It is the vanilla-JS dashboard, not the planned React/Tauri cockpit — port/upgrade rather than rebuild."
+  },
+  "algo--planner-tiering": {
+    "id": "algo--planner-tiering",
+    "state": "extend",
+    "evidence": "engine.mjs:128-141 (DAG waves), :40-52 (static role->capability model resolution); planner.mjs:72-95 (frontier-model WBS atomization); atom-schema.mjs:19,75 (static TIER_BUDGET->budgetTokens); grep 'downgrade' across *.mjs = 0 hits",
+    "note": "Real pieces exist: frontier-model WBS decomposition, DAG-level wave scheduling, and static H-tier->token-budget mapping. Missing all three of the atom's DoD: (1) NO 'lowest-H-by-WBS' tier-assignment heuristic (planner emits no tier; tiers are hand-authored only), (2) NO auto-downgrade-near-cost-cap, (3) NO H-as-tool-access-control (tier only scales tokens). The adaptive layer is the build work."
+  },
+  "safety--verify-gate-v2": {
+    "id": "safety--verify-gate-v2",
+    "state": "extend",
+    "evidence": "engine.mjs:416-567 (runReview, parseVerdict, executeWithReview auto-rework), decision rule :500-503 (pass iff verdict==pass && no critical); config.json:118-127 (failOn critical, maxReworkRounds 1, reviewerRole); SPEC--VERIFY-GATE.md §3.5 backs it",
+    "note": "Core gate is fully built and working: independent reviewer, pass-if-no-critical rule, auto-rework loop, robust verdict parsing, reviewExisting. The atom explicitly wants 'Claude default + local judge' — only the Claude-default judge is wired (reviewer always resolves to claude:opus/sonnet; only claude declares code_review). The local-judge alternative is the remaining work."
+  },
+  "algo--ownership-borrow-checker": {
+    "id": "algo--ownership-borrow-checker",
+    "state": "extend",
+    "evidence": "engine.mjs:99-108 (reapStale time-lease), :144-153 (claim under O_EXCL lock), :57-69 (withLock), :34 (ACTIVE set), config.json:3 (leaseMs); providers.mjs:52-54 (capability-subset authority match)",
+    "note": "Only two primitives of the model exist: a single-host TIME-lease (claimedAt/leaseMs/reapStale) + O_EXCL file lock, and capability-subset authority matching. The claim=&mut / read=& / lease=lifetime / move=fence borrow semantics are NOT implemented — confirmed named as a TODO in the schema atom title. The borrow-checker abstraction is the build work."
+  },
+  "eval--goldset-harness": {
+    "id": "eval--goldset-harness",
+    "state": "new",
+    "evidence": "grep 'goldset' across orchestration = only gks/atoms/eval--goldset-harness.md + atoms.gorch.json + backlog.gorch.json (definitions). No labeled gold-set, no scorer, no auto-spend gate code.",
+    "note": "Fully greenfield. No gold-set data, no scorer for tier-assignment/review-verdicts vs labels, and no auto-spend gating until threshold met. Only the spec stub exists."
+  },
+  "tech_stack--updater": {
+    "id": "tech_stack--updater",
+    "state": "extend",
+    "evidence": "src-tauri/Cargo.toml:18-19 (updater+process plugins), main.rs:273-274 (registered), tauri.conf.json:55,62-68 (GitHub endpoint, createUpdaterArtifacts, embedded minisign pubkey), .tauri/g-maiden-updater.key(.pub) on disk, App.tsx:1091-1172 (ask-first check/downloadAndInstall/relaunch)",
+    "note": "A COMPLETE working Tauri-updater + minisign pipeline exists end-to-end — but in the G-Maiden GAME app (productName/endpoint/identifier/keys are game-bound). Highest-value carry-over: the orchestrator can lift it almost verbatim. Remaining = re-point to orchestrator product identity + its own minisign keypair/endpoint."
+  },
+  "guard--entitlement": {
+    "id": "guard--entitlement",
+    "state": "new",
+    "evidence": "governance-docs: grep license|entitlement across orchestration/*.mjs and docs = 0 matches; SRS--G-ORCHESTRA NFR-O-001 scopes orchestrator as internal/dev-only; auth-mode toggle (engine.mjs:87) is billing-mode, not license",
+    "note": "No code and no spec backing. The closest existing surface (plan vs apikey auth toggle) is a billing-mode switch, not a per-machine license. Per-machine entitlement + offline grace is fully greenfield (and contradicts the current dev-only scoping, so it is a genuine v2 product addition)."
+  },
+  "audit--telemetry": {
+    "id": "audit--telemetry",
+    "state": "new",
+    "evidence": "cost-usage: grep telemetry|audit.jsonl|anon|opt-in|counters across orchestration/*.mjs = only false positives; only spec stub gks/atoms/audit--telemetry.md (status: todo)",
+    "note": "Greenfield. The usage.jsonl ledger is local cost/token accounting (not opt-in anonymous product telemetry). No anon-counter, no opt-in gate, no telemetry emission exists."
+  },
+  "feature--graph-editable": {
+    "id": "feature--graph-editable",
+    "state": "extend",
+    "evidence": "public/index.html:336-368 (SVG wave-DAG: wave-level layout, bezier dep edges, color=model/fill=status, click->log modal, hover tooltips), backed by snapshot.waves engine.mjs:204",
+    "note": "A READ-ONLY DAG visualization exists (deps + status + model + click-to-log). Missing everything the atom needs: Obsidian-style edge EDITING, drag, add/remove nodes, and focus=tier interaction. 'focus=tier' is only loosely approximated by wave rows. The editable graph is the build work."
+  },
+  "feature--node-db-canvas": {
+    "id": "feature--node-db-canvas",
+    "state": "new",
+    "evidence": "ui-current: the SVG DAG is read-only with no drag/add-node/DB-drop (public/index.html:336-368); tauri-root: no node-db-canvas component anywhere in frontend",
+    "note": "No drop-nodes-into-DB / render-selected canvas exists. The read-only wave-DAG is not a canvas (no drag, no DB write, no node creation). Greenfield interaction surface, though it would sit atop the existing GenesisDB adapter."
+  },
+  "feature--memoryos": {
+    "id": "feature--memoryos",
+    "state": "extend",
+    "evidence": "store/knowledge.mjs:79-125 (genesisStore persists task+failure nodes/edges to durable .gdb, cross-run hybridSearch retrieval); atoms.gorch.json:102 deps=[algo--knowledge-adapter,feature--loadout]; backlog.gorch.json:399-400",
+    "note": "The persistent cross-run graph+vector KB SUBSTRATE exists and works. But it is a GLOBAL/task-keyed store — NOT per-agent/per-loadout (nodes carry no agent-owner partition). The atom explicitly wants per-agent isolation + loadout binding; that partitioning + the masterblock/session/rca structure (spec'd in SPEC--GOVIBE §4.2) is the remaining work."
+  },
+  "entity--traceability-graph": {
+    "id": "entity--traceability-graph",
+    "state": "extend",
+    "evidence": "store/knowledge.mjs:100 (only 'failed_with' edge written), :125 (close=saveState, no supersede/asOf usage); GenesisDB index.d.ts:46-92,189-191 exposes EdgeInput/asOf/supersedeNode/retractEdge/validFrom; atoms.gorch.json:106-107",
+    "note": "All bitemporal backend primitives EXIST (asOf, validFrom, causedBy, supersedeNode, retractEdge) and one real trace edge (task--failed_with-->failure with embeddings) is written. Missing: the full atom-keyed edge vocabulary (implemented_by/verified_by/depends_on/supersedes), plus adapter-level asOf/linkTrace usage. The atom is framed as 'promote the failure-only side-channel into the primary backbone' — substrate done, promotion not."
+  },
+  "module--multi-host": {
+    "id": "module--multi-host",
+    "state": "new",
+    "evidence": "engine.mjs:57-69 (single-host O_EXCL withLock), :99-108 (single-host time-lease); SPEC--GOVIBE-INTEGRATION.md §10 (multi-host EXPLICITLY out of scope); grep multi-host|coordinator|fencing = 0 matches",
+    "note": "No multi-host code and explicitly a NON-GOAL in current specs. Only single-host file-lock claim + time-lease exist. A distributed Coordinator + fencing leases is fully greenfield (and a scope change vs the current single-host design)."
+  },
+  "tech_stack--cross-platform": {
+    "id": "tech_stack--cross-platform",
+    "state": "new",
+    "evidence": "knowledge-genesisdb: only index.win32-x64-msvc.node on disk (no darwin/linux); store/knowledge.mjs:81 hard-defaults a Windows-absolute binding path; no napi cross-compile CI or signing pipeline found",
+    "note": "Windows-only today: single compiled napi binary, Windows-absolute paths. No napi cross-compile CI matrix and no cross-platform signing pipeline exists. Greenfield (the updater/minisign signing in the game app is Windows-bundle signing, not the napi cross-compile this atom needs)."
+  },
+  "protocol--govibe-mcp-bridge": {
+    "id": "protocol--govibe-mcp-bridge",
+    "state": "new",
+    "evidence": "governance-docs: SPEC--GOVIBE-INTEGRATION.md §5 defines full MCP tool contract (orch.roadmap/agent.run/wave.run/docs.resolve/snapshot/workspace.validate); orchestration/mcp/ dir VERIFIED MISSING; no JSON-RPC/stdio server in any .mjs",
+    "note": "Spec-only. A complete MCP tool contract is documented (tools mapped to engine fns, actor-required, reuse executor auth) but no mcp/ module or JSON-RPC-over-stdio server code exists. Greenfield against a well-specified boundary contract."
+  },
+  "feature--marketplace-seam": {
+    "id": "feature--marketplace-seam",
+    "state": "new",
+    "evidence": "providers area: GUIDE--ADDING-PROVIDER 2-file extension contract is the natural seam but no marketplace/store code exists; ui-current: no marketplace UI in index.html",
+    "note": "No marketplace/loadout-store code exists. The pluggable provider-adapter pattern (config + KNOWN_PREFIXES + runProvider case) is the natural seam a store would plug into, but the seam itself (store interface, install/list/source loadouts) is unbuilt. Greenfield, with a clear extension point to build against."
+  }
+}

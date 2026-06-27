@@ -12,18 +12,23 @@ import { parseModel, resolveForRole, runProvider, listProviders, checkHealth, ch
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dir, "..");
+// Alternate backlog (e.g. the self-hosting G-Orchestra build): GORCH_BACKLOG=gks/backlog.gorch.json
+// keeps its OWN isolated state/lock so it never pollutes the default G-Maiden backlog.json/state.json.
+export const BACKLOG_PATH = process.env.GORCH_BACKLOG ? resolve(__dir, process.env.GORCH_BACKLOG) : join(__dir, "backlog.json");
+const STATE_PATH = process.env.GORCH_BACKLOG ? BACKLOG_PATH.replace(/\.json$/, ".state.json") : join(__dir, "state.json");
+const LOCK_PATH = process.env.GORCH_BACKLOG ? STATE_PATH + ".lock" : join(__dir, ".state.lock");
 export const PATHS = {
   __dir, ROOT,
-  STATE: join(__dir, "state.json"),
-  LOCK: join(__dir, ".state.lock"),
+  STATE: STATE_PATH,
+  LOCK: LOCK_PATH,
   LOGS: join(__dir, "logs"),
 };
 
 export let CONFIG = loadJson(join(__dir, "config.json"));
-export let BACKLOG = loadJson(join(__dir, "backlog.json")).tasks;
+export let BACKLOG = loadJson(BACKLOG_PATH).tasks;
 // hot-reload: อ่าน config/backlog ใหม่จากดิสก์ (เรียกตอน snapshot) -> แก้ไฟล์แล้วเห็นผลทันทีไม่ต้อง restart
 export function reload() {
-  try { CONFIG = loadJson(join(__dir, "config.json")); BACKLOG = loadJson(join(__dir, "backlog.json")).tasks; } catch { /* keep last good */ }
+  try { CONFIG = loadJson(join(__dir, "config.json")); BACKLOG = loadJson(BACKLOG_PATH).tasks; } catch { /* keep last good */ }
 }
 
 export const ACTIVE = new Set(["claimed", "running", "reviewing"]);

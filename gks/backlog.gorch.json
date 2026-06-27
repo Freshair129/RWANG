@@ -1,0 +1,536 @@
+{
+  "$schema": "engine backlog (compiled from gks/atoms.gorch.json — do NOT hand-edit; run `node gks/compile.mjs`)",
+  "block": "Genesis::G-Orchestra-v2",
+  "tasks": [
+    {
+      "id": "entity--atom-schema",
+      "title": "Genesis Atom Schema — Define the GenesisAtom type: immutable slug `id` + mutable `displayName`, type, hierarchy (masterplan..subtask), context_scaling_tier H0-H6, status, body, first-class rice/moscow/requiresConfirm, and the ownership block (owner/borrow/lease/fence)",
+      "type": "architecture",
+      "phase": "P0",
+      "deps": [],
+      "est": 2,
+      "accept": "TS/JSON-schema for GenesisAtom committed; round-trips Markdown<->object; passes GKS-001/002 on a sample set.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "exists"
+    },
+    {
+      "id": "algo--genesis-compile",
+      "title": "Genesis Compile (decompose runtime) — The first runtime primitive (seeded by gks/compile.mjs): read atoms -> validate GKS-001 (unique id) / GKS-002 (acyclic) / GKS-003 (>6 hops warn) -> assemble a runnable engine backlog + render canonical Markdown",
+      "type": "code",
+      "phase": "P0",
+      "deps": [
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "accept": "`node gks/compile.mjs` validates + emits backlog.gorch.json + atom .md; fails loudly on dup id / cycle / unresolved dep.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "exists"
+    },
+    {
+      "id": "runbook--doc-to-code-pipeline",
+      "title": "Doc-to-Code Pipeline — The closed loop: intent (Copilot/Spec) -> author atoms -> compile to backlog -> agent claims -> build scoped by H-tier -> Verify Gate -> record outcome+trace back to the graph",
+      "type": "docs",
+      "phase": "P0",
+      "deps": [
+        "algo--genesis-compile"
+      ],
+      "est": 1,
+      "accept": "Runbook doc lists every step with the owning module; a worked example traces one atom end-to-end.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "tech_stack--tauri-shell",
+      "title": "Tauri v2 + React Shell — Scaffold the Tauri v2 + Rust shell with a React/Vite webview, wrapping the proven engine.mjs as a supervised sidecar (strangler-around-a-sidecar)",
+      "type": "scaffold",
+      "phase": "P0",
+      "deps": [],
+      "est": 3,
+      "accept": "`pnpm tauri dev` opens the desktop window; webview renders a placeholder Board fed by engine snapshot over IPC.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "protocol--engine-ipc",
+      "title": "Engine IPC Bridge — Tauri commands + events + channels bridging the Rust shell and the engine sidecar: snapshot/state pull, command dispatch (claim/done/dispatch/run/stop), and a live log stream channel for the Cockpit.",
+      "type": "code",
+      "phase": "P0",
+      "deps": [
+        "tech_stack--tauri-shell"
+      ],
+      "est": 2,
+      "accept": "UI receives live snapshot + log stream; a dispatch command round-trips to the engine and mutates state.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "tech_stack--genesisdb-sidecar",
+      "title": "GenesisDB Node Sidecar — Greenfield: a thin Node sidecar hosting the GenesisDB N-API binary in-process (no port, dodging :3000)",
+      "type": "code",
+      "phase": "P0",
+      "deps": [],
+      "est": 3,
+      "accept": "Sidecar loads the pinned binary, addNode + hybridSearch + retrieveContext round-trip with bge-m3 vectors; refuses on schemaVersion mismatch.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "algo--knowledge-adapter",
+      "title": "Knowledge Adapter (file | genesisdb) — A single swappable adapter (recordOutcome/queryContext/asOf/linkTrace) with a MANDATORY flat-file fallback",
+      "type": "code",
+      "phase": "P0",
+      "deps": [
+        "tech_stack--genesisdb-sidecar",
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "accept": "Same API passes in BOTH file and genesisdb modes; off-Windows auto-degrades to file; semantic query falls back to lexical when embeddings are down.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "config--cost-cap-tiers",
+      "title": "Cost-Cap (tier-bound) — Replace usageLimits=null with non-null, license-tier-bound session/weekly USD caps (Free low -> Pro/Studio higher), user-editable within the tier ceiling, + a global kill-switch",
+      "type": "config",
+      "phase": "P0",
+      "deps": [],
+      "est": 1,
+      "accept": "Pool auto-stops at the configured session/weekly cap; cold-start uses the tier seed; kill-switch halts dispatch immediately.",
+      "scope": {
+        "budgetTokens": 6000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "guard--governance-gate",
+      "title": "Governance Gate — Human-confirm gate triggered by an explicit `requiresConfirm` field PLUS auto for Safety::*/deploy/merge/irreversible",
+      "type": "code",
+      "phase": "P0",
+      "deps": [
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "accept": "A gated atom cannot transition claimed->running without an explicit human confirm; non-gated atoms flow normally.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "new"
+    },
+    {
+      "id": "feature--atom-store",
+      "title": "AtomStore (one object, six lenses) — A single normalized client store (keyed by atom id) so Board card, Graph node, Canvas node, Copilot output, and Cockpit tile are all views of the same row — no parallel models",
+      "type": "code",
+      "phase": "P1",
+      "deps": [
+        "protocol--engine-ipc",
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "accept": "Mutating one atom updates every surface from one store; no duplicated task/graph models.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "feature--board",
+      "title": "Board (Jira+Trello+Linear) — Status/phase columns, claimable cards, RICE/MoSCoW (first-class atom fields), and a rich task-card modal (FR/version/DOD/changelog/export)",
+      "type": "code",
+      "phase": "P1",
+      "deps": [
+        "feature--atom-store"
+      ],
+      "est": 3,
+      "accept": "Drag a card to claim/assign; columns reflect state with no empty-column clutter; card modal shows + edits atom fields.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "feature--loadout",
+      "title": "Agent Loadout (inventory) — The game-inventory surface: per role equip Model (hat), Tools/Capabilities, Skills, MemoryOS, context scope+tier, persona+authority",
+      "type": "code",
+      "phase": "P1",
+      "deps": [
+        "feature--atom-store",
+        "entity--atom-schema"
+      ],
+      "est": 3,
+      "accept": "Drag gear onto slots; stats (cost/speed/capability) render; the equipped loadout actually routes the next dispatch.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "feature--copilot-console",
+      "title": "Copilot Console — Chat-to-command surface with a Maiden-style persona: natural language -> author atoms / dispatch waves via slash-commands, shown as atom diffs",
+      "type": "code",
+      "phase": "P1",
+      "deps": [
+        "feature--atom-store",
+        "protocol--engine-ipc"
+      ],
+      "est": 3,
+      "accept": "A natural-language ask produces atoms or a dispatch; banner appears when Ollama embeddings are down.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "new"
+    },
+    {
+      "id": "feature--cockpit",
+      "title": "Live Cockpit — Real-time agent tiles (claimed/running/reviewing), streaming logs via the IPC channel, a cost gauge reading the tier-bound caps, and intervene controls (pause/stop/kill-switch).",
+      "type": "code",
+      "phase": "P1",
+      "deps": [
+        "feature--atom-store",
+        "config--cost-cap-tiers"
+      ],
+      "est": 2,
+      "accept": "Running agents and live cost render in real time; the kill-switch and pause act immediately.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "extend"
+    },
+    {
+      "id": "algo--planner-tiering",
+      "title": "Planner Tiering — The Planner owns the H-tier heuristic: assign the lowest tier that suffices by WBS rung (subtask->H0 .",
+      "type": "code",
+      "phase": "P1",
+      "deps": [
+        "entity--atom-schema",
+        "config--cost-cap-tiers"
+      ],
+      "est": 2,
+      "accept": "Atoms get a sane default tier by rung; near-cap runs downgrade tier; an H0 task literally cannot glob.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "safety--verify-gate-v2",
+      "title": "Verify Gate v2 — PASS if no `critical` issues (issue-count/severity, not a trusted score)",
+      "type": "code",
+      "phase": "P1",
+      "deps": [
+        "guard--governance-gate"
+      ],
+      "est": 2,
+      "accept": "Non-critical output auto-advances; offline/cap routes review to the local judge; governance tasks still require human confirm.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "algo--ownership-borrow-checker",
+      "title": "Ownership Layer (agent borrow-checker) — Model claim/lease as Rust ownership: claim = exclusive &mut (<=1), context read = shared & (unlimited), lease = lifetime, move = fencing token",
+      "type": "code",
+      "phase": "P1",
+      "deps": [
+        "entity--atom-schema"
+      ],
+      "est": 3,
+      "accept": "Two agents cannot &mut the same atom (conflict rejected); readers never block the writer; stale-fence holders are rejected.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "eval--goldset-harness",
+      "title": "Gold-set Eval Harness — A labeled gold-set + scorer to validate planner tiering + Verify-Gate decisions BEFORE auto-spend is trusted",
+      "type": "test",
+      "phase": "P1",
+      "deps": [
+        "algo--planner-tiering"
+      ],
+      "est": 2,
+      "accept": "Harness scores tier-assignment + review verdicts vs labels; auto-spend stays disabled until a threshold is met.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "new"
+    },
+    {
+      "id": "tech_stack--updater",
+      "title": "In-app Updater — Mirror G-Maiden's release machinery: Tauri updater + minisign-signed installers + latest.json feed + deferred install",
+      "type": "config",
+      "phase": "P1",
+      "deps": [
+        "tech_stack--tauri-shell"
+      ],
+      "est": 2,
+      "accept": "A signed update downloads, drains active tasks, and applies on next launch; tampered signatures are rejected.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "requiresConfirm": true,
+      "moscow": "should",
+      "state": "extend"
+    },
+    {
+      "id": "guard--entitlement",
+      "title": "License & Entitlement — Per-machine device-bound entitlement (ed25519/PASETO v4.local) + offline grace window",
+      "type": "code",
+      "phase": "P1",
+      "deps": [
+        "tech_stack--tauri-shell"
+      ],
+      "est": 2,
+      "accept": "A device-bound token unlocks the tier offline within grace; tampering/expiry degrades to Free; updater stays free across tiers.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "requiresConfirm": true,
+      "moscow": "should",
+      "state": "new"
+    },
+    {
+      "id": "audit--telemetry",
+      "title": "Telemetry (opt-in) — Opt-in, OFF by default (honors local-first)",
+      "type": "config",
+      "phase": "P1",
+      "deps": [
+        "feature--atom-store"
+      ],
+      "est": 1,
+      "accept": "Nothing leaves the machine unless opted in; the payload is restricted to the counter allowlist.",
+      "scope": {
+        "budgetTokens": 6000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "could",
+      "state": "new"
+    },
+    {
+      "id": "feature--graph-editable",
+      "title": "Editable Graph (Obsidian) — View AND edit the dependency/relation graph: nodes=atoms, edges=wikilinks; create/edit/delete edges by dragging; traverse, filter, focus",
+      "type": "code",
+      "phase": "P2",
+      "deps": [
+        "feature--atom-store",
+        "algo--knowledge-adapter"
+      ],
+      "est": 3,
+      "accept": "Dragging creates/removes a real dependency edge (acyclic-checked, GKS-002); focus depth maps to H-tier.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "feature--node-db-canvas",
+      "title": "Node<->DB Canvas — Visual canvas to drop nodes/files/atoms INTO GenesisBlockDB and render only selected atoms/files back FROM the DB",
+      "type": "code",
+      "phase": "P2",
+      "deps": [
+        "algo--knowledge-adapter",
+        "feature--graph-editable"
+      ],
+      "est": 3,
+      "accept": "Dropping a node persists it to GenesisDB; a query renders only the selected atoms back onto the canvas.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "new"
+    },
+    {
+      "id": "feature--memoryos",
+      "title": "MemoryOS (per-agent KB) — A long-term, persistent, private per-agent knowledge base backed by GenesisBlockDB (graph+vector) OR filesystem",
+      "type": "code",
+      "phase": "P2",
+      "deps": [
+        "algo--knowledge-adapter",
+        "feature--loadout"
+      ],
+      "est": 3,
+      "accept": "An agent writes + recalls private memory across sessions; backend swaps file<->genesisdb without API change.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "extend"
+    },
+    {
+      "id": "entity--traceability-graph",
+      "title": "Traceability Graph (bitemporal) — Promote the anti-error loop from a failure-only side-channel into the primary atom-keyed traceability backbone: edges implemented_by/verified_by/depends_on/supersedes/failed_with + bitemporal asOf/validFrom/causedBy.",
+      "type": "architecture",
+      "phase": "P2",
+      "deps": [
+        "algo--knowledge-adapter",
+        "runbook--doc-to-code-pipeline"
+      ],
+      "est": 2,
+      "accept": "Given an atom, the graph answers which spec asked, which task built, which test proved, and what was believed when shipped.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "must",
+      "state": "extend"
+    },
+    {
+      "id": "module--multi-host",
+      "title": "Multi-host Pool — Replace the single-host .state.lock with DB-backed fencing-token leased claims owned by a Coordinator host (the ownership/fence schema designed in P1 makes this incremental)",
+      "type": "architecture",
+      "phase": "P3",
+      "deps": [
+        "algo--ownership-borrow-checker",
+        "algo--knowledge-adapter"
+      ],
+      "est": 3,
+      "accept": "Two hosts claim from one DB without double-execution; a fenced stale claim is rejected; Coordinator failover defined.",
+      "scope": {
+        "budgetTokens": 12000,
+        "needs": [],
+        "excludes": []
+      },
+      "requiresConfirm": true,
+      "moscow": "could",
+      "state": "new"
+    },
+    {
+      "id": "tech_stack--cross-platform",
+      "title": "Cross-platform Build — napi cross-compile CI matrix (linux-gnu / win-msvc / darwin x64+arm64) + signed release assets + npm/binary publish, lifting the Windows-first limit so mac/Linux get semantic recall (not just flat-file).",
+      "type": "config",
+      "phase": "P3",
+      "deps": [
+        "tech_stack--genesisdb-sidecar"
+      ],
+      "est": 3,
+      "accept": "CI produces signed binaries for all targets; mac/Linux load GenesisDB N-API and pass the knowledge-adapter suite.",
+      "scope": {
+        "budgetTokens": 12000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "could",
+      "state": "new"
+    },
+    {
+      "id": "protocol--govibe-mcp-bridge",
+      "title": "GoVibe MCP Bridge (contract) — Non-goal to BUILD in v1, but lock the boundary contract now (which atoms/events cross the MCP bridge) so the v1 schema doesn't foreclose a future GoVibe <-> G-Orchestra bridge.",
+      "type": "design",
+      "phase": "P3",
+      "deps": [
+        "entity--traceability-graph"
+      ],
+      "est": 2,
+      "accept": "A versioned boundary contract doc exists; v1 atom/event schema is verified compatible with it.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "could",
+      "state": "new"
+    },
+    {
+      "id": "feature--marketplace-seam",
+      "title": "Marketplace Seam — Design the seam (not the storefront) for sharing/selling agent loadouts/templates/skins (rarity tiers, like the Maiden Atelier)",
+      "type": "code",
+      "phase": "P3",
+      "deps": [
+        "feature--loadout",
+        "guard--entitlement"
+      ],
+      "est": 2,
+      "accept": "A signed loadout pack imports + verifies; the seam is documented so a later storefront drops in without schema change.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "requiresConfirm": true,
+      "moscow": "could",
+      "state": "new"
+    }
+  ]
+}

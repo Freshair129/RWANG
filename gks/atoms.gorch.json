@@ -1,0 +1,527 @@
+{
+  "block": "Genesis::G-Orchestra-v2",
+  "manifest": {
+    "manifest_version": "0.1.0",
+    "source": "orchestration/docs/DESIGN--G-ORCHESTRA-V2.md (§0 canonical + Appendix C decisions)",
+    "daci": {
+      "driver": "Persona::Boss",
+      "approver": [
+        "Persona::Boss"
+      ],
+      "contributor": [
+        "Agent::Athena"
+      ],
+      "informed": []
+    },
+    "_note": "DECOMPOSE output: the G-Orchestra v2 build, expressed as Genesis Block atoms. Compile with `node gks/compile.mjs` -> backlog.gorch.json + gks/atoms/*.md. ids are immutable slugs (display via displayName). Does NOT touch the G-Maiden game backlog."
+  },
+  "atoms": [
+    {
+      "id": "entity--atom-schema",
+      "type": "entity",
+      "displayName": "Genesis Atom Schema",
+      "layer": "L3-Storage",
+      "phase": "P0",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [],
+      "est": 2,
+      "moscow": "must",
+      "body": "Define the GenesisAtom type: immutable slug `id` + mutable `displayName`, type, hierarchy (masterplan..subtask), context_scaling_tier H0-H6, status, body, first-class rice/moscow/requiresConfirm, and the ownership block (owner/borrow/lease/fence). Source of truth = front-matter Markdown; GenesisDB is a derived index.",
+      "accept": "TS/JSON-schema for GenesisAtom committed; round-trips Markdown<->object; passes GKS-001/002 on a sample set.",
+      "state": "exists"
+    },
+    {
+      "id": "algo--genesis-compile",
+      "type": "algo",
+      "displayName": "Genesis Compile (decompose runtime)",
+      "layer": "L3-Logic",
+      "phase": "P0",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "moscow": "must",
+      "body": "The first runtime primitive (seeded by gks/compile.mjs): read atoms -> validate GKS-001 (unique id) / GKS-002 (acyclic) / GKS-003 (>6 hops warn) -> assemble a runnable engine backlog + render canonical Markdown. This is the LEGO 'decompose' half GoVibe never built.",
+      "accept": "`node gks/compile.mjs` validates + emits backlog.gorch.json + atom .md; fails loudly on dup id / cycle / unresolved dep.",
+      "state": "exists"
+    },
+    {
+      "id": "runbook--doc-to-code-pipeline",
+      "type": "runbook",
+      "displayName": "Doc-to-Code Pipeline",
+      "layer": "L2-Process",
+      "phase": "P0",
+      "tier": "H2",
+      "role": "architect",
+      "deps": [
+        "algo--genesis-compile"
+      ],
+      "est": 1,
+      "moscow": "must",
+      "body": "The closed loop: intent (Copilot/Spec) -> author atoms -> compile to backlog -> agent claims -> build scoped by H-tier -> Verify Gate -> record outcome+trace back to the graph. Document the canonical flow + the supersede/asOf provenance rule.",
+      "accept": "Runbook doc lists every step with the owning module; a worked example traces one atom end-to-end.",
+      "state": "extend"
+    },
+    {
+      "id": "tech_stack--tauri-shell",
+      "type": "tech_stack",
+      "displayName": "Tauri v2 + React Shell",
+      "layer": "L4-Infrastructure",
+      "phase": "P0",
+      "tier": "H3",
+      "role": "worker",
+      "deps": [],
+      "est": 3,
+      "moscow": "must",
+      "engineType": "scaffold",
+      "body": "Scaffold the Tauri v2 + Rust shell with a React/Vite webview, wrapping the proven engine.mjs as a supervised sidecar (strangler-around-a-sidecar). Replaces the legacy Node :4577 web UI for end users.",
+      "accept": "`pnpm tauri dev` opens the desktop window; webview renders a placeholder Board fed by engine snapshot over IPC.",
+      "state": "extend"
+    },
+    {
+      "id": "protocol--engine-ipc",
+      "type": "protocol",
+      "displayName": "Engine IPC Bridge",
+      "layer": "L2-Communication",
+      "phase": "P0",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "tech_stack--tauri-shell"
+      ],
+      "est": 2,
+      "moscow": "must",
+      "body": "Tauri commands + events + channels bridging the Rust shell and the engine sidecar: snapshot/state pull, command dispatch (claim/done/dispatch/run/stop), and a live log stream channel for the Cockpit.",
+      "accept": "UI receives live snapshot + log stream; a dispatch command round-trips to the engine and mutates state.",
+      "state": "extend"
+    },
+    {
+      "id": "tech_stack--genesisdb-sidecar",
+      "type": "tech_stack",
+      "displayName": "GenesisDB Node Sidecar",
+      "layer": "L4-Infrastructure",
+      "phase": "P0",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [],
+      "est": 3,
+      "moscow": "must",
+      "engineType": "code",
+      "body": "Greenfield: a thin Node sidecar hosting the GenesisDB N-API binary in-process (no port, dodging :3000). Pin a known-good win32-x64 binary; gate startup on schemaVersionSync(); supply Ollama bge-m3 (1024-dim) embeddings. Includes the first real round-trip PoC (the phantom orchestration/poc/genesis-roundtrip.mjs never existed).",
+      "accept": "Sidecar loads the pinned binary, addNode + hybridSearch + retrieveContext round-trip with bge-m3 vectors; refuses on schemaVersion mismatch.",
+      "state": "extend"
+    },
+    {
+      "id": "algo--knowledge-adapter",
+      "type": "algo",
+      "displayName": "Knowledge Adapter (file | genesisdb)",
+      "layer": "L3-Logic",
+      "phase": "P0",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "tech_stack--genesisdb-sidecar",
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "moscow": "must",
+      "body": "A single swappable adapter (recordOutcome/queryContext/asOf/linkTrace) with a MANDATORY flat-file fallback. Markdown atoms stay the source of truth; GenesisDB is the rebuildable derived index. Default backend = file; genesisdb when the sidecar is up + Windows.",
+      "accept": "Same API passes in BOTH file and genesisdb modes; off-Windows auto-degrades to file; semantic query falls back to lexical when embeddings are down.",
+      "state": "extend"
+    },
+    {
+      "id": "config--cost-cap-tiers",
+      "type": "config",
+      "displayName": "Cost-Cap (tier-bound)",
+      "layer": "L1-Config",
+      "phase": "P0",
+      "tier": "H1",
+      "role": "worker",
+      "deps": [],
+      "est": 1,
+      "moscow": "must",
+      "body": "Replace usageLimits=null with non-null, license-tier-bound session/weekly USD caps (Free low -> Pro/Studio higher), user-editable within the tier ceiling, + a global kill-switch. On cap-hit: finish the current task, then stop.",
+      "accept": "Pool auto-stops at the configured session/weekly cap; cold-start uses the tier seed; kill-switch halts dispatch immediately.",
+      "state": "extend"
+    },
+    {
+      "id": "guard--governance-gate",
+      "type": "guard",
+      "displayName": "Governance Gate",
+      "layer": "L2-AccessControl",
+      "phase": "P0",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "moscow": "must",
+      "body": "Human-confirm gate triggered by an explicit `requiresConfirm` field PLUS auto for Safety::*/deploy/merge/irreversible. Enforced PRE-DISPATCH in the Rust core (blocks claimed->running for gated atoms), never trusting the agent.",
+      "accept": "A gated atom cannot transition claimed->running without an explicit human confirm; non-gated atoms flow normally.",
+      "state": "new"
+    },
+    {
+      "id": "feature--atom-store",
+      "type": "feature",
+      "displayName": "AtomStore (one object, six lenses)",
+      "layer": "L2-Feature",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "protocol--engine-ipc",
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "moscow": "must",
+      "body": "A single normalized client store (keyed by atom id) so Board card, Graph node, Canvas node, Copilot output, and Cockpit tile are all views of the same row — no parallel models. 'claim on board' and 'node turns amber' stay in sync.",
+      "accept": "Mutating one atom updates every surface from one store; no duplicated task/graph models.",
+      "state": "extend"
+    },
+    {
+      "id": "feature--board",
+      "type": "feature",
+      "displayName": "Board (Jira+Trello+Linear)",
+      "layer": "L2-Feature",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "feature--atom-store"
+      ],
+      "est": 3,
+      "moscow": "must",
+      "body": "Status/phase columns, claimable cards, RICE/MoSCoW (first-class atom fields), and a rich task-card modal (FR/version/DOD/changelog/export). Collapse short-lived claimed/reviewing into a single 'Running' column.",
+      "accept": "Drag a card to claim/assign; columns reflect state with no empty-column clutter; card modal shows + edits atom fields.",
+      "state": "extend"
+    },
+    {
+      "id": "feature--loadout",
+      "type": "feature",
+      "displayName": "Agent Loadout (inventory)",
+      "layer": "L2-Feature",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "feature--atom-store",
+        "entity--atom-schema"
+      ],
+      "est": 3,
+      "moscow": "must",
+      "body": "The game-inventory surface: per role equip Model (hat), Tools/Capabilities, Skills, MemoryOS, context scope+tier, persona+authority. Owner-approved SLM/LLM-as-tool slot. An override+enrichment layer over roles[role].preferred (empty loadout = current behavior).",
+      "accept": "Drag gear onto slots; stats (cost/speed/capability) render; the equipped loadout actually routes the next dispatch.",
+      "state": "extend"
+    },
+    {
+      "id": "feature--copilot-console",
+      "type": "feature",
+      "displayName": "Copilot Console",
+      "layer": "L2-Feature",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "feature--atom-store",
+        "protocol--engine-ipc"
+      ],
+      "est": 3,
+      "moscow": "must",
+      "body": "Chat-to-command surface with a Maiden-style persona: natural language -> author atoms / dispatch waves via slash-commands, shown as atom diffs. Hosts the 'embeddings unavailable' health banner.",
+      "accept": "A natural-language ask produces atoms or a dispatch; banner appears when Ollama embeddings are down.",
+      "state": "new"
+    },
+    {
+      "id": "feature--cockpit",
+      "type": "feature",
+      "displayName": "Live Cockpit",
+      "layer": "L2-Feature",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "feature--atom-store",
+        "config--cost-cap-tiers"
+      ],
+      "est": 2,
+      "moscow": "should",
+      "body": "Real-time agent tiles (claimed/running/reviewing), streaming logs via the IPC channel, a cost gauge reading the tier-bound caps, and intervene controls (pause/stop/kill-switch).",
+      "accept": "Running agents and live cost render in real time; the kill-switch and pause act immediately.",
+      "state": "extend"
+    },
+    {
+      "id": "algo--planner-tiering",
+      "type": "algo",
+      "displayName": "Planner Tiering",
+      "layer": "L3-Logic",
+      "phase": "P1",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [
+        "entity--atom-schema",
+        "config--cost-cap-tiers"
+      ],
+      "est": 2,
+      "moscow": "must",
+      "body": "The Planner owns the H-tier heuristic: assign the lowest tier that suffices by WBS rung (subtask->H0 .. masterplan->H5, author-overridable); auto-downgrade when near the cost cap. H is enforced as tool access-control (H0 = glob forbidden).",
+      "accept": "Atoms get a sane default tier by rung; near-cap runs downgrade tier; an H0 task literally cannot glob.",
+      "state": "extend"
+    },
+    {
+      "id": "safety--verify-gate-v2",
+      "type": "safety",
+      "displayName": "Verify Gate v2",
+      "layer": "L2-AccessControl",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "guard--governance-gate"
+      ],
+      "est": 2,
+      "moscow": "must",
+      "body": "PASS if no `critical` issues (issue-count/severity, not a trusted score). Claude is default reviewer when enabled+under-cap; the local SLM/LLM-as-judge runs only on offline OR cost-cap-hit OR explicit Loadout pin. Auto-advance on PASS for non-governance tasks.",
+      "accept": "Non-critical output auto-advances; offline/cap routes review to the local judge; governance tasks still require human confirm.",
+      "state": "extend"
+    },
+    {
+      "id": "algo--ownership-borrow-checker",
+      "type": "algo",
+      "displayName": "Ownership Layer (agent borrow-checker)",
+      "layer": "L3-Logic",
+      "phase": "P1",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [
+        "entity--atom-schema"
+      ],
+      "est": 3,
+      "moscow": "must",
+      "body": "Model claim/lease as Rust ownership: claim = exclusive &mut (<=1), context read = shared & (unlimited), lease = lifetime, move = fencing token. MVCC via GenesisDB bitemporal asOf (readers snapshot last-stable; writer supersedes). DACI = ownership roles; reviewer/Informed get & only.",
+      "accept": "Two agents cannot &mut the same atom (conflict rejected); readers never block the writer; stale-fence holders are rejected.",
+      "state": "extend"
+    },
+    {
+      "id": "eval--goldset-harness",
+      "type": "eval",
+      "displayName": "Gold-set Eval Harness",
+      "layer": "L3-Logic",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "reviewer",
+      "deps": [
+        "algo--planner-tiering"
+      ],
+      "est": 2,
+      "moscow": "should",
+      "body": "A labeled gold-set + scorer to validate planner tiering + Verify-Gate decisions BEFORE auto-spend is trusted. Gates the 'full autonomous' switch.",
+      "accept": "Harness scores tier-assignment + review verdicts vs labels; auto-spend stays disabled until a threshold is met.",
+      "state": "new"
+    },
+    {
+      "id": "tech_stack--updater",
+      "type": "tech_stack",
+      "displayName": "In-app Updater",
+      "layer": "L4-Infrastructure",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "worker",
+      "deps": [
+        "tech_stack--tauri-shell"
+      ],
+      "est": 2,
+      "moscow": "should",
+      "engineType": "config",
+      "requiresConfirm": true,
+      "body": "Mirror G-Maiden's release machinery: Tauri updater + minisign-signed installers + latest.json feed + deferred install. 'Safe to swap' = pause new dispatch and drain only ACTIVE tasks, then install (do not kill running agents, do not drain the whole backlog). Updater is NOT tier-gated.",
+      "accept": "A signed update downloads, drains active tasks, and applies on next launch; tampered signatures are rejected.",
+      "state": "extend"
+    },
+    {
+      "id": "guard--entitlement",
+      "type": "guard",
+      "displayName": "License & Entitlement",
+      "layer": "L2-AccessControl",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "coder",
+      "deps": [
+        "tech_stack--tauri-shell"
+      ],
+      "est": 2,
+      "moscow": "should",
+      "requiresConfirm": true,
+      "body": "Per-machine device-bound entitlement (ed25519/PASETO v4.local) + offline grace window. License tiers (Free/Pro/Studio) bound the cost-cap ceiling. Marketplace deferred post-v1; only the signed sideload import path is in v1.",
+      "accept": "A device-bound token unlocks the tier offline within grace; tampering/expiry degrades to Free; updater stays free across tiers.",
+      "state": "new"
+    },
+    {
+      "id": "audit--telemetry",
+      "type": "audit",
+      "displayName": "Telemetry (opt-in)",
+      "layer": "L2-AccessControl",
+      "phase": "P1",
+      "tier": "H1",
+      "role": "worker",
+      "deps": [
+        "feature--atom-store"
+      ],
+      "est": 1,
+      "moscow": "could",
+      "engineType": "config",
+      "body": "Opt-in, OFF by default (honors local-first). Allowlist = anonymous health counters only (app version, crash, feature-used) — never code/spec/atom content or provider payloads.",
+      "accept": "Nothing leaves the machine unless opted in; the payload is restricted to the counter allowlist.",
+      "state": "new"
+    },
+    {
+      "id": "feature--graph-editable",
+      "type": "feature",
+      "displayName": "Editable Graph (Obsidian)",
+      "layer": "L2-Feature",
+      "phase": "P2",
+      "tier": "H3",
+      "role": "coder",
+      "deps": [
+        "feature--atom-store",
+        "algo--knowledge-adapter"
+      ],
+      "est": 3,
+      "moscow": "must",
+      "body": "View AND edit the dependency/relation graph: nodes=atoms, edges=wikilinks; create/edit/delete edges by dragging; traverse, filter, focus. Focus-mode hop depth is coupled to the retrieval tier (focus depth = H visualization).",
+      "accept": "Dragging creates/removes a real dependency edge (acyclic-checked, GKS-002); focus depth maps to H-tier.",
+      "state": "extend"
+    },
+    {
+      "id": "feature--node-db-canvas",
+      "type": "feature",
+      "displayName": "Node<->DB Canvas",
+      "layer": "L2-Feature",
+      "phase": "P2",
+      "tier": "H3",
+      "role": "coder",
+      "deps": [
+        "algo--knowledge-adapter",
+        "feature--graph-editable"
+      ],
+      "est": 3,
+      "moscow": "should",
+      "body": "Visual canvas to drop nodes/files/atoms INTO GenesisBlockDB and render only selected atoms/files back FROM the DB. Local embeds: warn (time/VRAM), don't gate.",
+      "accept": "Dropping a node persists it to GenesisDB; a query renders only the selected atoms back onto the canvas.",
+      "state": "new"
+    },
+    {
+      "id": "feature--memoryos",
+      "type": "feature",
+      "displayName": "MemoryOS (per-agent KB)",
+      "layer": "L2-Feature",
+      "phase": "P2",
+      "tier": "H3",
+      "role": "coder",
+      "deps": [
+        "algo--knowledge-adapter",
+        "feature--loadout"
+      ],
+      "est": 3,
+      "moscow": "should",
+      "body": "A long-term, persistent, private per-agent knowledge base backed by GenesisBlockDB (graph+vector) OR filesystem. Equipped via the Loadout. Off-Windows falls back to the file backend.",
+      "accept": "An agent writes + recalls private memory across sessions; backend swaps file<->genesisdb without API change.",
+      "state": "extend"
+    },
+    {
+      "id": "entity--traceability-graph",
+      "type": "entity",
+      "displayName": "Traceability Graph (bitemporal)",
+      "layer": "L3-Storage",
+      "phase": "P2",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [
+        "algo--knowledge-adapter",
+        "runbook--doc-to-code-pipeline"
+      ],
+      "est": 2,
+      "moscow": "must",
+      "body": "Promote the anti-error loop from a failure-only side-channel into the primary atom-keyed traceability backbone: edges implemented_by/verified_by/depends_on/supersedes/failed_with + bitemporal asOf/validFrom/causedBy.",
+      "accept": "Given an atom, the graph answers which spec asked, which task built, which test proved, and what was believed when shipped.",
+      "state": "extend"
+    },
+    {
+      "id": "module--multi-host",
+      "type": "module",
+      "displayName": "Multi-host Pool",
+      "layer": "L1-Module",
+      "phase": "P3",
+      "tier": "H4",
+      "role": "architect",
+      "deps": [
+        "algo--ownership-borrow-checker",
+        "algo--knowledge-adapter"
+      ],
+      "est": 3,
+      "moscow": "could",
+      "requiresConfirm": true,
+      "body": "Replace the single-host .state.lock with DB-backed fencing-token leased claims owned by a Coordinator host (the ownership/fence schema designed in P1 makes this incremental). Phase-2 spike required before committing the ed25519-consensus design.",
+      "accept": "Two hosts claim from one DB without double-execution; a fenced stale claim is rejected; Coordinator failover defined.",
+      "state": "new"
+    },
+    {
+      "id": "tech_stack--cross-platform",
+      "type": "tech_stack",
+      "displayName": "Cross-platform Build",
+      "layer": "L4-Infrastructure",
+      "phase": "P3",
+      "tier": "H4",
+      "role": "worker",
+      "deps": [
+        "tech_stack--genesisdb-sidecar"
+      ],
+      "est": 3,
+      "moscow": "could",
+      "engineType": "config",
+      "body": "napi cross-compile CI matrix (linux-gnu / win-msvc / darwin x64+arm64) + signed release assets + npm/binary publish, lifting the Windows-first limit so mac/Linux get semantic recall (not just flat-file).",
+      "accept": "CI produces signed binaries for all targets; mac/Linux load GenesisDB N-API and pass the knowledge-adapter suite.",
+      "state": "new"
+    },
+    {
+      "id": "protocol--govibe-mcp-bridge",
+      "type": "protocol",
+      "displayName": "GoVibe MCP Bridge (contract)",
+      "layer": "L2-Communication",
+      "phase": "P3",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [
+        "entity--traceability-graph"
+      ],
+      "est": 2,
+      "moscow": "could",
+      "engineType": "design",
+      "body": "Non-goal to BUILD in v1, but lock the boundary contract now (which atoms/events cross the MCP bridge) so the v1 schema doesn't foreclose a future GoVibe <-> G-Orchestra bridge.",
+      "accept": "A versioned boundary contract doc exists; v1 atom/event schema is verified compatible with it.",
+      "state": "new"
+    },
+    {
+      "id": "feature--marketplace-seam",
+      "type": "feature",
+      "displayName": "Marketplace Seam",
+      "layer": "L2-Feature",
+      "phase": "P3",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [
+        "feature--loadout",
+        "guard--entitlement"
+      ],
+      "est": 2,
+      "moscow": "could",
+      "requiresConfirm": true,
+      "body": "Design the seam (not the storefront) for sharing/selling agent loadouts/templates/skins (rarity tiers, like the Maiden Atelier). v1 ships only the signed sideload import path; payments/storefront post-v1.",
+      "accept": "A signed loadout pack imports + verifies; the seam is documented so a later storefront drops in without schema change.",
+      "state": "new"
+    }
+  ]
+}

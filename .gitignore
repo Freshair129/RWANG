@@ -2,6 +2,9 @@
 state.json
 usage.jsonl
 .state.lock
+# alternate-backlog (GORCH_BACKLOG) runtime state/lock — e.g. gks/backlog.gorch.state.json
+*.state.json
+*.state.json.lock
 logs/
 brain/failures.jsonl
 brain/*.gdb
