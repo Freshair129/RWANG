@@ -164,7 +164,7 @@
   },
 
   "store": {
-    "knowledge": "file",
+    "knowledge": "genesisdb",
     "genesisdb": {
       "bindingPath": "G:/GenesisBlock_Dev/GenesisBlock/index.js",
       "path": "",

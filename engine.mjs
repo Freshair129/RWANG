@@ -47,7 +47,28 @@ export function modelFor(task, state) {
   const role = roleFor(task);
   if (role === "manual" || role === null) return null;
   const resolved = resolveForRole(role, CONFIG);
-  return resolved ? `${resolved.provider}:${resolved.model}` : null;
+  if (!resolved) return null;
+  const base = `${resolved.provider}:${resolved.model}`;
+  // planner-tiering: auto-downgrade to cheaper model when nearing cost cap (>80% spent)
+  return tierDowngrade(base, role, state) || base;
+}
+// algo--planner-tiering: if session or weekly spend > 80% of cap, downgrade expensive models
+function tierDowngrade(model, role, state) {
+  const lim = effectiveLimits(state);
+  const u = readUsage();
+  const sessionPct = lim.sessionUsd ? u.session.cost / lim.sessionUsd : 0;
+  const weeklyPct = lim.weeklyUsd ? u.weekly.cost / lim.weeklyUsd : 0;
+  const pressure = Math.max(sessionPct, weeklyPct);
+  if (pressure < 0.8) return null;
+  // >80%: downgrade opus->sonnet, sonnet->haiku; keep local models as-is
+  const DOWNGRADE = { "claude:opus": "claude:sonnet", "claude:sonnet": "claude:haiku" };
+  if (DOWNGRADE[model]) return DOWNGRADE[model];
+  // >90%: prefer local models over cloud entirely
+  if (pressure >= 0.9) {
+    const localResolved = resolveForRole(role, CONFIG, true);
+    if (localResolved) return `${localResolved.provider}:${localResolved.model}`;
+  }
+  return null;
 }
 export function roleFor(task) { return CONFIG.routing[task.type] ?? "manual"; }
 // re-export for other modules
@@ -71,13 +92,13 @@ export function withLock(fn) {
 // ---------- state ----------
 export function freshState() {
   const tasks = {};
-  for (const t of BACKLOG) tasks[t.id] = { status: "todo", worker: null, claimedAt: null, modelOverride: null, attempts: 0 };
+  for (const t of BACKLOG) tasks[t.id] = { status: "todo", worker: null, claimedAt: null, modelOverride: null, attempts: 0, confirmed: false };
   return { tasks, authMode: CONFIG.auth?.mode || "plan", updatedAt: now() };
 }
 export function loadState() {
   if (!existsSync(PATHS.STATE)) { const s = freshState(); saveState(s); return s; }
   const s = loadJson(PATHS.STATE);
-  for (const t of BACKLOG) if (!s.tasks[t.id]) s.tasks[t.id] = { status: "todo", worker: null, claimedAt: null, modelOverride: null, attempts: 0 };
+  for (const t of BACKLOG) if (!s.tasks[t.id]) s.tasks[t.id] = { status: "todo", worker: null, claimedAt: null, modelOverride: null, attempts: 0, confirmed: false };
   if (!s.authMode) s.authMode = CONFIG.auth?.mode || "plan";
   return s;
 }
@@ -112,6 +133,31 @@ export function depsDone(t, s) { return (t.deps || []).every((d) => s.tasks[d]?.
 export function isReady(t, s) { return s.tasks[t.id].status === "todo" && depsDone(t, s); }
 export function readyTasks(s) { return BACKLOG.filter((t) => isReady(t, s)); }
 export function blockedTasks(s) { return BACKLOG.filter((t) => s.tasks[t.id].status === "todo" && !depsDone(t, s)); }
+
+// ---------- governance gate (guard--governance-gate / ADR B4) ----------
+const AUTO_GATE_TYPES = new Set(["safety", "guard", "audit"]);
+export function needsConfirm(t) {
+  if (t.requiresConfirm) return true;
+  // auto-gate by original atom type (encoded in id prefix: "guard--foo" → "guard")
+  const atomType = t.id?.split("--")[0];
+  if (atomType && AUTO_GATE_TYPES.has(atomType)) return true;
+  if (AUTO_GATE_TYPES.has(t.type)) return true;
+  return false;
+}
+export function isConfirmed(t, s) {
+  return !!s.tasks[t.id]?.confirmed;
+}
+export function confirmAtom(id) {
+  const t = byId(id); if (!t) return { ok: false, error: `ไม่พบ task ${id}` };
+  if (!needsConfirm(t)) return { ok: true, id, alreadyOpen: true };
+  withLock(() => { const s = loadState(); s.tasks[id].confirmed = true; saveState(s); });
+  return { ok: true, id, confirmed: true };
+}
+export function unconfirmAtom(id) {
+  const t = byId(id); if (!t) return { ok: false, error: `ไม่พบ task ${id}` };
+  withLock(() => { const s = loadState(); s.tasks[id].confirmed = false; saveState(s); });
+  return { ok: true, id, confirmed: false };
+}
 
 export function detectCycle() {
   const seen = {}, stack = {};
@@ -153,13 +199,17 @@ export function claim(id, worker = "w1") {
 }
 export function setStatus(id, status, extra = {}) {
   const t = byId(id); if (!t) return { ok: false, error: `ไม่พบ task ${id}` };
-  withLock(() => {
+  return withLock(() => {
     const s = loadState();
+    // governance gate (guard--governance-gate): gated atoms cannot transition to running without confirm
+    if (status === "running" && needsConfirm(t) && !isConfirmed(t, s)) {
+      return { ok: false, error: `⛔ governance gate: ${id} ต้อง confirm ก่อน running (requiresConfirm / auto-gate type=${t.type})` };
+    }
     s.tasks[id] = { ...s.tasks[id], status, ...extra };
     if (status === "todo") { s.tasks[id].worker = null; s.tasks[id].claimedAt = null; }
     saveState(s);
+    return { ok: true, task: id, status };
   });
-  return { ok: true, task: id, status };
 }
 export function assign(id, model) {
   if (!byId(id)) return { ok: false, error: `ไม่พบ task ${id}` };
@@ -230,6 +280,7 @@ export function snapshot() {
       attempts: st.attempts, modelOverride: st.modelOverride,
       deps: t.deps || [], depsDone: depsDone(t, cur), ready: isReady(t, cur),
       accept: t.accept, est: t.est, state: t.state, moscow: t.moscow, rice: t.rice,
+      gated: needsConfirm(t), confirmed: !!st.confirmed,
     };
   });
   // build model options from all enabled providers' models
@@ -460,13 +511,14 @@ export function runPool({ mode = "wave", max = CONFIG.concurrency, worker = "poo
     if (blk) { POOL.stop = true; POOL.capReason = blk; }
     while (POOL.running < max && !POOL.stop) {
       const s = loadState(); reapStale(s);
-      const cand = readyTasks(s).filter((t) => modelFor(t, s) !== null && (!target || target.has(t.id)));
+      const cand = readyTasks(s).filter((t) => modelFor(t, s) !== null && (!target || target.has(t.id)) && (!needsConfirm(t) || isConfirmed(t, s)));
       if (!cand.length) break;
       const t = cand[0];
       const w = `${worker}-${++idx}`;
       const c = claim(t.id, w);
       if (!c.ok) continue;
-      setStatus(t.id, "running", { worker: w, claimedAt: now() });
+      const rs = setStatus(t.id, "running", { worker: w, claimedAt: now() });
+      if (!rs.ok) { setStatus(t.id, "todo"); continue; }  // gate fired after claim (race) → reset + skip
       POOL.running++;
       const p = executeWithReview(byId(t.id), c.model, w).then(() => {
         POOL.running--; inflight.delete(p);
@@ -644,12 +696,17 @@ export function dispatchOne(id, worker = "ui") {
   const t = byId(id); if (!t) return { ok: false, error: `ไม่พบ task ${id}` };
   const block = capBlock();
   if (block) return { ok: false, error: "cost cap: " + block };
+  // governance gate: requiresConfirm atoms need explicit human confirm before dispatch
+  if (needsConfirm(t) && !isConfirmed(t, loadState())) {
+    return { ok: false, error: `⛔ governance gate: ${id} ต้อง confirm ก่อน dispatch (requiresConfirm / auto-gate type=${t.type})` };
+  }
   const cur = loadState().tasks[id]?.status;
   if (["needs-rework", "failed", "reviewing"].includes(cur)) setStatus(id, "todo"); // re-dispatch
   const c = claim(id, worker);
   if (!c.ok) return c;
   const model = c.model;
-  setStatus(id, "running", { worker, claimedAt: now() });
+  const runRes = setStatus(id, "running", { worker, claimedAt: now() });
+  if (!runRes.ok) { setStatus(id, "todo"); return runRes; }  // gate fired after claim (race) → reset
   executeWithReview(t, model, worker);   // ทำงานเบื้องหลัง + จัดการ review/state เอง
   return { ok: true, task: id, model, dispatched: true };
 }

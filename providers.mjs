@@ -41,10 +41,16 @@ export function parseModel(model) {
 }
 
 // ─── resolve model for a role using fallback chain ───
-export function resolveForRole(roleName, config) {
+const LOCAL_PROVIDERS = new Set(["ollama"]);
+export function resolveForRole(roleName, config, preferLocal = false) {
   const role = config.roles?.[roleName];
   if (!role?.preferred?.length) return null;
-  for (const pref of role.preferred) {
+  const prefs = preferLocal ? [...role.preferred].sort((a, b) => {
+    const aLocal = LOCAL_PROVIDERS.has(parseModel(a)?.provider);
+    const bLocal = LOCAL_PROVIDERS.has(parseModel(b)?.provider);
+    return (bLocal ? 1 : 0) - (aLocal ? 1 : 0);
+  }) : role.preferred;
+  for (const pref of prefs) {
     const parsed = parseModel(pref);
     if (!parsed) continue;
     const provDef = config.providers?.[parsed.provider];

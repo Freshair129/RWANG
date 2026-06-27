@@ -123,6 +123,23 @@ function genesisStore(g = {}) {
       } catch { return null; }
     },
     async close() { try { await db?.saveState?.(); } catch { /* */ } },
+    // canvas write surface (feature--node-db-canvas)
+    async _writeNode({ id, labels = [], props = {}, text = "" }) {
+      const d = open();
+      const embedding = text ? await embed(text) : new Array(DIM).fill(0);
+      const result = await d.addNode({ id, labels, lang: "th", props, embedding });
+      return { ok: true, id: result.id };
+    },
+    async _writeEdge({ from, to, rel }) {
+      const d = open();
+      await d.addEdge({ from, to, rel });
+      return { ok: true, from, to, rel };
+    },
+    async _queryNodes({ text, k = 5, alpha = 0.5 }) {
+      const d = open();
+      const hits = await d.hybridSearch({ queryVector: await embed(text), k, alpha, lang: "th" });
+      return { ok: true, nodes: (hits || []).map((h) => ({ id: h.node?.id, labels: h.node?.labels, props: h.node?.props, score: h.score })) };
+    },
   };
 }
 
@@ -133,4 +150,23 @@ export function getStore(CONFIG) {
   const s = CONFIG?.store || {};
   _store = s.knowledge === "genesisdb" ? genesisStore(s.genesisdb) : fileStore();
   return _store;
+}
+
+// ---------- Node↔DB canvas write API (feature--node-db-canvas) ----------
+// Direct write surface for the visual canvas — bypasses the outcome pipeline.
+// Only available when kind === "genesisdb"; file mode returns graceful errors.
+export async function writeNode(CONFIG, { id, labels, props, text }) {
+  const store = getStore(CONFIG);
+  if (store.kind !== "genesisdb") return { ok: false, error: "writeNode requires genesisdb mode" };
+  return store._writeNode({ id, labels, props, text });
+}
+export async function writeEdge(CONFIG, { from, to, rel }) {
+  const store = getStore(CONFIG);
+  if (store.kind !== "genesisdb") return { ok: false, error: "writeEdge requires genesisdb mode" };
+  return store._writeEdge({ from, to, rel });
+}
+export async function queryNodes(CONFIG, { text, k = 5, alpha = 0.5 }) {
+  const store = getStore(CONFIG);
+  if (store.kind !== "genesisdb") return { ok: false, error: "queryNodes requires genesisdb mode" };
+  return store._queryNodes({ text, k, alpha });
 }
