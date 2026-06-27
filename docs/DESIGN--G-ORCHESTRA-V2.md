@@ -2988,3 +2988,38 @@ pub trait OrchestratorPort {
 18. Roadmap calibration (OWNER): confirm team size/velocity to convert sprint estimates (~2 / 3-4 / 3-4 / 3-4) to dates; decide whether the Phase-2 Rust scheduler port can defer to Phase 3 (ship MVP on the Node sidecar) if the timeline slips. [§9]
 
 19. Board column model for short-lived states (DESIGN): confirm whether 'claimed' and 'reviewing' get full columns or collapse into 'Running' to avoid empty-column clutter; confirm the Graph Focus-mode-hop = retrieval-tier coupling is acceptable vs a free hop slider. [§7]
+
+
+---
+
+## Appendix C — Resolved Decisions (Appendix B → locked)
+
+> Locked **2026-06-25** during the Appendix-B grilling. **These resolutions are authoritative**: where a section's "open issue" or Appendix B item conflicts, the resolution here wins. Items B1,B3,B4,B5,B7,B13,B14,B15,B2,B10,B11,B19 were owner-selected; B6,B8,B9,B12,B16,B17,B18 were delegated to the architect's recommendation (owner may veto).
+
+| # | Decision (locked) | Owner / §ref |
+|---|---|---|
+| **B1** | AtomId = **immutable slug `type--name`** decoupled from a **mutable display `Type::Name`**. Rename never rewrites inbound wikilinks; `supersedeNode` is used **only on a meaning change**, not a rename. | §1, §2 |
+| **B2** | **Planner owns** the context-tier heuristic: assign the **lowest H that suffices** by WBS rung (default `subtask→H0 … masterplan→H5`, author-overridable); **auto-downgrade** when near the cost cap. **Auto-spend is gated behind a labeled gold-set eval harness** before it is trusted. | §5 |
+| **B3** | Cost-cap is **license-tier-bound** (Free low → Pro/Studio higher), **user-editable within the tier ceiling**; ships **non-null** (replaces `usageLimits=null`). Cold-start uses the tier seed; on cap-hit, **finish the current task, then stop**. | §8 (owns); §3/§6/§7/§9 ref |
+| **B4** | Governance gate triggers on an explicit **`requiresConfirm`** field **plus** auto-gate for `Safety::*` / deploy / merge / irreversible. Enforced **pre-dispatch in the Rust core** (not the UI). | §6 |
+| **B5** | Verify Gate **PASSes if no `critical`** issues (issue-count/severity, not a trusted score). **Claude is default reviewer** when enabled+under-cap; the **local SLM/LLM-as-judge runs only on offline OR cost-cap-hit OR explicit Loadout pin**. Auto-advance on PASS for non-governance tasks. | §4, §5, §6 |
+| **B6** | Rust↔GenesisDB in v1 via a **thin Node sidecar** hosting the N-API binary (Rust ↔ sidecar over IPC); migrate to a **native FFI/crate later** if worthwhile (strangler-sidecar). | §3 |
+| **B7** | **Windows-first.** mac/Linux **degrade to flat-file (lexical)** until the napi cross-compile CI matrix + signed release lands in **Phase 3**. | §3, §4, §8, §9 |
+| **B8** | **Pin** a known-good GenesisDB commit + vendored binary; gate startup on **`schemaVersionSync()`**; **manual bump cadence** (eng-owned). Pre-1.0 governance/Merkle anchoring **deferred post-v1** (flat-file hash-chain meanwhile). | §3, §8 |
+| **B9** | Agents write to a **temp/worktree, atomic-move on success** (no partial files on SIGKILL). If an atom's spec is **superseded mid-task → abort + reclaim** as a new task version. | §3 (owns) |
+| **B10** | On embeddings/Ollama down: **silently degrade to lexical** retrieval **+ show an "embeddings unavailable" health banner** in the Copilot Console. Local embeds: **warn, don't gate**. | §5, §7 |
+| **B11** | RICE/MoSCoW are **first-class atom fields** (single authoring; queryable/sortable from the graph). No Board-only sidecar. | §2, §7 |
+| **B12** | Atom-type **registry mutation uses a simple file lock** (like `.state.lock`) in single-host v1; GenesisDB consensus is the multi-host future. | §2 |
+| **B13** | **v1 is single-host** (`.state.lock` + 30-min lease). **Multi-host = Phase 3** (DB-backed fencing-token leased claims under a Coordinator); the ownership/fence schema is designed now so v1 doesn't foreclose it. | §3, §7, §8, §9 |
+| **B14** | Licensing = **per-machine device-bound entitlement** (ed25519/PASETO) + **offline grace window**; the **in-app updater is NOT tier-gated** (everyone gets updates). Marketplace deferred post-v1; only the **signed sideload import** path is in v1. | §1, §8 |
+| **B15** | GoVibe MCP bridge is a **non-goal for v1**, but the **boundary contract** (which atoms/events cross) is **locked now** so the v1 schema doesn't foreclose a future bridge. | §1, §7, §8 |
+| **B16** | Updater "safe to swap" = **pause new dispatch + drain only active** (claimed/running/reviewing) tasks, then apply the deferred install. Do **not** force-kill running agents; do **not** wait to drain the whole backlog. | §8 |
+| **B17** | Telemetry = **opt-in, off by default** (honors local-first). Allowlist = **anonymous health counters only** (app version, crash, feature-used) — **never** code/spec/atom content or provider payloads. | §8 |
+| **B18** | Roadmap estimates stay **relative (sprints, not dates)** at solo-founder velocity (1 builder + agent fleet). The **Phase-2 Rust scheduler port may defer to Phase 3** (ship MVP on the Node sidecar) if the timeline slips. | §9 |
+| **B19** | Board **collapses `claimed`/`reviewing` into one "Running" column** (no empty columns). Graph **Focus-mode hop depth is coupled to the retrieval tier** (focus depth = H visualization). | §7 |
+
+### Net effect on the config / engine defaults
+- `config.json`: set non-null **tier-bound** `usageLimits` (per license tier); add `requiresConfirm` to the atom schema + auto-gate set `{Safety::*, deploy, merge, irreversible}`; add `review.passIf = "no-critical"` and `review.localJudgeWhen = ["offline","cost-cap","pinned"]`.
+- Atom schema: `id` (slug, immutable) + `displayName` (mutable); first-class `rice`, `moscow`, `requiresConfirm`, `ownership` (see §0.9).
+- Platform: ship target = **win32-x64**; knowledge backend auto-falls to flat-file off-Windows.
+- Topology: **single-host** worker pool; **Node sidecar** hosts GenesisDB N-API.
