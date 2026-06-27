@@ -30,13 +30,14 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, E.snapshot());
     if (req.method === "GET" && url.pathname === "/api/ollama") return send(res, 200, await E.ollamaInfo());
     if (req.method === "GET" && url.pathname === "/api/providers") return send(res, 200, await E.providersInfo());
+    if (req.method === "GET" && url.pathname === "/api/knowledge") return send(res, 200, E.knowledgeOutcomes());
     if (req.method === "GET" && url.pathname === "/api/log") {
       const id = url.searchParams.get("id") || "";
       const offset = Number(url.searchParams.get("offset") || 0) || 0;
       return send(res, 200, E.readLogChunk(id, offset));
     }
     if (req.method === "POST" && url.pathname === "/api/cmd") {
-      const { action, id, worker, model, mode, max } = await readBody(req);
+      const { action, id, worker, model, mode, max, on, tier, deps } = await readBody(req);
       let r;
       switch (action) {
         case "claim": r = E.claim(id, worker || "ui"); break;
@@ -49,6 +50,9 @@ const server = createServer(async (req, res) => {
         case "stop": r = E.stopPool(); break;
         case "setauth": r = E.setAuthMode(mode); break;
         case "reset": r = E.reset(); break;
+        case "killswitch": r = E.setKillSwitch(!!on); break;
+        case "settier": r = E.setTier(tier); break;
+        case "setdeps": r = await E.setDeps(id, deps); break;
         default: r = { ok: false, error: "unknown action " + action };
       }
       return send(res, r.ok === false ? 400 : 200, r);

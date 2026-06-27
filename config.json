@@ -127,8 +127,13 @@
   },
 
   "usageLimits": {
-    "sessionUsd": null,
-    "weeklyUsd": null
+    "tier": "studio",
+    "tiers": {
+      "free":   { "sessionUsd": 1,  "weeklyUsd": 5 },
+      "pro":    { "sessionUsd": 5,  "weeklyUsd": 25 },
+      "studio": { "sessionUsd": 20, "weeklyUsd": 100 }
+    },
+    "_comment": "Cost-cap (config--cost-cap-tiers). 'tier' = active license tier (runtime override via state.tier / UI); caps from tiers[tier]. runPool + dispatchOne auto-stop when session/weekly cost >= cap (in-flight finishes). Emergency kill-switch = state.json s.killSwitch."
   },
 
   "docsForContext": [

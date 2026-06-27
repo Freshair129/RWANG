@@ -6,6 +6,7 @@ export type Task = {
   id: string; title: string; type: string; phase: string; role: string;
   model: string; status: string; deps: string[]; depsDone: boolean; ready: boolean;
   accept?: string; est?: number; worker?: string | null;
+  state?: string; moscow?: string; rice?: any;
 };
 export type Meta = {
   pool?: any; usage?: any; usageLimits?: any;

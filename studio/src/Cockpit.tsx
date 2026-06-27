@@ -38,9 +38,10 @@ export default function Cockpit() {
     <div className="cockpit">
       <div className="ck-top">
         <div className={"ck-pool " + (pool.active ? "on" : "off")}>
-          <div className="ck-card-h">Worker Pool</div>
+          <div className="ck-card-h">Worker Pool · tier {lim.tier || "—"}</div>
           <div className="ck-pool-state">{pool.active ? "● RUNNING" : "○ idle"}</div>
           <div className="ck-sub">mode {pool.mode || "—"} · {pool.running || 0}/{pool.max || 0} slots{pool.stop ? " · stopping" : ""}</div>
+          {(pool.capReason || lim.killSwitch) && <div className="ck-cap">⛔ {pool.capReason || "kill-switch on"}</div>}
         </div>
         <UsageCard label={`Session ≤${usage.sessionWindowH || 5}h`} u={usage.session} cap={lim.sessionUsd} />
         <UsageCard label={`Weekly ≤${usage.weekWindowD || 7}d`} u={usage.weekly} cap={lim.weeklyUsd} />

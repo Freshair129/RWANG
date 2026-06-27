@@ -50,9 +50,10 @@ export default function Board() {
                     {t.deps?.length ? <span className={"pill deps" + (t.depsDone ? " ok" : "")}>⛓ {t.deps.length}</span> : null}
                   </div>
                   {(c.key === "ready" || c.key === "backlog") && (
-                    <button className="claim" disabled={!t.ready} onClick={() => cmd("claim", t.id, { worker: "studio" })}>
-                      {t.ready ? "claim" : "blocked"}
-                    </button>
+                    <div className="card-actions">
+                      <button className="claim" disabled={!t.ready} onClick={() => cmd("claim", t.id, { worker: "studio" })}>{t.ready ? "claim" : "blocked"}</button>
+                      {t.ready && <button className="dispatch" onClick={() => { if (window.confirm(`Dispatch a REAL agent for ${t.id}? (spends tokens)`)) cmd("dispatch", t.id, { worker: "studio" }); }}>▶ run</button>}
+                    </div>
                   )}
                 </article>
               ))}

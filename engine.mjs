@@ -168,6 +168,50 @@ export function assign(id, model) {
 }
 export function reset() { withLock(() => saveState(freshState())); return { ok: true }; }
 
+// ---------- editable deps (feature--graph-editable) — writes back to the atom SOURCE + recompiles ----------
+const GKS_BACKLOG = join(__dir, "gks", "backlog.gorch.json");
+const GKS_ATOMS = join(__dir, "gks", "atoms.gorch.json");
+export async function setDeps(id, deps) {
+  deps = Array.isArray(deps) ? [...new Set(deps)] : [];
+  const ids = new Set(BACKLOG.map((t) => t.id));
+  if (!ids.has(id)) return { ok: false, error: `unknown atom ${id}` };
+  if (deps.includes(id)) return { ok: false, error: "self-dependency not allowed" };
+  for (const d of deps) if (!ids.has(d)) return { ok: false, error: `unknown dep ${d}` };
+  const isGks = BACKLOG_PATH === GKS_BACKLOG && existsSync(GKS_ATOMS);
+  if (isGks) {
+    const src = JSON.parse(readFileSync(GKS_ATOMS, "utf8"));
+    const atom = src.atoms.find((a) => a.id === id);
+    if (!atom) return { ok: false, error: `atom ${id} not in source` };
+    const prev = atom.deps || [];
+    atom.deps = deps;
+    const { validateSet, toBacklogTask } = await import("./gks/atom-schema.mjs");
+    const { errors } = validateSet(src.atoms);
+    if (errors.length) { atom.deps = prev; return { ok: false, error: errors[0] }; } // GKS-002 cycle etc -> reject, no write
+    writeFileSync(GKS_ATOMS, JSON.stringify(src, null, 2) + "\n");
+    writeFileSync(GKS_BACKLOG, JSON.stringify({ $schema: "engine backlog (compiled from gks/atoms.gorch.json)", block: src.block, tasks: src.atoms.map(toBacklogTask) }, null, 2) + "\n");
+    reload();
+    return { ok: true, id, deps };
+  }
+  // default backlog.json: edit task.deps in place; guard acyclic via detectCycle (revert on cycle)
+  const bl = JSON.parse(readFileSync(BACKLOG_PATH, "utf8"));
+  const t = bl.tasks.find((x) => x.id === id);
+  if (!t) return { ok: false, error: `atom ${id} not in backlog` };
+  const prev = t.deps || [];
+  t.deps = deps; writeFileSync(BACKLOG_PATH, JSON.stringify(bl, null, 2) + "\n"); reload();
+  try { detectCycle(); } catch (e) { t.deps = prev; writeFileSync(BACKLOG_PATH, JSON.stringify(bl, null, 2) + "\n"); reload(); return { ok: false, error: String(e.message || e) }; }
+  return { ok: true, id, deps };
+}
+
+// ---------- knowledge / MemoryOS read (feature--memoryos) — the L0/L1 anti-error memory ----------
+export function knowledgeOutcomes(limit = 200) {
+  const BRAIN = join(__dir, "brain", "failures.jsonl");
+  const mode = CONFIG.store?.knowledge || "file";
+  if (!existsSync(BRAIN)) return { mode, count: 0, rows: [] };
+  let rows = [];
+  try { rows = readFileSync(BRAIN, "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { /* */ }
+  return { mode, count: rows.length, rows: rows.slice(-limit).reverse() };
+}
+
 // ---------- snapshot สำหรับ UI/API ----------
 export function snapshot() {
   reload();                       // อ่าน backlog/config ล่าสุดจากดิสก์ทุกครั้งที่ UI poll
@@ -185,7 +229,7 @@ export function snapshot() {
       status: st.status, worker: st.worker, claimedAt: st.claimedAt,
       attempts: st.attempts, modelOverride: st.modelOverride,
       deps: t.deps || [], depsDone: depsDone(t, cur), ready: isReady(t, cur),
-      accept: t.accept, est: t.est,
+      accept: t.accept, est: t.est, state: t.state, moscow: t.moscow, rice: t.rice,
     };
   });
   // build model options from all enabled providers' models
@@ -205,7 +249,7 @@ export function snapshot() {
     pool: poolStatus(),
     auth: { mode: cur.authMode || CONFIG.providers?.claude?.auth?.mode || "plan", apiKeyAvailable: apiKeyAvailable() },
     usage: readUsage(),
-    usageLimits: { sessionUsd: CONFIG.usageLimits?.sessionUsd ?? null, weeklyUsd: CONFIG.usageLimits?.weeklyUsd ?? null },
+    usageLimits: effectiveLimits(cur),
     tasks,
   };
 }
@@ -367,9 +411,34 @@ export function readUsage() {
   return out;
 }
 
+// ---------- cost-cap (config--cost-cap-tiers) ----------
+export function effectiveLimits(s = loadState()) {
+  const ul = CONFIG.usageLimits || {};
+  const tiers = ul.tiers || {};
+  const tier = s.tier || ul.tier || Object.keys(tiers)[0] || null;
+  const caps = (tier && tiers[tier]) || { sessionUsd: ul.sessionUsd ?? null, weeklyUsd: ul.weeklyUsd ?? null };
+  return { tier, sessionUsd: caps.sessionUsd ?? null, weeklyUsd: caps.weeklyUsd ?? null, killSwitch: !!s.killSwitch, tiers: Object.keys(tiers) };
+}
+// returns a human reason if token-spend is currently blocked, else null
+export function capBlock(s = loadState()) {
+  const lim = effectiveLimits(s);
+  if (lim.killSwitch) return "kill-switch on";
+  const u = readUsage();
+  if (lim.sessionUsd != null && u.session.cost >= lim.sessionUsd) return `session cap $${lim.sessionUsd} reached ($${u.session.cost.toFixed(2)})`;
+  if (lim.weeklyUsd != null && u.weekly.cost >= lim.weeklyUsd) return `weekly cap $${lim.weeklyUsd} reached ($${u.weekly.cost.toFixed(2)})`;
+  return null;
+}
+export function setTier(tier) {
+  const tiers = CONFIG.usageLimits?.tiers || {};
+  if (!tiers[tier]) return { ok: false, error: `unknown tier ${tier}` };
+  withLock(() => { const s = loadState(); s.tier = tier; saveState(s); });
+  return { ok: true, tier };
+}
+export function setKillSwitch(on) { withLock(() => { const s = loadState(); s.killSwitch = !!on; saveState(s); }); return { ok: true, killSwitch: !!on }; }
+
 // ---------- worker pool (Run wave / Auto-run / Stop) ----------
-let POOL = { active: false, stop: false, running: 0, mode: null, started: null, max: 0 };
-export function poolStatus() { return { active: POOL.active, running: POOL.running, mode: POOL.mode, max: POOL.max, stop: POOL.stop }; }
+let POOL = { active: false, stop: false, running: 0, mode: null, started: null, max: 0, capReason: null };
+export function poolStatus() { return { active: POOL.active, running: POOL.running, mode: POOL.mode, max: POOL.max, stop: POOL.stop, capReason: POOL.capReason }; }
 export function stopPool() { POOL.stop = true; return { ok: true }; }
 
 /**
@@ -379,12 +448,16 @@ export function stopPool() { POOL.stop = true; return { ok: true }; }
  */
 export function runPool({ mode = "wave", max = CONFIG.concurrency, worker = "pool" } = {}) {
   if (POOL.active) return { ok: false, error: "pool กำลังทำงานอยู่ (กด stop ก่อน)" };
-  POOL = { active: true, stop: false, running: 0, mode, started: now(), max };
+  const block0 = capBlock();
+  if (block0) return { ok: false, error: "cost cap: " + block0 };
+  POOL = { active: true, stop: false, running: 0, mode, started: now(), max, capReason: null };
   let idx = 0;
   const inflight = new Set();
   const target = mode === "wave" ? new Set(readyTasks(loadState()).filter((t) => modelFor(t, loadState()) !== null).map((t) => t.id)) : null;
 
   const tick = () => {
+    const blk = capBlock();
+    if (blk) { POOL.stop = true; POOL.capReason = blk; }
     while (POOL.running < max && !POOL.stop) {
       const s = loadState(); reapStale(s);
       const cand = readyTasks(s).filter((t) => modelFor(t, s) !== null && (!target || target.has(t.id)));
@@ -569,6 +642,8 @@ export async function reviewExisting(id) {
 // dispatch หนึ่ง task แบบ async (claim->running->produce->review->done/needs-rework). ใช้โดย UI ปุ่ม ▶
 export function dispatchOne(id, worker = "ui") {
   const t = byId(id); if (!t) return { ok: false, error: `ไม่พบ task ${id}` };
+  const block = capBlock();
+  if (block) return { ok: false, error: "cost cap: " + block };
   const cur = loadState().tasks[id]?.status;
   if (["needs-rework", "failed", "reviewing"].includes(cur)) setStatus(id, "todo"); // re-dispatch
   const c = claim(id, worker);

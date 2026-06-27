@@ -297,7 +297,7 @@
         "entity--atom-schema"
       ],
       "est": 3,
-      "accept": "Two agents cannot &mut the same atom (conflict rejected); readers never block the writer; stale-fence holders are rejected.",
+      "accept": "Implement as a STANDALONE, unit-testable module orchestration/gks/ownership.mjs (in-memory borrow store: acquire/release/move; <=1 exclusive holder; unlimited shared readers; lease expiry; fencing token rejects stale holders). Do NOT modify engine.mjs or any existing file — create only the new module (+ optional gks/ownership.test.mjs). Acceptance: two agents cannot exclusive-borrow the same atom (conflict rejected); readers never block the writer; stale-fence holders are rejected.",
       "scope": {
         "budgetTokens": 10000,
         "needs": [],

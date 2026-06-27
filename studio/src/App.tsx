@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
+import Progress from "./Progress";
 import Board from "./Board";
 import Graph from "./Graph";
 import Cockpit from "./Cockpit";
 import Loadout from "./Loadout";
+import Copilot from "./Copilot";
+import Memory from "./Memory";
+import CommandBar from "./CommandBar";
 import { useStore, startPolling } from "./store";
 
-const TABS: [string, string][] = [["board", "Board"], ["graph", "Graph"], ["cockpit", "Cockpit"], ["loadout", "Loadout"]];
+const TABS: [string, string][] = [["progress", "Progress"], ["board", "Board"], ["graph", "Graph"], ["cockpit", "Cockpit"], ["loadout", "Loadout"], ["copilot", "Copilot"], ["memory", "Memory"]];
 
 export default function App() {
-  const [tab, setTab] = useState("board");
+  const [tab, setTab] = useState("progress");
   useEffect(() => { startPolling(1500); }, []);
   const p = useStore((s) => s.progress);
   const loading = useStore((s) => s.loading);
@@ -30,16 +34,21 @@ export default function App() {
         <div className="src">backlog: <code>gks/backlog.gorch.json</code></div>
       </header>
 
+      <CommandBar />
+
       {error ? (
         <div className="banner err">engine offline — start sidecar: <code>GORCH_BACKLOG=gks/backlog.gorch.json node server.mjs</code> ({error})</div>
       ) : null}
 
       {loading ? <div className="loading">loading snapshot…</div> : (
         <main className="surface">
+          {tab === "progress" && <Progress />}
           {tab === "board" && <Board />}
           {tab === "graph" && <Graph />}
           {tab === "cockpit" && <Cockpit />}
           {tab === "loadout" && <Loadout />}
+          {tab === "copilot" && <Copilot />}
+          {tab === "memory" && <Memory />}
         </main>
       )}
     </div>

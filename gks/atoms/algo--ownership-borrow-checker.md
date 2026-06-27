@@ -14,7 +14,7 @@ status: todo
 Model claim/lease as Rust ownership: claim = exclusive &mut (<=1), context read = shared & (unlimited), lease = lifetime, move = fencing token. MVCC via GenesisDB bitemporal asOf (readers snapshot last-stable; writer supersedes). DACI = ownership roles; reviewer/Informed get & only.
 
 ### Acceptance (DoD)
-Two agents cannot &mut the same atom (conflict rejected); readers never block the writer; stale-fence holders are rejected.
+Implement as a STANDALONE, unit-testable module orchestration/gks/ownership.mjs (in-memory borrow store: acquire/release/move; <=1 exclusive holder; unlimited shared readers; lease expiry; fencing token rejects stale holders). Do NOT modify engine.mjs or any existing file — create only the new module (+ optional gks/ownership.test.mjs). Acceptance: two agents cannot exclusive-borrow the same atom (conflict rejected); readers never block the writer; stale-fence holders are rejected.
 
 ### Depends on
 [[entity--atom-schema]]
