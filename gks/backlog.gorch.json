@@ -196,12 +196,13 @@
     },
     {
       "id": "feature--loadout",
-      "title": "Agent Loadout (inventory) — The game-inventory surface: per role equip Model (hat), Tools/Capabilities, Skills, MemoryOS, context scope+tier, persona+authority",
+      "title": "Agent Loadout (inventory) — The game-inventory surface: per role equip Model (hat), Tools/Capabilities, Skills, MemoryOS, context scope+tier, and a Persona preset (from config--persona-presets, which sets persona + DACI authority)",
       "type": "code",
       "phase": "P1",
       "deps": [
         "feature--atom-store",
-        "entity--atom-schema"
+        "entity--atom-schema",
+        "config--persona-presets"
       ],
       "est": 3,
       "accept": "Drag gear onto slots; stats (cost/speed/capability) render; the equipped loadout actually routes the next dispatch.",
@@ -565,6 +566,118 @@
       ],
       "est": 5,
       "accept": "Given a goal atom + gold-set, the loop runs unattended and either hits the benchmark target or stops on a defined termination condition (never runs away on cost); every round is recorded in the traceability graph with its score; cost-cap and gates are enforced on every BUILD round; a mid-loop crash resumes from the last checkpoint.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "new"
+    },
+    {
+      "id": "config--routing-cloud-local",
+      "title": "Cloud/Local Routing Split (T-axis) — Formalize the T-axis cloud/local split on top of the existing ADR-O-005 roles/providers in config.json (does not rewrite the registry)",
+      "type": "config",
+      "phase": "P1",
+      "deps": [
+        "config--cost-cap-tiers"
+      ],
+      "est": 2,
+      "accept": "Config declares cloud-roles vs local-roles; a coder dispatch goes local-first while architect/reviewer go cloud; the split is overridable per task and stays orthogonal to the H-tier.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "new"
+    },
+    {
+      "id": "config--persona-presets",
+      "title": "Persona Presets (DACI roster) — A roster of equippable agent personas with DACI authority, harvested from the GoVibe agent team (reference-only, agent-registry.yaml): ARCHON (architect/approver), LYRA (planner/driver), RKOI (tech-lead/reviewer), ATHER (auditor/traceability), GHOST (QA), THESEUS (doc-writer), JANUS (devops), KIN (integration), VIBE (frontend)",
+      "type": "config",
+      "phase": "P2",
+      "deps": [
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "accept": "A persona preset can be selected and equipped; it sets the agent's persona + DACI authority + default role routing; a reviewer/informed persona cannot acquire an exclusive (&mut) borrow.",
+      "scope": {
+        "budgetTokens": 8000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "new"
+    },
+    {
+      "id": "algo--approval-chain",
+      "title": "Approval Chain (multi-role DACI workflow) — Multi-role DACI approval state machine layered ON TOP of the hard pre-dispatch gate (harvested from GoVibe STD-Execution-Governance + ADR-007, reference-only)",
+      "type": "design",
+      "phase": "P2",
+      "deps": [
+        "guard--governance-gate",
+        "entity--atom-schema"
+      ],
+      "est": 3,
+      "accept": "A gated atom walks the chain scaled by its C-level; each step records role + verdict; a C-2/C-3 with no approved source doc is blocked; the chain feeds the governance gate but never bypasses it.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "new"
+    },
+    {
+      "id": "algo--adaptive-decompose",
+      "title": "Adaptive Decompose (ADaPT) — As-needed recursive decomposition (ADaPT)",
+      "type": "design",
+      "phase": "P2",
+      "deps": [
+        "algo--planner-tiering",
+        "config--routing-cloud-local"
+      ],
+      "est": 3,
+      "accept": "A task too hard for the local model is auto-decomposed until an executor can handle it; decomposition stops at the shallowest sufficient depth (a measurable stop heuristic, not always-atomic); each leaf carries its own minimal context.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "new"
+    },
+    {
+      "id": "feature--pipeline-canvas",
+      "title": "Pipeline Canvas (React Flow DAG builder) — An n8n/ComfyUI-style structured DAG builder using React Flow (@xyflow/react): drag a node = create an atom (todo); connect an edge port->port = create a depends_on (acyclic-checked, GKS-002); drag an agent/loadout onto a node = assign; Run a sub-graph = autonomous wave",
+      "type": "code",
+      "phase": "P2",
+      "deps": [
+        "feature--atom-store",
+        "protocol--engine-ipc"
+      ],
+      "est": 5,
+      "accept": "Dragging a node + connecting an edge creates a real depends_on edge in the DAG (persisted to atoms.gorch.json, recompiled); a cycle is rejected; running a sub-graph dispatches a wave; node/edge state stays 1:1 with the AtomStore.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
+      "state": "new"
+    },
+    {
+      "id": "feature--diagram-ingest",
+      "title": "Diagram Ingest (diagram -> atoms+edges) — The reverse path of the pipeline canvas (harvested from GoVibe SYSTEM-04 Diagram-to-Doc, reference-only)",
+      "type": "code",
+      "phase": "P2",
+      "deps": [
+        "feature--pipeline-canvas",
+        "algo--knowledge-adapter"
+      ],
+      "est": 3,
+      "accept": "Dropping a supported diagram produces editable draft atoms + dependency edges; nothing reaches the backlog until a human approves; every generated atom traces back to a diagram region.",
       "scope": {
         "budgetTokens": 10000,
         "needs": [],

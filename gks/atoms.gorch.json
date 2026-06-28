@@ -160,7 +160,7 @@
       ],
       "est": 2,
       "moscow": "must",
-      "body": "Human-confirm gate triggered by an explicit `requiresConfirm` field PLUS auto for Safety::*/deploy/merge/irreversible. Enforced PRE-DISPATCH in the Rust core (blocks claimed->running for gated atoms), never trusting the agent.",
+      "body": "Human-confirm gate triggered by an explicit `requiresConfirm` field PLUS auto for Safety::*/deploy/merge/irreversible. Enforced PRE-DISPATCH in the Rust core (blocks claimed->running for gated atoms), never trusting the agent. This hard pre-dispatch stop stays mandatory; algo--approval-chain is the optional multi-role DACI human-workflow layer that feeds verdicts into it -- it never replaces the hard gate.",
       "accept": "A gated atom cannot transition claimed->running without an explicit human confirm; non-gated atoms flow normally.",
       "state": "new"
     },
@@ -209,11 +209,12 @@
       "role": "coder",
       "deps": [
         "feature--atom-store",
-        "entity--atom-schema"
+        "entity--atom-schema",
+        "config--persona-presets"
       ],
       "est": 3,
       "moscow": "must",
-      "body": "The game-inventory surface: per role equip Model (hat), Tools/Capabilities, Skills, MemoryOS, context scope+tier, persona+authority. Owner-approved SLM/LLM-as-tool slot. An override+enrichment layer over roles[role].preferred (empty loadout = current behavior).",
+      "body": "The game-inventory surface: per role equip Model (hat), Tools/Capabilities, Skills, MemoryOS, context scope+tier, and a Persona preset (from config--persona-presets, which sets persona + DACI authority). Owner-approved SLM/LLM-as-tool slot. An override+enrichment layer over roles[role].preferred (empty loadout = current behavior).",
       "accept": "Drag gear onto slots; stats (cost/speed/capability) render; the equipped loadout actually routes the next dispatch.",
       "state": "extend"
     },
@@ -561,6 +562,118 @@
       "moscow": "should",
       "body": "The autonomous self-improvement engine ('Autonomas'). For a goal atom, loops PLAN (planner-tiering -> lowest-H sub-atoms) -> BUILD (dispatch wave via Provider Registry, borrow-checked) -> TEST (verify-gate-v2: compile/acceptance, deterministic-first) -> BENCHMARK (goldset-harness scores vs labeled target = self-benchmark) -> JUDGE (LLM-as-judge for what tests miss) -> if below target REFINE (RCA -> refinement spec -> re-plan) and loop, else DONE (record the improvement curve in the bitemporal traceability graph). Termination: target met / round-cap / cost-cap hit (finish-current-then-stop) / plateau K rounds / governance gate needs human. Governed by construction: cost-cap+gates+borrow-checker make autonomy safe (vs OpenHands/Devin runaway cost); each round is a durable checkpoint (Temporal-style) so a crash mid-loop replay-resumes.",
       "accept": "Given a goal atom + gold-set, the loop runs unattended and either hits the benchmark target or stops on a defined termination condition (never runs away on cost); every round is recorded in the traceability graph with its score; cost-cap and gates are enforced on every BUILD round; a mid-loop crash resumes from the last checkpoint.",
+      "state": "new"
+    },
+    {
+      "id": "config--routing-cloud-local",
+      "type": "config",
+      "displayName": "Cloud/Local Routing Split (T-axis)",
+      "layer": "L1-Config",
+      "phase": "P1",
+      "tier": "H2",
+      "role": "architect",
+      "deps": [
+        "config--cost-cap-tiers"
+      ],
+      "est": 2,
+      "moscow": "should",
+      "engineType": "config",
+      "body": "Formalize the T-axis cloud/local split on top of the existing ADR-O-005 roles/providers in config.json (does not rewrite the registry). CLOUD (claude opus/sonnet) owns architect + reviewer (plan / architecture / review / complex-logic); LOCAL (ollama coder) owns coder + worker (code / refactor / scaffold). Expressed via each role's preferred chain. Orthogonal to H: a small H0 task may still route to cloud if it is complex (T != H). Local pick is VRAM-aware: on an RTX 3060 (~5GB free) the realistic coder is qwen2.5-coder-7B Q4.",
+      "accept": "Config declares cloud-roles vs local-roles; a coder dispatch goes local-first while architect/reviewer go cloud; the split is overridable per task and stays orthogonal to the H-tier.",
+      "state": "new"
+    },
+    {
+      "id": "config--persona-presets",
+      "type": "config",
+      "displayName": "Persona Presets (DACI roster)",
+      "layer": "L1-Config",
+      "phase": "P2",
+      "tier": "H2",
+      "role": "architect",
+      "deps": [
+        "entity--atom-schema"
+      ],
+      "est": 2,
+      "moscow": "should",
+      "engineType": "config",
+      "body": "A roster of equippable agent personas with DACI authority, harvested from the GoVibe agent team (reference-only, agent-registry.yaml): ARCHON (architect/approver), LYRA (planner/driver), RKOI (tech-lead/reviewer), ATHER (auditor/traceability), GHOST (QA), THESEUS (doc-writer), JANUS (devops), KIN (integration), VIBE (frontend). Each persona declares authority can/cannot, mapped onto DACI -> borrow capability (Approver/Reviewer/Informed get shared & only, never &mut; see algo--ownership-borrow-checker). Equipped via the Loadout.",
+      "accept": "A persona preset can be selected and equipped; it sets the agent's persona + DACI authority + default role routing; a reviewer/informed persona cannot acquire an exclusive (&mut) borrow.",
+      "state": "new"
+    },
+    {
+      "id": "algo--approval-chain",
+      "type": "algo",
+      "displayName": "Approval Chain (multi-role DACI workflow)",
+      "layer": "L3-Logic",
+      "phase": "P2",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [
+        "guard--governance-gate",
+        "entity--atom-schema"
+      ],
+      "est": 3,
+      "moscow": "should",
+      "engineType": "design",
+      "body": "Multi-role DACI approval state machine layered ON TOP of the hard pre-dispatch gate (harvested from GoVibe STD-Execution-Governance + ADR-007, reference-only). Steps: classify Complexity C-0..C-3 + context tier H + W-scale -> scope gate (ARCHON, for C-2/C-3) -> doc review (ATHER: COMPLIANT/DRIFT/NON-COMPLIANT) -> feasibility (RKOI: PASS/REVISION/FAIL) -> architecture approval (ARCHON for C-3 or H4-H6: APPROVED/NEEDS_REVISION/ADR_REQUIRED) -> implementation -> QA (GHOST: VERIFIED/REJECTED) -> compliance audit (ATHER). 'no approved source doc -> BLOCKED' for C-2/C-3. Lighter C-levels skip steps. This is the human-workflow layer; guard--governance-gate stays the enforcement point.",
+      "accept": "A gated atom walks the chain scaled by its C-level; each step records role + verdict; a C-2/C-3 with no approved source doc is blocked; the chain feeds the governance gate but never bypasses it.",
+      "state": "new"
+    },
+    {
+      "id": "algo--adaptive-decompose",
+      "type": "algo",
+      "displayName": "Adaptive Decompose (ADaPT)",
+      "layer": "L3-Logic",
+      "phase": "P2",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [
+        "algo--planner-tiering",
+        "config--routing-cloud-local"
+      ],
+      "est": 3,
+      "moscow": "should",
+      "engineType": "design",
+      "body": "As-needed recursive decomposition (ADaPT). Break a task down only until the assigned executor (by model capability from config--routing-cloud-local) can complete it with high enough success probability -- no finer (over-decomposition has a planning-cost break-even). Depth = f(complexity / model-capability), capped by the H-tier from algo--planner-tiering. A 7B local coder shreds down to micro/atomic; a cloud model takes coarser chunks. Each leaf carries its own self-contained context (POLA at H0).",
+      "accept": "A task too hard for the local model is auto-decomposed until an executor can handle it; decomposition stops at the shallowest sufficient depth (a measurable stop heuristic, not always-atomic); each leaf carries its own minimal context.",
+      "state": "new"
+    },
+    {
+      "id": "feature--pipeline-canvas",
+      "type": "feature",
+      "displayName": "Pipeline Canvas (React Flow DAG builder)",
+      "layer": "L2-Feature",
+      "phase": "P2",
+      "tier": "H3",
+      "role": "coder",
+      "deps": [
+        "feature--atom-store",
+        "protocol--engine-ipc"
+      ],
+      "est": 5,
+      "moscow": "should",
+      "engineType": "code",
+      "body": "An n8n/ComfyUI-style structured DAG builder using React Flow (@xyflow/react): drag a node = create an atom (todo); connect an edge port->port = create a depends_on (acyclic-checked, GKS-002); drag an agent/loadout onto a node = assign; Run a sub-graph = autonomous wave. Reuses the existing backend verbatim -- engine.mjs setDeps() (persists deps -> atoms.gorch.json + recompile), waves() (topological layout), detectCycle() -- via POST /api/cmd {action:setdeps}. Absorbs/supersedes the custom SVG editor studio/src/Graph.tsx. The canvas is an authoring surface bound to the AtomStore (single source of truth), not its own state.",
+      "accept": "Dragging a node + connecting an edge creates a real depends_on edge in the DAG (persisted to atoms.gorch.json, recompiled); a cycle is rejected; running a sub-graph dispatches a wave; node/edge state stays 1:1 with the AtomStore.",
+      "state": "new"
+    },
+    {
+      "id": "feature--diagram-ingest",
+      "type": "feature",
+      "displayName": "Diagram Ingest (diagram -> atoms+edges)",
+      "layer": "L2-Feature",
+      "phase": "P2",
+      "tier": "H3",
+      "role": "coder",
+      "deps": [
+        "feature--pipeline-canvas",
+        "algo--knowledge-adapter"
+      ],
+      "est": 3,
+      "moscow": "should",
+      "engineType": "code",
+      "body": "The reverse path of the pipeline canvas (harvested from GoVibe SYSTEM-04 Diagram-to-Doc, reference-only). Drop a diagram (C4 / ERD / sequence / flow / sitemap / dependency-graph / agent-workflow) onto the canvas -> semantic-extract nodes/edges/boundaries/actors -> materialize as DRAFT atoms + depends_on edges -> human-review gate before they enter the backlog (diagram -> draft -> review -> approved). Each generated atom keeps a link back to its source diagram asset for traceability.",
+      "accept": "Dropping a supported diagram produces editable draft atoms + dependency edges; nothing reaches the backlog until a human approves; every generated atom traces back to a diagram region.",
       "state": "new"
     }
   ]
