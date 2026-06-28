@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import Progress from "./Progress";
 import Board from "./Board";
 import Graph from "./Graph";
+import PipelineCanvas from "./PipelineCanvas";
+import NodeDbCanvas from "./NodeDbCanvas";
+import DiagramIngest from "./DiagramIngest";
 import Cockpit from "./Cockpit";
 import Loadout from "./Loadout";
 import Copilot from "./Copilot";
@@ -9,7 +12,7 @@ import Memory from "./Memory";
 import CommandBar from "./CommandBar";
 import { useStore, startPolling } from "./store";
 
-const TABS: [string, string][] = [["progress", "Progress"], ["board", "Board"], ["graph", "Graph"], ["cockpit", "Cockpit"], ["loadout", "Loadout"], ["copilot", "Copilot"], ["memory", "Memory"]];
+const TABS: [string, string][] = [["progress", "Progress"], ["board", "Board"], ["graph", "Graph"], ["pipeline", "Pipeline"], ["nodedb", "Node↔DB"], ["ingest", "Diagram"], ["cockpit", "Cockpit"], ["loadout", "Loadout"], ["copilot", "Copilot"], ["memory", "Memory"]];
 
 export default function App() {
   const [tab, setTab] = useState("progress");
@@ -45,6 +48,9 @@ export default function App() {
           {tab === "progress" && <Progress />}
           {tab === "board" && <Board />}
           {tab === "graph" && <Graph />}
+          {tab === "pipeline" && <PipelineCanvas />}
+          {tab === "nodedb" && <NodeDbCanvas />}
+          {tab === "ingest" && <DiagramIngest />}
           {tab === "cockpit" && <Cockpit />}
           {tab === "loadout" && <Loadout />}
           {tab === "copilot" && <Copilot />}
