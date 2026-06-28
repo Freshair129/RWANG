@@ -496,7 +496,7 @@
     },
     {
       "id": "protocol--govibe-mcp-bridge",
-      "title": "GoVibe MCP Bridge (contract) — Non-goal to BUILD in v1, but lock the boundary contract now (which atoms/events cross the MCP bridge) so the v1 schema doesn't foreclose a future GoVibe <-> G-Orchestra bridge.",
+      "title": "GoVibe MCP Bridge (SUPERSEDED -> A2A surface) — [SUPERSEDED by protocol--a2a-surface -- ADR-O-006: generalized to an open, consumer-agnostic A2A interop surface; GoVibe is reference-only",
       "type": "design",
       "phase": "P3",
       "deps": [
@@ -530,6 +530,47 @@
       },
       "requiresConfirm": true,
       "moscow": "could",
+      "state": "new"
+    },
+    {
+      "id": "protocol--a2a-surface",
+      "title": "A2A Interop Surface (contract) — Open Agent-to-Agent (A2A) interop seam; supersedes protocol--govibe-mcp-bridge (ADR-O-006)",
+      "type": "design",
+      "phase": "P3",
+      "deps": [
+        "entity--traceability-graph",
+        "entity--atom-schema"
+      ],
+      "est": 3,
+      "accept": "A versioned A2A contract exists (Agent Card schema + Task<->8-state mapping + the atoms/events crossing the seam + A2A-remote-as-Provider registration); end-to-end, an external A2A agent can delegate a task to G-Orch and receive an artifact, and G-Orch can delegate one task out via the registry, both passing the pre-dispatch governance gate.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "could",
+      "state": "new"
+    },
+    {
+      "id": "algo--autoloop",
+      "title": "AutoLoop (autonomous build-test-benchmark-refine) — The autonomous self-improvement engine ('Autonomas')",
+      "type": "code",
+      "phase": "P2",
+      "deps": [
+        "eval--goldset-harness",
+        "safety--verify-gate-v2",
+        "algo--planner-tiering",
+        "config--cost-cap-tiers",
+        "entity--traceability-graph"
+      ],
+      "est": 5,
+      "accept": "Given a goal atom + gold-set, the loop runs unattended and either hits the benchmark target or stops on a defined termination condition (never runs away on cost); every round is recorded in the traceability graph with its score; cost-cap and gates are enforced on every BUILD round; a mid-loop crash resumes from the last checkpoint.",
+      "scope": {
+        "budgetTokens": 10000,
+        "needs": [],
+        "excludes": []
+      },
+      "moscow": "should",
       "state": "new"
     }
   ]

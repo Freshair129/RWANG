@@ -1,7 +1,7 @@
 # ADR-O-002 — GoVibe integration: G-Orchestration เป็นแกน ดูด control-plane ของ GoVibe เข้ามา
 
 > **Series:** ADR-O (orchestrator-scoped — แยกจาก ADR-01..07 ของตัวผลิตภัณฑ์ G-Maiden)
-> **Status:** Approved (2026-06-21, USER/Boss · RUNBOOK Gate 3)
+> **Status:** Approved (2026-06-21, USER/Boss · RUNBOOK Gate 3) · **Superseded-in-part by [ADR-O-006](ADR-O-006--topology-core-faces-a2a.md)** (2026-06-29 — Mission Control ย้าย in-house; GoVibe เปลี่ยนจาก live control-plane → reference-only. ส่วน "G-Orch เป็น execution core + absorb capability" ยังคงอยู่)
 > **Date:** 2026-06-21
 > **Spec:** [SPEC--GOVIBE-INTEGRATION.md](SPEC--GOVIBE-INTEGRATION.md)
 > **Related:** [ADR-O-001](ADR-O-001--verify-gate.md) (Verify Gate)

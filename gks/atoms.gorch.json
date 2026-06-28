@@ -489,7 +489,7 @@
     {
       "id": "protocol--govibe-mcp-bridge",
       "type": "protocol",
-      "displayName": "GoVibe MCP Bridge (contract)",
+      "displayName": "GoVibe MCP Bridge (SUPERSEDED -> A2A surface)",
       "layer": "L2-Communication",
       "phase": "P3",
       "tier": "H3",
@@ -500,7 +500,7 @@
       "est": 2,
       "moscow": "could",
       "engineType": "design",
-      "body": "Non-goal to BUILD in v1, but lock the boundary contract now (which atoms/events cross the MCP bridge) so the v1 schema doesn't foreclose a future GoVibe <-> G-Orchestra bridge.",
+      "body": "[SUPERSEDED by protocol--a2a-surface -- ADR-O-006: generalized to an open, consumer-agnostic A2A interop surface; GoVibe is reference-only. Kept for trace.] Originally: lock the boundary contract for which atoms/events cross the bridge so the v1 schema doesn't foreclose interop.",
       "accept": "A versioned boundary contract doc exists; v1 atom/event schema is verified compatible with it.",
       "state": "new"
     },
@@ -521,6 +521,46 @@
       "requiresConfirm": true,
       "body": "Design the seam (not the storefront) for sharing/selling agent loadouts/templates/skins (rarity tiers, like the Maiden Atelier). v1 ships only the signed sideload import path; payments/storefront post-v1.",
       "accept": "A signed loadout pack imports + verifies; the seam is documented so a later storefront drops in without schema change.",
+      "state": "new"
+    },
+    {
+      "id": "protocol--a2a-surface",
+      "type": "protocol",
+      "displayName": "A2A Interop Surface (contract)",
+      "layer": "L2-Communication",
+      "phase": "P3",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [
+        "entity--traceability-graph",
+        "entity--atom-schema"
+      ],
+      "est": 3,
+      "moscow": "could",
+      "engineType": "design",
+      "body": "Open Agent-to-Agent (A2A) interop seam; supersedes protocol--govibe-mcp-bridge (ADR-O-006). G-Orch speaks A2A as server (Agent Card at /.well-known/agent-card.json exposing skills author-atoms/run-pipeline/verify/query-graph; maps the A2A Task lifecycle submitted->working->input-required->completed/failed onto the 8-state machine) and as client (a remote A2A agent registers as a Provider with transport `a2a` per ADR-O-005, so borrow-checker/gates/cost-cap/Verify Gate apply uniformly). Distinct from MCP: MCP=vertical (Claude Code director calls G-Orch tools), A2A=horizontal (agent<->agent peers). Consumer-agnostic; GoVibe is only the first reference consumer.",
+      "accept": "A versioned A2A contract exists (Agent Card schema + Task<->8-state mapping + the atoms/events crossing the seam + A2A-remote-as-Provider registration); end-to-end, an external A2A agent can delegate a task to G-Orch and receive an artifact, and G-Orch can delegate one task out via the registry, both passing the pre-dispatch governance gate.",
+      "state": "new"
+    },
+    {
+      "id": "algo--autoloop",
+      "type": "algo",
+      "displayName": "AutoLoop (autonomous build-test-benchmark-refine)",
+      "layer": "L3-Logic",
+      "phase": "P2",
+      "tier": "H3",
+      "role": "architect",
+      "deps": [
+        "eval--goldset-harness",
+        "safety--verify-gate-v2",
+        "algo--planner-tiering",
+        "config--cost-cap-tiers",
+        "entity--traceability-graph"
+      ],
+      "est": 5,
+      "moscow": "should",
+      "body": "The autonomous self-improvement engine ('Autonomas'). For a goal atom, loops PLAN (planner-tiering -> lowest-H sub-atoms) -> BUILD (dispatch wave via Provider Registry, borrow-checked) -> TEST (verify-gate-v2: compile/acceptance, deterministic-first) -> BENCHMARK (goldset-harness scores vs labeled target = self-benchmark) -> JUDGE (LLM-as-judge for what tests miss) -> if below target REFINE (RCA -> refinement spec -> re-plan) and loop, else DONE (record the improvement curve in the bitemporal traceability graph). Termination: target met / round-cap / cost-cap hit (finish-current-then-stop) / plateau K rounds / governance gate needs human. Governed by construction: cost-cap+gates+borrow-checker make autonomy safe (vs OpenHands/Devin runaway cost); each round is a durable checkpoint (Temporal-style) so a crash mid-loop replay-resumes.",
+      "accept": "Given a goal atom + gold-set, the loop runs unattended and either hits the benchmark target or stops on a defined termination condition (never runs away on cost); every round is recorded in the traceability graph with its score; cost-cap and gates are enforced on every BUILD round; a mid-loop crash resumes from the last checkpoint.",
       "state": "new"
     }
   ]

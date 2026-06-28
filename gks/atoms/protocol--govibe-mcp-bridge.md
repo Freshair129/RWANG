@@ -6,12 +6,12 @@ role: architect
 status: todo
 ---
 
-# PROTOCOL: GoVibe MCP Bridge (contract) [L2-Communication] protocol--govibe-mcp-bridge
+# PROTOCOL: GoVibe MCP Bridge (SUPERSEDED -> A2A surface) [L2-Communication] protocol--govibe-mcp-bridge
 
 **Phase:** P3 · **Tier:** H3 · **Type:** protocol · **Est:** 2 · **MoSCoW:** could
 
 ### Description
-Non-goal to BUILD in v1, but lock the boundary contract now (which atoms/events cross the MCP bridge) so the v1 schema doesn't foreclose a future GoVibe <-> G-Orchestra bridge.
+[SUPERSEDED by protocol--a2a-surface -- ADR-O-006: generalized to an open, consumer-agnostic A2A interop surface; GoVibe is reference-only. Kept for trace.] Originally: lock the boundary contract for which atoms/events cross the bridge so the v1 schema doesn't foreclose interop.
 
 ### Acceptance (DoD)
 A versioned boundary contract doc exists; v1 atom/event schema is verified compatible with it.
