@@ -150,7 +150,7 @@ Authority = **DACI** (Driver decides/owns, Approver promotes to `stable`, Contri
 | Axis | Range | What it controls | Where it lives |
 |---|---|---|---|
 | **H — Context Hop** | **H0–H6** | **enforced tool access control** for the agent (the token engine) | atom field `context_scaling_tier`; enforced by the Rust core + GenesisDB `retrieveContext(id, tier, budget)` |
-| **D — Compaction Height** | **D1–D5** | how many structural layers pack into one physical `.md` (D5≈HLD … D1≈code) | the compaction parser (ADR-018 split this OFF from H) |
+| **D — Compaction Height** | **D1–D5** | how many structural layers pack into one physical `.md` (D5≈HLD … D1≈code) | the compaction parser (ADR-022 renamed compaction H→D; ADR-018 = containment tree) |
 | **T — Dispatch Tier** | **T1–T3** | cost/model routing at execution time | the provider router / Loadout |
 
 **H is the real token-saving mechanism — it is enforced as actual tool restriction, not a hint (SPEC §3, verbatim behavior):**
