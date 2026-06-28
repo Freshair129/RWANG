@@ -115,6 +115,15 @@
     "draft": "scout"
   },
 
+  "routingCloudLocal": {
+    "_doc": "config--routing-cloud-local (ADR-O-005 T-axis). Declares which roles are cloud-first (plan/architecture/review/complex-logic) vs local-first (code/refactor/scaffold). Orthogonal to the H-tier — a small H0 task may still go cloud if complex. The live provider chains are roles[].preferred; this is the policy view for the Loadout/Cockpit.",
+    "cloud": ["architect", "reviewer"],
+    "local": ["coder", "worker"],
+    "hybrid": ["scout"],
+    "localCoderHint": "qwen2.5-coder-7b Q4 fits an RTX 3060 (~5GB free); shred tasks via algo--adaptive-decompose",
+    "_note": "Policy intent. To make 'coder' truly local-first, move an ollama model to the front of roles.coder.preferred (it currently leads with claude:sonnet for quality on weak local hardware)."
+  },
+
   "review": {
     "enabled": true,
     "requireReviewDefault": true,
