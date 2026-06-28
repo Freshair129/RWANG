@@ -22,8 +22,8 @@ G-Orchestra v1 = **the governed autonomous multi-agent orchestrator** — a sign
 | Phase | Theme | Atoms | Est | Exit milestone |
 |---|---|---|---|---|
 | **P0 — Foundation** | spec-engine + Tauri shell + GenesisDB + safety floor | 9 | 18 | **M0: skeleton runs** — compile atoms, Tauri window เปิด, engine dispatch 1 task ผ่าน gate |
-| **P1 — Core MVP** | AtomStore + 4 surfaces + planner/verify/ownership + product shell | 13 | 29 | **M1 = MVP (dogfood)** — author→dispatch→verify→track cost จาก UI ครบ (persona P0: solo founder) |
-| **P2 — Autonomy + Visual** | pipeline canvas + AutoLoop + memory/trace + governed workflow | 10 | 32 | **M2 = differentiators** — visual pipeline (drag/edge) + autonomous self-improving loop + DACI workflow |
+| **P1 — Core MVP** | AtomStore + 4 surfaces + planner/verify/ownership + product shell | 14 | 31 | **M1 = MVP (dogfood)** — author→dispatch→verify→track cost จาก UI ครบ (persona P0: solo founder) |
+| **P2 — Autonomy + Visual** | pipeline canvas + AutoLoop + memory/trace + governed workflow | 9 | 30 | **M2 = differentiators** — visual pipeline (drag/edge) + autonomous self-improving loop + DACI workflow |
 | **P3 — Commercial + Scale** | cross-OS + multi-host + A2A + marketplace seam | 5 | 13 | **M3 = sellable** — signed cross-platform, multi-host, peer-interop, marketplace seam (persona P2: customer dev) |
 | | **รวม** | **37** | **92** | |
 
@@ -79,7 +79,7 @@ Phase = milestone band; **Wave = ลำดับ build จริง** (topologic
 
 ## 5. Effort & role rollup
 
-- **Est:** P0=18 · P1=29 · P2=32 · P3=13 · **รวม 92** (relative points, solo-founder velocity — ไม่ผูกวันที่ ตาม ADR-O-006)
+- **Est:** P0=18 · P1=31 · P2=30 · P3=13 · **รวม 92** (relative points, solo-founder velocity — ไม่ผูกวันที่ ตาม ADR-O-006)
 - **Roles:** coder 17 · architect 14 · worker 5 · reviewer 1 → ส่วนใหญ่เป็น cloud-architect (plan/design) + local-coder (impl) ตาม `config--routing-cloud-local`
 - **State:** exists 2 · **extend 17** (ต่อยอด engine.mjs เดิม) · **new 18** (โค้ดใหม่) → ~ครึ่งคือ extend ของที่รันได้แล้ว
 
@@ -87,7 +87,7 @@ Phase = milestone band; **Wave = ลำดับ build จริง** (topologic
 
 ## 6. Sequencing flags / risks (ต้องจัดการ)
 
-1. ⚠️ **Phase inversion:** `feature--loadout` (P1, must) depends on `config--persona-presets` (tagged **P2**). build order ถูกต้องอยู่แล้ว (persona-presets อยู่ wave 1 < loadout wave 3) แต่ **tag เพี้ยน** → แนะนำ **re-tag persona-presets เป็น P1** ให้ phase plan สอดคล้อง (1-field fix ใน atoms.gorch.json).
+1. ✅ **(resolved 2026-06-29) Phase inversion:** `feature--loadout` (P1) depended on `config--persona-presets` (was tagged **P2**) → **re-tagged persona-presets → P1**. phase plan สอดคล้องแล้ว (P1: 13→14 atoms / 29→31 est; P2: 10→9 / 32→30).
 2. **GenesisDB sidecar (P0) = dependency เสี่ยงสุด** — N-API pre-1.0 win32-only. มี **flat-file fallback บังคับ** (`algo--knowledge-adapter`) → P0 ไม่ block ถ้า binary มีปัญหา.
 3. **autoloop + pipeline-canvas + diagram-ingest = ลึกสุด (wave 4)** — deps (traceability, goldset, atom-store) ต้องเสร็จก่อน → จัดเข้า P0/P1 ให้ครบก่อนแตะ P2 autonomy.
 4. **Verify-Gate ต้องมาก่อน AutoLoop** — autoloop ใช้ verify-gate + goldset เป็น TEST/BENCHMARK step. อย่าเริ่ม autoloop ก่อน 2 ตัวนี้เขียว.

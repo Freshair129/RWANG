@@ -587,7 +587,7 @@
       "type": "config",
       "displayName": "Persona Presets (DACI roster)",
       "layer": "L1-Config",
-      "phase": "P2",
+      "phase": "P1",
       "tier": "H2",
       "role": "architect",
       "deps": [
