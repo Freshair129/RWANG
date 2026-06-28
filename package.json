@@ -12,6 +12,12 @@
     "run": "node orchestrator.mjs run",
     "reset": "node orchestrator.mjs reset",
     "prewarm": "node prewarm.mjs",
-    "vram": "node vram-mode.mjs"
+    "vram": "node vram-mode.mjs",
+    "tauri": "tauri",
+    "app": "tauri dev",
+    "app:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
   }
 }
