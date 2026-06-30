@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import Progress from "./Progress";
+import DevProgress from "./DevProgress";
 import Board from "./Board";
 import Graph from "./Graph";
 import PipelineCanvas from "./PipelineCanvas";
@@ -12,7 +12,7 @@ import Memory from "./Memory";
 import CommandBar from "./CommandBar";
 import { useStore, startPolling } from "./store";
 
-const TABS: [string, string][] = [["progress", "Progress"], ["board", "Board"], ["graph", "Graph"], ["pipeline", "Pipeline"], ["nodedb", "Node↔DB"], ["ingest", "Diagram"], ["cockpit", "Cockpit"], ["loadout", "Loadout"], ["copilot", "Copilot"], ["memory", "Memory"]];
+const TABS: [string, string][] = [["progress", "Develop"], ["board", "Board"], ["graph", "Graph"], ["pipeline", "Pipeline"], ["nodedb", "Node↔DB"], ["ingest", "Diagram"], ["cockpit", "Cockpit"], ["loadout", "Loadout"], ["copilot", "Copilot"], ["memory", "Memory"]];
 
 export default function App() {
   const [tab, setTab] = useState("progress");
@@ -45,7 +45,7 @@ export default function App() {
 
       {loading ? <div className="loading">loading snapshot…</div> : (
         <main className="surface">
-          {tab === "progress" && <Progress />}
+          {tab === "progress" && <DevProgress />}
           {tab === "board" && <Board />}
           {tab === "graph" && <Graph />}
           {tab === "pipeline" && <PipelineCanvas />}

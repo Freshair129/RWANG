@@ -7,6 +7,9 @@ export type Task = {
   model: string; status: string; deps: string[]; depsDone: boolean; ready: boolean;
   accept?: string; est?: number; worker?: string | null;
   state?: string; moscow?: string; rice?: any;
+  // claim/assign/governance (DevProgress)
+  gated?: boolean; confirmed?: boolean; modelOverride?: string | null;
+  claimedAt?: number | null; attempts?: number;
 };
 export type Meta = {
   pool?: any; usage?: any; usageLimits?: any;
