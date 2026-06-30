@@ -2,7 +2,7 @@
 
 Register MULTIPLE accounts per provider; the engine rotates among them per dispatch to spread each
 account's plan/quota, and fails over to the next when one hits its usage limit (cooling it down
-until its reset). Zero new deps. Core: `accounts.mjs` (9/9 tests). Wired into `providers.mjs`
+until its reset). Zero new deps. Core: `accounts.mjs` (10/10 tests). Wired into `providers.mjs`
 (`runProvider` selects an account, applies it to the child env, records usage + cooldown).
 
 ## How an account is applied (the only spawn-time effect)
@@ -58,15 +58,24 @@ exactly as before (single-account, unchanged).
   `CODEX_HOME=~/.codex-a codex` (login), `CODEX_HOME=~/.codex-b codex` (login). Then the engine
   rotates `CODEX_HOME` per dispatch — quota is spread across both plans.
 - **OpenRouter (1 key)** ✅ put the key in `accounts.local.json`; single account, no rotation needed.
-- **Antigravity (`agy` CLI, 2 tokens)** 🟡 registry + token-swap wired. Two follow-ups before it
-  dispatches: (1) install the `agy` CLI (the in-repo install is the GUI IDE only — get the CLI from
-  `antigravity.google/docs/cli/install`); (2) `runAntigravity` currently pipes the prompt on stdin —
-  `agy` headless wants `agy -p "<prompt>" --headless --approve <policy>`, so the run adapter needs
-  the prompt passed as `-p` once `agy` is verified. Token rotation (`ANTIGRAVITY_TOKEN` swap) is
-  already in place.
+- **Antigravity (`agy` CLI, 2 tokens)** 🟢 wired: command is `agy`, headless dispatch is
+  `agy --headless --approve auto -p "<prompt>" --model <m>` (config `baseArgs` + `promptMode: "arg"`;
+  set `promptMode: "stdin"` if your `agy` build reads the prompt on stdin), and `ANTIGRAVITY_TOKEN`
+  rotates per account. Remaining one-time setup: **install the `agy` CLI** (the in-repo install is
+  the GUI IDE only — get the CLI from `antigravity.google/docs/cli/install`), put the two tokens in
+  `accounts.local.json`, and confirm the exact `--approve` policy value once `agy` is on PATH.
 
 > ⚠️ Rotating multiple subscriptions to extend a combined usage limit may breach the provider's ToS
 > (OpenAI / Google). These are your accounts; the mechanism is provided — the policy call is yours.
+
+## Inspect (you can check + manage accounts)
+
+- **CLI:** `node orchestrator.mjs accounts` — prints every provider's accounts with `● live` /
+  `○ cooldown <m>m`, `uses`, `tokens`, and `cost`.
+- **API:** `GET /api/accounts` (server.mjs) returns the same per-account status as JSON — the data
+  hook for a Cockpit/Loadout tile (per-account usage bar + cooldown).
+- **Add an account:** drop it in `config.json → providers.<name>.accounts[]` (id + `configDir` for a
+  login dir, or id + `envKey` for a key), put any secret in `accounts.local.json`. No code change.
 
 ## Tests
 

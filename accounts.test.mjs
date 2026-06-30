@@ -1,12 +1,12 @@
 // accounts.test.mjs — multi-account registry + rotation acceptance.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   loadAccounts, applyAccount, pickAccount, advanceRR,
-  parseLimit, noteResult, selectAccount,
+  parseLimit, noteResult, selectAccount, accountsStatus,
 } from "./accounts.mjs";
 
 const CFG = {
@@ -101,5 +101,23 @@ test("selectAccount end-to-end: rotates, persists, and cools down a limited acco
   const s2 = selectAccount("codex", reg.codex, sp, { now: 2000 });
   assert.equal(s2.account.id, "codex-b");
   s2.note({ tokens: 10, now: 2000 });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("accountsStatus reports per-account live/cooldown + usage (CLI + /api/accounts view)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acct-st-"));
+  const sp = join(dir, "state.json");
+  writeFileSync(sp, JSON.stringify({ codex: { accounts: {
+    "codex-a": { cooldownUntil: 9999, uses: 2, tokens: 100, cost: 0 },
+    "codex-b": { uses: 1, tokens: 50 },
+  } } }));
+  const rows = accountsStatus(CFG, sp, { now: 1000 });
+  const codex = rows.find((r) => r.provider === "codex");
+  const a = codex.accounts.find((x) => x.id === "codex-a");
+  const b = codex.accounts.find((x) => x.id === "codex-b");
+  assert.equal(a.live, false); // cooling (9999 > 1000)
+  assert.equal(a.uses, 2);
+  assert.equal(b.live, true);
+  assert.equal(codex.rotation, "round-robin");
   rmSync(dir, { recursive: true, force: true });
 });

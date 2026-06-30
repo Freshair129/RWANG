@@ -10,6 +10,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import * as E from "./engine.mjs";
 import { writeNode, writeEdge, queryNodes } from "./store/knowledge.mjs";
+import { accountsStatus, DEFAULT_STATE_PATH } from "./accounts.mjs";
 
 const PORT = Number((process.argv.includes("--port") ? process.argv[process.argv.indexOf("--port") + 1] : 0)) || 4577;
 const UI = join(E.PATHS.__dir, "public", "index.html");
@@ -31,6 +32,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, E.snapshot());
     if (req.method === "GET" && url.pathname === "/api/ollama") return send(res, 200, await E.ollamaInfo());
     if (req.method === "GET" && url.pathname === "/api/providers") return send(res, 200, await E.providersInfo());
+    if (req.method === "GET" && url.pathname === "/api/accounts") return send(res, 200, accountsStatus(E.CONFIG, DEFAULT_STATE_PATH));
     if (req.method === "GET" && url.pathname === "/api/knowledge") return send(res, 200, E.knowledgeOutcomes());
     if (req.method === "GET" && url.pathname === "/api/personas") {
       try { const p = JSON.parse(readFileSync(new URL("./personas.json", import.meta.url), "utf8")); return send(res, 200, p.personas || []); }

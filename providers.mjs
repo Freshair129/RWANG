@@ -560,11 +560,20 @@ function runAntigravity(t, model, worker, prompt, config, paths, opts) {
     const prov = config.providers.antigravity;
     const ws = createWriteStream(logFile, { flags: "w" });
     ws.write(`# ${t.id} · ${worker} · antigravity:${model} · started ${new Date().toISOString()}\n\n`);
-    const args = [...(prov.baseArgs || []), ...(model && model !== "default" ? ["--model", model] : []), ...(prov.extraArgs || [])];
-    const child = spawn(prov.command || "antigravity", args, {
+    // agy headless: pass the prompt via -p (the documented non-interactive mode). Set
+    // providers.antigravity.promptMode="stdin" if your agy build reads the prompt on stdin instead.
+    const promptMode = prov.promptMode || "arg";
+    const args = [
+      ...(prov.baseArgs || []),
+      ...(promptMode === "arg" ? ["-p", prompt] : []),
+      ...(model && model !== "default" ? ["--model", model] : []),
+      ...(prov.extraArgs || []),
+    ];
+    const child = spawn(prov.command || "agy", args, {
       cwd: paths.ROOT, shell: true, env: childEnvFor("antigravity", config, opts.account, opts.provReg),
     });
-    child.stdin.write(prompt); child.stdin.end();
+    if (promptMode === "stdin") { child.stdin.write(prompt); child.stdin.end(); }
+    else { try { child.stdin.end(); } catch { /* */ } }
     let stdout = "";
     child.stdout.on("data", (d) => { ws.write(d); stdout += d; });
     child.stderr.on("data", (d) => ws.write(d));

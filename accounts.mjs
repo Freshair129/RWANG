@@ -14,8 +14,12 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_COOLDOWN_MS = 60 * 60 * 1000; // 1h if a provider gives no reset time
+const __acctdir = dirname(fileURLToPath(import.meta.url));
+export const DEFAULT_STATE_PATH = join(__acctdir, "store", ".accounts-state.json");
+export const DEFAULT_SECRETS_PATH = join(__acctdir, "accounts.local.json");
 
 export function expandHome(p) {
   if (!p) return p;
@@ -146,4 +150,24 @@ export function selectAccount(providerName, provider, statePath, { now = Date.no
       saveState(statePath, state);
     },
   };
+}
+
+// ── read-only status view (CLI `accounts` + GET /api/accounts) ───────────────────────────────
+export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = Date.now() } = {}) {
+  const reg = loadAccounts(config);
+  const state = loadState(statePath);
+  return Object.entries(reg).map(([provider, prov]) => {
+    const ps = state[provider] || { accounts: {} };
+    return {
+      provider, rotation: prov.rotation,
+      accounts: prov.accounts.map((a) => {
+        const u = (ps.accounts || {})[a.id] || {};
+        const cd = u.cooldownUntil || 0;
+        return {
+          id: a.id, live: !(cd > now), cooldownUntil: cd, cooldownMs: Math.max(0, cd - now),
+          uses: u.uses || 0, cost: u.cost || 0, tokens: u.tokens || 0,
+        };
+      }),
+    };
+  });
 }

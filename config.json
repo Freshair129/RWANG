@@ -77,8 +77,9 @@
       "capabilities": ["text_gen", "file_edit"],
       "transport": "subprocess",
       "command": "agy",
-      "baseArgs": [],
+      "baseArgs": ["--headless", "--approve", "auto"],
       "extraArgs": [],
+      "promptMode": "arg",
       "apiKeyEnv": "ANTIGRAVITY_TOKEN",
       "rotation": "round-robin",
       "accounts": [

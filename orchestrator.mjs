@@ -10,8 +10,21 @@
  */
 import * as E from "./engine.mjs";
 import { runAutonomous, stopAutonomous } from "./auto-wave.mjs";
+import { accountsStatus, DEFAULT_STATE_PATH } from "./accounts.mjs";
 
 const ACTIVE = E.ACTIVE;
+
+function cmdAccounts() {
+  const rows = accountsStatus(E.CONFIG, DEFAULT_STATE_PATH);
+  if (!rows.length) { console.log("  (no provider has registered accounts)"); return; }
+  for (const r of rows) {
+    console.log(`\n  ${r.provider}  ·  rotation=${r.rotation}`);
+    for (const a of r.accounts) {
+      const st = a.live ? "● live" : `○ cooldown ${Math.ceil(a.cooldownMs / 60000)}m`;
+      console.log(`    ${a.id.padEnd(12)} ${st.padEnd(16)} uses=${a.uses}  tokens=${a.tokens}  cost=$${(a.cost || 0).toFixed(4)}`);
+    }
+  }
+}
 
 function bar(done, total, w = 40) { const f = Math.round((done / total) * w); return "[" + "█".repeat(f) + "░".repeat(w - f) + "]"; }
 function arg(flags, def) { for (const f of flags) { const i = process.argv.indexOf(f); if (i >= 0) return process.argv[i + 1] ?? true; } return def; }
@@ -126,6 +139,7 @@ const [cmd, a1, a2] = process.argv.slice(2);
 try {
   switch (cmd) {
     case "status": cmdStatus(); break;
+    case "accounts": cmdAccounts(); break;
     case "next": cmdNext(); break;
     case "graph": cmdGraph(process.argv.includes("--mermaid")); break;
     case "claim": out(E.claim(a1, arg(["-w", "--worker"], "w1"))); if (process.exitCode !== 1) console.log(`✓ claimed ${a1}`); break;
@@ -142,6 +156,6 @@ try {
       dryRun: process.argv.includes("--dry-run"),
     }); break;
     case "stop": stopAutonomous(); console.log("→ pool stop requested"); break;
-    default: console.log("commands: status | next | graph [--mermaid] | claim <id> [-w name] | release|done|fail <id> | assign <id> <model> | run [--max N] [--execute] | auto-wave [--max-waves N] [--supervisor MODEL] [--max N] [--dry-run] | stop | reset");
+    default: console.log("commands: status | accounts | next | graph [--mermaid] | claim <id> [-w name] | release|done|fail <id> | assign <id> <model> | run [--max N] [--execute] | auto-wave [--max-waves N] [--supervisor MODEL] [--max N] [--dry-run] | stop | reset");
   }
 } catch (e) { console.error("ERROR: " + e.message); process.exitCode = 1; }
