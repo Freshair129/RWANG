@@ -1,11 +1,42 @@
-# orchestrator runtime artifacts (ไม่ commit)
+# Dependencies
+node_modules/
+studio/node_modules/
+
+# Runtime artifacts
 state.json
 usage.jsonl
 .state.lock
-# alternate-backlog (GORCH_BACKLOG) runtime state/lock — e.g. gks/backlog.gorch.state.json
 *.state.json
 *.state.json.lock
 logs/
+
+# Brain / sidecar data
 brain/failures.jsonl
 brain/*.gdb
 brain/orch.gdb/
+
+# Build output
+studio/dist/
+src-tauri/target/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Tauri build
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb

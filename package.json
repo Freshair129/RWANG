@@ -1,9 +1,24 @@
 {
-  "name": "g-maiden-orchestrator",
+  "name": "rwang",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
-  "description": "Multi-agent task orchestrator + web UI for building G-Maiden",
+  "description": "RWANG — governed autonomous multi-agent orchestrator",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Freshair129/RWANG.git"
+  },
+  "homepage": "https://github.com/Freshair129/RWANG",
+  "keywords": [
+    "multi-agent",
+    "orchestrator",
+    "ai-agents",
+    "task-dag",
+    "claude",
+    "ollama",
+    "daci-governance"
+  ],
   "scripts": {
     "ui": "node server.mjs",
     "status": "node orchestrator.mjs status",
