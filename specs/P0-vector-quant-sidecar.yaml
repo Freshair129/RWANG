@@ -1,0 +1,208 @@
+# =============================================================================
+# Rwang Spec — P0: Move the rerank sidecar OFF-RAM (positioned disk reads)
+# =============================================================================
+# Format: tiered-swarm spec-template (the SSOT the router reads to assign tiers).
+# Routing is DERIVED from this spec, not a side-channel heuristic.
+#
+# Design invariant #3 (HARD RULE): a task is cheap-routable IFF it carries a
+# machine-checkable `verify_command`. No verify_command -> not cheap-eligible
+# -> floor T2+. Local-first is allowed ONLY behind the verify gate.
+#
+# TIER ASSIGNMENT NOTE (encoded honestly):
+#   P0 is correctness-critical Rust on a single ~4700-line src/lib.rs core with
+#   HIGH BLAST RADIUS (hot query path, lock-order-sensitive compaction, durable
+#   on-disk state). Per the routing-policy "when NOT to go local" rule
+#   (complex borrow/lifetime, lock-order-sensitive, high rework cost), MOST P0
+#   tasks are NOT cheap-eligible for LOCAL models and sit at T2 (sonnet) or
+#   T3 (opus). Only the doc-edit / doc-check tasks (P0-T10) drop to a local
+#   tier (T1, mellum2) because their verify_command is a pure grep/test -f with
+#   negligible rework cost. tier_hint is a STARTING rung; the router escalates
+#   one rung (T0->T1->T1.5->T2->T3) on any gate failure (FrugalGPT cascade).
+#
+# Source of truth for the tasks:
+#   G:/GenesisBlock_Dev/GenesisBlock/docs/PLAN--VECTOR-QUANTIZATION-REFINEMENT.md
+#   (P0 section, 11 tasks). Parent: ADR--GENESISDB-VECTOR-QUANTIZATION (stale).
+# =============================================================================
+
+goal: >
+  Move the f32 rerank sidecar OFF heap-resident RAM in GenesisBlockDB. Today
+  VectorCollection.f32_sidecar is a fully-resident Option<RwLock<Vec<f32>>>
+  (src/lib.rs:843) — loaded whole at open, held resident for the collection's
+  lifetime — which cancels the quantization RAM win (BQ rerank-on = 6528 B/vec,
+  only 1.88x vs None; the sidecar is 94% of resident bytes). Replace it with a
+  positioned-read on-disk SidecarReader over fvec_<name>.bin (seek_read/read_at,
+  NO mmap, Windows-safe) plus a bounded LRU page cache, so over-fetched rerank
+  candidates are read from disk per-query and the resident footprint drops back
+  toward the ~384 B/vec arena limit — WITHOUT regressing recall.
+
+target_repo: "G:/GenesisBlock_Dev/GenesisBlock"
+
+autonomy: autonomous   # supervised | autonomous | unattended
+# autonomous: Rwang drives the VERIFY->AUTHOR->REVIEW->ASSEMBLE loop end-to-end
+# without per-task human prompts. It STOPS only at: (1) external write actions
+# (git commit/push/PR/merge); (2) gate-exhaustion (a task fails even at T3);
+# (3) any task flagged human_review. Safety invariants NEVER yield to autonomy:
+#   - no external write (push/PR/merge/deploy) without human approval
+#   - no unverified cheap output crosses a phase boundary (verify gate = interlock)
+#   - a task that exhausts the escalation ladder HALTS the run (never loops forever)
+#   - every run is on a branch, never directly on the target default branch (main)
+
+constraints:
+  - "Language/domain: Rust, single ~4700-line src/lib.rs storage core (SidecarReader near VectorCollection ~line 818; hybrid_search rerank block 2595-2629; load 3708-3718; save_state 3572-3578; perform_index_compaction 4024-4063)."
+  - "Must stay green: `cargo test --no-default-features` (core/napi split — Linux CI links with NO napi_* symbols). This is the canonical gate for every Rust task."
+  - "I/O: positioned reads ONLY — #[cfg(windows)] FileExt::seek_read / #[cfg(unix)] FileExt::read_at. NO mmap (memmap2 was explicitly declined; mmap is Windows-unsafe here). Little-endian f32 decode (from_le_bytes), offset = d_id*dim*4, read exactly dim*4 bytes."
+  - "Lock order is invariant: meta -> arena -> sidecar. The on-disk path must not introduce a lock that violates it; compaction swaps the reader handle under the held sidecar write lock (no read-while-rewriting window)."
+  - "Back-compat: legacy resident-era fvec_<name>.bin (flat le-f32, no header) MUST open as-is with zero rewrite (byte layout is identical). A truncated/short file degrades to quantized (sidecar disabled), never adopts a partial file."
+  - "Recall is a hard floor: SQ8+rerank ~0.9875 and BQ+rerank ~0.9655 must NOT regress. The RAM/latency win must not cost recall."
+  - "NAPI+REST parity where relevant: P0 is internal storage, no new public surface, but any cross-surface drift is checked via the napi-rest-parity skill at Assemble."
+  - "Human owns commit/merge: Rwang runs on a branch and assembles the PR; a human reviews the epic DoD and approves the commit/merge. No auto-merge to main."
+  - "Out of scope for P0: BQ centering, oversample knob, F16, SQ8 calibration, status ops exposure (those are P1/P2, gated on P0 merged)."
+
+# --- Definition of Done -------------------------------------------------------
+# 1 epic DoD (human-owned) + 4 phase gates + N per-task ACs (the verify_commands).
+
+epic_dod: >
+  EARS — WHEN the f32 rerank sidecar is moved off heap-resident RAM
+  (positioned on-disk reads via fvec_<name>.bin, no mmap)
+  THE SYSTEM SHALL keep rerank recall >= the current verified baselines
+  (BQ+rerank >= 0.9655 AND SQ8+rerank >= 0.9875)
+  AND reduce BQ-rerank-on resident RAM far below the 6528 B/vector resident
+  baseline toward the ~384 B/vector arena limit (the sidecar no longer counted
+  resident), with rerank latency bounded even in the exact_rerank_slots
+  brute-force regime,
+  AND keep `cargo test --no-default-features` green and legacy fvec files
+  loadable with zero rewrite.
+  Done means: the residency contract is fixed, the RSS audit
+  (docs/AUDIT--ONDISK-RERANK-RSS.md) proves the win at 500k with recall
+  re-confirmed, and a human has re-checked this epic DoD at Assemble and
+  approved the commit/merge.
+
+phase_gates:
+  # The four economic safety interlocks of the VERIFY->AUTHOR->REVIEW->ASSEMBLE
+  # spine. No unverified cheap output crosses a boundary.
+  Verify-gate: >
+    Every code-evidence claim (residency, offset math, lock order, degraded
+    fallback) carries a resolving command (a `cargo test --no-default-features`,
+    a grep, or a line-cite) that re-runs and resolves. The P0-T0 design gate is
+    the entry interlock: no P0 code task starts until the sub-ADR fixes the
+    residency contract, I/O strategy, lock order, and migration policy.
+  Author-gate: >
+    Each executor receives ONLY its self-contained task description (no
+    conversation context) and produces a diff that references only verified
+    facts from P0-T0 / the PLAN. Every claim traces to a verified finding id.
+  Review-gate: >
+    The diff goes to an adversarial Opus 4.8 reviewer running the task's
+    review-gate checklist; the reviewer MUST run the task's verify_command and
+    confirm the named assertions exist and pass. PASS with no unresolved
+    blocking objection is required to cross. P0-T9 (perf claim) and P0-T0
+    (design gate) carry review_gate=true.
+  Assemble-gate: >
+    Passed tasks integrated on a branch; cross-task NAPI+REST parity sweep +
+    full `cargo test` + (storage change) the run-bench-audit harnesses run; the
+    epic DoD is re-checked by a HUMAN; the commit/merge is human-approved
+    (external write — autonomy halts here).
+
+# --- Task list — per-task routing schema -------------------------------------
+# Fields: id, description, requirement_ref, tier_hint, executor_model,
+#         verify_command, depends_on, review_gate.
+# verify_commands are REAL and copied EXACTLY from the PLAN P0 section.
+
+tasks:
+  - id: P0-T0
+    description: "Sub-ADR: on-disk rerank sidecar design — positioned reads (seek_read/read_at), no mmap. Defines the residency contract, I/O strategy, lock order (meta->arena->sidecar), migration policy for legacy fvec, and the over-fetch read pattern that every P0 code task implements. New file docs/adr/ADR--GENESISDB-ONDISK-RERANK-SIDECAR.md, no code. THIS IS THE DESIGN GATE: no P0 code task may start until this is accepted."
+    requirement_ref: R-P0.0
+    tier_hint: T3
+    executor_model: "claude-opus-4-8"
+    verify_command: "test -f docs/adr/ADR--GENESISDB-ONDISK-RERANK-SIDECAR.md"
+    depends_on: []
+    review_gate: true   # design gate — sets the contract every later task follows
+
+  - id: P0-T1
+    description: "SidecarReader positioned-read abstraction over fvec_<name>.bin. struct SidecarReader { file, dim }; fn row(d_id) reads exactly dim*4 bytes at offset d_id*dim*4 via #[cfg(windows)] seek_read / #[cfg(unix)] read_at (no mmap); fn len_rows() from file metadata; fn write_rows append helper. Out-of-range d_id -> None (no panic, no read past EOF). Little-endian decode matches existing from_le_bytes. T1 adds the struct + read-math unit coverage only; field swap happens in T3/T4. THE SPINE — nearly everything depends on it."
+    requirement_ref: R-P0.1
+    tier_hint: T3
+    executor_model: "claude-opus-4-8"
+    verify_command: "cargo test --no-default-features --test sidecar_reader_tests"
+    depends_on: [P0-T0]
+    review_gate: true
+
+  - id: P0-T2
+    description: "Bounded LRU page cache for SidecarReader. Fixed-capacity (const SIDECAR_CACHE_ROWS, e.g. 4096) LRU keyed by d_id guarding f32 row Vecs; row() checks cache before disk; per-reader Mutex<LruMap>, hand-rolled (no new dependency). Eviction MUST actually happen at capacity (no unbounded growth that re-creates the resident-RAM problem). Cached row byte-identical to disk read. Cache Mutex must not deadlock against the RwLock wrapping the reader (lock order documented)."
+    requirement_ref: R-P0.2
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "cargo test --no-default-features --test sidecar_reader_tests"
+    depends_on: [P0-T1]
+    review_gate: true
+
+  - id: P0-T3
+    description: "Swap hybrid_search rerank loop (src/lib.rs:2595-2629) to SidecarReader. Replace sidecar.read() resident slicing (sc.get(start..start+dim)) with reader.row(d_id). Preserve semantics EXACTLY: missing/short row -> keep quantized distance (degraded fallback 2611-2624, do NOT drop the candidate); re-sort ascending; truncate(k2). Update exact_rerank_slots brute-force path (2595-2607) to compute n from reader.len_rows(). CORRECTNESS-CRITICAL hot path: a wrong offset or broken fallback silently corrupts recall. The 6 rerank_tests are the behavioral oracle and MUST NOT be edited to pass. Brute-force regime (fetch>=n) must route per-candidate reads through the LRU cache so a small collection does not pay n cold disk reads per query (named latency risk, measured in P0-T9)."
+    requirement_ref: R-P0.3
+    tier_hint: T3
+    executor_model: "claude-opus-4-8"
+    verify_command: "cargo test --no-default-features --test rerank_tests"
+    depends_on: [P0-T1, P0-T2]
+    review_gate: true
+
+  - id: P0-T4
+    description: "load() stops slurping fvec into RAM; opens a reader handle instead (src/lib.rs:3708-3718). Replace fs::read(...).chunks_exact(4)...collect() into *sidecar.write()=v with opening a SidecarReader; validate len_rows() == arena_rows (the 'parallels the arena exactly' guard at 3714); on mismatch leave sidecar None/disabled so search degrades to quantized (preserve current safety). Do the field-type swap to Option<RwLock<SidecarReader>> here (coordinate with T3); adjust VectorCollection::new sidecar init (858-862) so no resident Vec<f32> is allocated. Reconcile stage-time append (stage 921-949) with P0-T6."
+    requirement_ref: R-P0.4
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "cargo test --no-default-features --test rerank_tests"
+    depends_on: [P0-T1]
+    review_gate: true
+
+  - id: P0-T5
+    description: "Compaction streams fvec (perform_index_compaction src/lib.rs:4024-4063). Replace resident new_sidecar: Vec<f32> (4031) + write-back into RwLock<Vec<f32>> (4061-4063) with: stream each live row from the old SidecarReader, append to fvec_<name>.bin.tmp via write_rows, atomically rename to live, reopen the reader. CRITICAL KEYING: derive the streamed row source from meta.embedding_offset/dim (matching append_range 4038-4047), NOT a fresh arena_id counter, and emit rows in the SAME order as new_vec/new_meta — for fixed-dim collections arena_id*dim==embedding_offset so mis-keying silently desyncs while the row-count load guard still passes (verify order/keying DIRECTLY, not by count). Preserve lock order meta->arena->sidecar; hold the sidecar write lock across the file swap + reader reopen. None-sidecar collection -> no-op (no empty fvec). LOCK-ORDER-SENSITIVE + durable state: an incorrect swap risks deadlock or a torn fvec."
+    requirement_ref: R-P0.5
+    tier_hint: T3
+    executor_model: "claude-opus-4-8"
+    verify_command: "cargo test --no-default-features --test wal_compaction_tests"
+    depends_on: [P0-T1, P0-T4]
+    review_gate: true
+
+  - id: P0-T6
+    description: "save_state sidecar write correct under the new model (src/lib.rs:3572-3578). After T4/T5 the backing is a SidecarReader (file already on disk). Implement: either copy/link the current live fvec into temp_dir, or stream rows from the reader into temp_dir/fvec_<name>.bin — landed fvec MUST be byte-identical to a freshly-streamed live sidecar (round-trips through load). Do NOT re-materialize a resident Vec<f32> just to write (would re-introduce the RAM spike during save). Keep the manifest 'rerank' flag correct (3585); absent => false on load. Snapshot atomicity preserved (writes into temp_dir)."
+    requirement_ref: R-P0.6
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "cargo test --no-default-features --test rerank_tests"
+    depends_on: [P0-T4, P0-T5]
+    review_gate: true
+
+  - id: P0-T7
+    description: "Migration / back-compat for legacy resident-era fvec files. The legacy fvec byte layout (flat le-f32, no header) is IDENTICAL to what SidecarReader reads, so migration is 'open as-is' — prove + document it. Ensure the row-count validation (len_rows()==arena_rows) accepts an existing legacy file (no off-by-one on dim*4 division) and a DB written by the old resident build opens and reranks correctly with zero rewrite. A truncated legacy file still degrades to quantized (not adopted). New tests/sidecar_migration_tests.rs hand-writes a legacy-format fvec + matching arena/meta fixture and asserts reranked search exact."
+    requirement_ref: R-P0.7
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "cargo test --no-default-features --test sidecar_migration_tests"
+    depends_on: [P0-T4]
+    review_gate: true
+
+  - id: P0-T8
+    description: "Correctness tests: recall parity + reopen + degraded. Extend tests/rerank_tests.rs + new tests/sidecar_ondisk_tests.rs. Assert: (1) SQ8+rerank top-1 exact (parity with resident era); (2) BQ+rerank distinguishes magnitude; (3) save->reopen->search exact (reader survives round-trip); (4) compaction->search exact; (5) deleted/truncated fvec degrades to quantized (no empty result, no panic). No weakened assertions; no test mutates the rerank algorithm to pass (oracle integrity). Runs under --no-default-features (Linux CI)."
+    requirement_ref: R-P0.8
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "cargo test --no-default-features --test rerank_tests --test sidecar_ondisk_tests"
+    depends_on: [P0-T3, P0-T4, P0-T5]
+    review_gate: true
+
+  - id: P0-T9
+    description: "RSS validation @500k, rerank on/off, resident vs on-disk + brute-force latency (harness). Reuse the bins-gated audit harness (cargo run --release --features bins --bin industrial-audit + the RSS/quant-matrix path in docs/AUDIT--P33-RSS-QUANT-MATRIX.md). Measure resident RSS at 500k for BQ rerank-on (resident pre-P0 vs on-disk post-P0) and SQ8 rerank-on via the engine's existing sysinfo RSS probe (NOT self-reported by the harness body). Re-confirm recall@10 unchanged (SQ8+rerank ~0.9875, BQ+rerank ~0.9655). Record rerank p50/p99 before/after AND size one collection so fetch>=n triggers exact_rerank_slots — assert its added per-query latency stays bounded (LRU-cached, not n cold disk reads). Write before/after RSS table + recall row + harness command lines + seed into new docs/AUDIT--ONDISK-RERANK-RSS.md. PERF CLAIM — this harness gates the PR; if RSS does NOT improve, the P0 design is wrong -> block PR, return to P0-T0."
+    requirement_ref: R-P0.9
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "test -f docs/AUDIT--ONDISK-RERANK-RSS.md"
+    depends_on: [P0-T3, P0-T4, P0-T5, P0-T6, P0-T7]
+    review_gate: true   # perf claim — must clear adversarial review
+
+  - id: P0-T10
+    description: "ADR de-stale: mark rerank shipped + record the on-disk decision in docs/adr/ADR--GENESISDB-VECTOR-QUANTIZATION.md (doc-only). Status line (18): 'f32-sidecar rerank deferred' -> 'shipped'. Action Item 5 (220-229): [~]->[x], remove 'still deferred', note fvec_<name>.bin + RERANK_OVERFETCH=8 + over-fetch/re-score path. BQ Outcome (261-263): remove 'remains deferred'; note tests/rerank_tests.rs green. Action Item 6 (231): record MARK XV P1 RSS+recall (SQ8 2.06x, BQ 2.93x RAM; SQ8+rerank 0.9875 / BQ-alone 0.6845 / BQ+rerank 0.9655). Add a forward pointer to the new on-disk sub-ADR (P0-T0). No claim may contradict code (do NOT claim mmap — positioned reads on-disk). LOCAL-TIER ELIGIBLE: pure doc edit, machine-checkable grep, negligible rework cost."
+    requirement_ref: R-P0.10
+    tier_hint: T1
+    executor_model: "mellum2-12b-a2.5b"
+    verify_command: "bash -c '! grep -nE \"rerank.*deferred\" docs/adr/ADR--GENESISDB-VECTOR-QUANTIZATION.md'"
+    depends_on: [P0-T0]
+    review_gate: false
