@@ -1,0 +1,11 @@
+{
+  "$comment": "Sample labeled gold-set for eval--goldset-harness. Each entry pairs a ground-truth tier (planner assignTier) and/or verdict (Verify-Gate) label. Used to validate autonomous spend BEFORE it is trusted.",
+  "labels": [
+    { "id": "g-subtask",    "rung": "subtask",    "tier": "H0", "issues": [],                              "verdict": "pass" },
+    { "id": "g-task",       "rung": "task",       "tier": "H1", "issues": [{ "severity": "minor" }],        "verdict": "pass" },
+    { "id": "g-story",      "rung": "story",      "tier": "H2", "issues": [{ "severity": "major" }],        "verdict": "rework" },
+    { "id": "g-epic",       "rung": "epic",       "tier": "H3", "issues": [{ "severity": "critical" }],     "verdict": "fail" },
+    { "id": "g-phase",      "rung": "phase",      "tier": "H4", "issues": [],                              "verdict": "pass" },
+    { "id": "g-masterplan", "rung": "masterplan", "tier": "H5", "issues": [{ "severity": "critical" }],     "verdict": "fail" }
+  ]
+}

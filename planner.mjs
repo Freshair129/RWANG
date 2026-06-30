@@ -69,6 +69,47 @@ Return ONLY a JSON array (no prose, no markdown fence) of tasks. Each task objec
 {"id":"T1","title":"imperative one-line","type":"code|config|test|docs|scaffold","phase":"0","deps":[],"est":1,"accept":"a concrete, checkable criterion that proves this task is done"}
 Rules: 3-7 tasks for a normal request; one concern per task; "accept" must be verifiable (a command, a test, an observable behaviour); order by dependency via "deps" (ids). Output the JSON array only.`;
 
+// ── H-tier planning (algo--planner-tiering): H is tool access-control, not a model picker ──
+// WBS rungs, lowest sufficient tier first. H0 = one bounded file; H5 = masterplan.
+const H_TIERS = ["H0", "H1", "H2", "H3", "H4", "H5"];
+// map an atom's WBS rung (type/hierarchy noun) → tier index. Lowest tier that suffices.
+const RUNG_TIER = {
+  subtask: 0, atom: 0,
+  task: 1, code: 1, config: 1, test: 1, docs: 1, scaffold: 1,
+  feature: 2, story: 2,
+  epic: 3,
+  initiative: 4, capability: 4,
+  masterplan: 5, program: 5,
+};
+
+export function assignTier(atom = {}, { nearCap = false } = {}) {
+  let idx;
+  const explicit = typeof atom.tier === "string" && H_TIERS.indexOf(atom.tier.toUpperCase());
+  if (explicit !== false && explicit >= 0) {
+    idx = explicit; // author-overridable: an explicit atom.tier wins outright
+  } else {
+    const rung = String(atom.wbs || atom.rung || atom.type || "task").toLowerCase();
+    idx = RUNG_TIER[rung] ?? 1; // unknown rung defaults to task → H1
+    if (nearCap) idx = Math.max(0, idx - 1); // near cost cap: downgrade one tier
+  }
+  return H_TIERS[Math.min(idx, H_TIERS.length - 1)];
+}
+
+// tierTools: capability allow-set per tier. H0 forbids glob (single bounded file, no repo-wide sweep);
+// each higher tier is a superset that progressively unlocks read→glob→multiFile→shell.
+export function tierTools(tier = "H0") {
+  const idx = Math.max(0, H_TIERS.indexOf(String(tier).toUpperCase()));
+  return {
+    read: true,
+    glob: idx >= 1,
+    grep: idx >= 1,
+    multiFile: idx >= 2,
+    write: idx >= 2,
+    shell: idx >= 3,
+    network: idx >= 4,
+  };
+}
+
 export async function planTasks(taskText, repoSummary, config = CONFIG, paths = PATHS, { role = "architect", model } = {}) {
   let provider, mdl;
   if (model) { const p = parseModel(model); if (!p) return { ok: false, error: `bad model: ${model}` }; provider = p.provider; mdl = p.model; }
