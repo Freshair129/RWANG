@@ -8,7 +8,18 @@
  */
 import { existsSync, mkdirSync, createWriteStream, readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
-import { join, resolve, isAbsolute } from "node:path";
+import { join, resolve, isAbsolute, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { loadAccounts, applyAccount, selectAccount, parseLimit } from "./accounts.mjs";
+
+const __accdir = dirname(fileURLToPath(import.meta.url));
+const ACCOUNTS_STATE = join(__accdir, "store", ".accounts-state.json");
+const ACCOUNTS_SECRETS = join(__accdir, "accounts.local.json");
+let _ACCT_REG = null;
+function accountRegistry(config) {
+  if (!_ACCT_REG) _ACCT_REG = loadAccounts(config, { secretsPath: ACCOUNTS_SECRETS });
+  return _ACCT_REG;
+}
 
 // ─── capability tags ───
 export const CAPS = Object.freeze({
@@ -133,10 +144,10 @@ export function listProviders(config) {
 }
 
 // ─── provider auth env ───
-export function childEnvFor(providerName, config) {
+export function childEnvFor(providerName, config, account = null, provReg = null) {
   const env = { ...process.env };
   const prov = config.providers?.[providerName];
-  if (!prov) return env;
+  if (!prov) { if (account) applyAccount(account, provReg, env); return env; }
 
   if (providerName === "claude") {
     const mode = prov.auth?.mode || "plan";
@@ -151,19 +162,41 @@ export function childEnvFor(providerName, config) {
     const k = prov.auth?.apiKey || process.env[prov.auth.envKey];
     if (k) env[prov.auth.envKey] = k;
   }
+  if (account) applyAccount(account, provReg, env);
   return env;
 }
 
 // ─── main dispatch ───
-export function runProvider(providerName, task, model, worker, prompt, config, paths, opts = {}) {
-  switch (providerName) {
-    case "claude":      return runClaude(task, model, worker, prompt, config, paths, opts);
-    case "ollama":      return runOllama(task, model, worker, prompt, config, paths, opts);
-    case "codex":       return runCodex(task, model, worker, prompt, config, paths, opts);
-    case "openrouter":  return runOpenRouter(task, model, worker, prompt, config, paths, opts);
-    case "antigravity": return runAntigravity(task, model, worker, prompt, config, paths, opts);
-    default:            return Promise.resolve({ ok: false, error: `unknown provider: ${providerName}`, code: -1 });
+const RUNNERS = { claude: runClaude, ollama: runOllama, codex: runCodex, openrouter: runOpenRouter, antigravity: runAntigravity };
+
+export async function runProvider(providerName, task, model, worker, prompt, config, paths, opts = {}) {
+  const runner = RUNNERS[providerName];
+  if (!runner) return { ok: false, error: `unknown provider: ${providerName}`, code: -1 };
+
+  // Multi-account rotation: if this provider registered accounts, pick one (spreading quota,
+  // skipping cooled-down ones), apply it to the child env, then record usage + cooldown after.
+  const provReg = accountRegistry(config)[providerName];
+  let sel = null;
+  if (provReg && provReg.accounts?.length) {
+    sel = selectAccount(providerName, provReg, ACCOUNTS_STATE);
+    if (!sel.account) {
+      return { ok: false, blocked: true, code: -2, provider: providerName, usage: {},
+        error: `all ${providerName} accounts are cooling down (quota) — downgrade or wait for reset` };
+    }
+    opts = { ...opts, account: sel.account, provReg };
   }
+
+  const result = await runner(task, model, worker, prompt, config, paths, opts);
+
+  if (sel) {
+    let text = result.error || "";
+    try { if (result.logFile && existsSync(result.logFile)) text += "\n" + readFileSync(result.logFile, "utf8").slice(-4000); }
+    catch { /* log not readable */ }
+    const lim = parseLimit(providerName, { code: result.code, status: result.status, text });
+    const u = result.usage || {};
+    sel.note({ cost: u.cost || 0, tokens: (u.inTok || 0) + (u.outTok || 0), limited: lim.limited, resetMs: lim.resetMs });
+  }
+  return result;
 }
 
 // ─────────────────────────────────────────────
@@ -181,7 +214,7 @@ function runClaude(t, model, worker, prompt, config, paths, opts) {
     ws.write(`# ${t.id} · ${worker} · claude:${model} · auth=${mode} · perm=${permKey} · started ${new Date().toISOString()}\n\n`);
     const args = [...(prov.baseArgs || []), "--model", model, ...permArgs, ...(prov.extraArgs || [])];
     const child = spawn(prov.command || "claude", args, {
-      cwd: paths.ROOT, shell: true, env: childEnvFor("claude", config),
+      cwd: paths.ROOT, shell: true, env: childEnvFor("claude", config, opts.account, opts.provReg),
     });
     child.stdin.write(prompt); child.stdin.end();
     let lineBuf = "", resultLine = null;
@@ -439,7 +472,7 @@ function runCodex(t, model, worker, prompt, config, paths, opts) {
     ws.write(`# ${t.id} · ${worker} · codex:${model} · started ${new Date().toISOString()}\n\n`);
     const args = [...(prov.baseArgs || []), "--model", model, ...(prov.extraArgs || [])];
     const child = spawn(prov.command || "codex", args, {
-      cwd: paths.ROOT, shell: true, env: childEnvFor("codex", config),
+      cwd: paths.ROOT, shell: true, env: childEnvFor("codex", config, opts.account, opts.provReg),
     });
     child.stdin.write(prompt); child.stdin.end();
     let stdout = "";
@@ -466,7 +499,7 @@ async function runOpenRouter(t, model, worker, prompt, config, paths, opts) {
   const ws = createWriteStream(logFile, { flags: "w" });
   const prov = config.providers.openrouter;
   const host = (prov.host || "https://openrouter.ai/api/v1").replace(/\/$/, "");
-  const apiKey = prov.auth?.apiKey || process.env[prov.auth?.envKey || "OPENROUTER_API_KEY"];
+  const apiKey = opts.account?.apiKey || prov.auth?.apiKey || process.env[prov.auth?.envKey || "OPENROUTER_API_KEY"];
   ws.write(`# ${t.id} · ${worker} · openrouter:${model} · started ${new Date().toISOString()}\n\n`);
   if (!apiKey) {
     ws.write(`# ⚠ no API key for OpenRouter — set OPENROUTER_API_KEY or config.providers.openrouter.auth.apiKey\n`);
@@ -529,7 +562,7 @@ function runAntigravity(t, model, worker, prompt, config, paths, opts) {
     ws.write(`# ${t.id} · ${worker} · antigravity:${model} · started ${new Date().toISOString()}\n\n`);
     const args = [...(prov.baseArgs || []), ...(model && model !== "default" ? ["--model", model] : []), ...(prov.extraArgs || [])];
     const child = spawn(prov.command || "antigravity", args, {
-      cwd: paths.ROOT, shell: true, env: childEnvFor("antigravity", config),
+      cwd: paths.ROOT, shell: true, env: childEnvFor("antigravity", config, opts.account, opts.provReg),
     });
     child.stdin.write(prompt); child.stdin.end();
     let stdout = "";

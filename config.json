@@ -53,6 +53,12 @@
       "command": "codex",
       "baseArgs": ["--approval-mode", "auto-edit", "--quiet"],
       "extraArgs": [],
+      "accountEnv": "CODEX_HOME",
+      "rotation": "round-robin",
+      "accounts": [
+        { "id": "codex-a", "configDir": "~/.codex-a" },
+        { "id": "codex-b", "configDir": "~/.codex-b" }
+      ],
       "auth": { "envKey": "OPENAI_API_KEY", "apiKey": "" },
       "_comment": "OpenAI Codex CLI. à¹€à¸›à¸´à¸” enabled=true à¹€à¸¡à¸·à¹ˆà¸­à¸•à¸´à¸”à¸•à¸±à¹‰à¸‡à¹à¸¥à¹‰à¸§ + à¸•à¸±à¹‰à¸‡ OPENAI_API_KEY."
     },
@@ -61,6 +67,8 @@
       "capabilities": ["text_gen", "streaming", "vision", "long_context"],
       "transport": "http",
       "host": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "accounts": [ { "id": "or-1", "envKey": "OPENROUTER_API_KEY" } ],
       "auth": { "envKey": "OPENROUTER_API_KEY", "apiKey": "" },
       "_comment": "OpenRouter unified API. model = provider slug à¹€à¸Šà¹ˆà¸™ 'anthropic/claude-sonnet-4', 'google/gemma-3-27b'. à¹€à¸›à¸´à¸” enabled + à¸•à¸±à¹‰à¸‡ API key."
     },
@@ -68,9 +76,15 @@
       "enabled": false,
       "capabilities": ["text_gen", "file_edit"],
       "transport": "subprocess",
-      "command": "antigravity",
+      "command": "agy",
       "baseArgs": [],
       "extraArgs": [],
+      "apiKeyEnv": "ANTIGRAVITY_TOKEN",
+      "rotation": "round-robin",
+      "accounts": [
+        { "id": "ag-a", "envKey": "ANTIGRAVITY_TOKEN" },
+        { "id": "ag-b", "envKey": "ANTIGRAVITY_TOKEN" }
+      ],
       "_comment": "Antigravity IDE agent. à¹€à¸›à¸´à¸” enabled=true à¹€à¸¡à¸·à¹ˆà¸­à¸•à¸´à¸”à¸•à¸±à¹‰à¸‡à¹à¸¥à¹‰à¸§."
     }
   },

@@ -1,0 +1,27 @@
+{
+  "_README": [
+    "Copy this to accounts.local.json (gitignored) and fill in secrets.",
+    "It is merged BY id onto config.json -> providers[*].accounts[*] at load time.",
+    "Two account kinds:",
+    "  (1) apiKey account  -> { id, envKey, apiKey }  (the key is set as env[envKey] before spawn)",
+    "  (2) login account   -> { id, configDir }       (a pre-logged-in CLI config dir; no secret here)",
+    "Never commit accounts.local.json."
+  ],
+  "codex": {
+    "accounts": [
+      { "id": "codex-a", "_setup": "ChatGPT-plan login dir: run `CODEX_HOME=~/.codex-a codex` once and complete login. The engine sets CODEX_HOME=~/.codex-a per dispatch — no key needed here." },
+      { "id": "codex-b", "_setup": "second plan: `CODEX_HOME=~/.codex-b codex`, login once." }
+    ]
+  },
+  "openrouter": {
+    "accounts": [
+      { "id": "or-1", "envKey": "OPENROUTER_API_KEY", "apiKey": "sk-or-REPLACE_ME" }
+    ]
+  },
+  "antigravity": {
+    "accounts": [
+      { "id": "ag-a", "envKey": "ANTIGRAVITY_TOKEN", "apiKey": "REPLACE_agy_token_A" },
+      { "id": "ag-b", "envKey": "ANTIGRAVITY_TOKEN", "apiKey": "REPLACE_agy_token_B" }
+    ]
+  }
+}
