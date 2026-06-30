@@ -9,7 +9,13 @@
       "transport": "subprocess",
       "command": "claude",
       "baseArgs": ["-p", "--output-format", "stream-json", "--verbose"],
-      "extraArgs": ["--permission-mode", "acceptEdits"],
+      "extraArgs": [],
+      "permissionModes": {
+        "safe": ["--permission-mode", "acceptEdits"],
+        "full": ["--permission-mode", "bypassPermissions"],
+        "_comment": "safe=แก้ไฟล์ได้แต่ Bash ถูก block, full=ทำได้ทุกอย่าง (รัน test/build). เลือกต่อ task ผ่าน routing หรือ UI"
+      },
+      "defaultPermission": "safe",
       "auth": {
         "mode": "plan",
         "apiKey": "",

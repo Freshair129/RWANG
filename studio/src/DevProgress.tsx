@@ -220,6 +220,7 @@ function TaskRow({ t, atoms, personas, assignOwner, selected, onSelect, expanded
       <div className="pcard-meta">
         <span className="pill">{t.type}</span>
         <span className="pill model">{tier(t.model)}</span>
+        <span className={"pill perm perm-" + (t.perm || "safe")}>{t.perm === "full" ? "full" : "safe"}</span>
         {t.moscow ? <span className={"pill mo mo-" + t.moscow}>{t.moscow}</span> : null}
         <span className="pill">est {t.est || 0}</span>
         {t.deps?.length ? <span className={"pill deps" + (t.depsDone ? " ok" : "")}>⛓ {t.deps.length}</span> : null}
@@ -294,6 +295,7 @@ function TaskDetail({ t, atoms, active }: { t: Task; atoms: Record<string, Task>
     ["Est", String(t.est ?? 0)],
     ["Attempts", String(t.attempts ?? 0)],
     ["Worker", t.worker || "—"],
+    ["Perm", t.perm === "full" ? "full (Bash ok)" : "safe (edits only)"],
     ["Gate", t.gated ? (t.confirmed ? "confirmed" : "needs-confirm") : "open", t.gated ? (t.confirmed ? "ok" : "block") : undefined],
   ];
   const log = [

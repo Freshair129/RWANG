@@ -176,8 +176,10 @@ function runClaude(t, model, worker, prompt, config, paths, opts) {
     const prov = config.providers.claude;
     const mode = prov.auth?.mode || "plan";
     const ws = createWriteStream(logFile, { flags: "w" });
-    ws.write(`# ${t.id} · ${worker} · claude:${model} · auth=${mode} · started ${new Date().toISOString()}\n\n`);
-    const args = [...(prov.baseArgs || []), "--model", model, ...(prov.extraArgs || [])];
+    const permKey = opts.permissionMode || prov.defaultPermission || "safe";
+    const permArgs = prov.permissionModes?.[permKey] || prov.permissionModes?.safe || ["--permission-mode", "acceptEdits"];
+    ws.write(`# ${t.id} · ${worker} · claude:${model} · auth=${mode} · perm=${permKey} · started ${new Date().toISOString()}\n\n`);
+    const args = [...(prov.baseArgs || []), "--model", model, ...permArgs, ...(prov.extraArgs || [])];
     const child = spawn(prov.command || "claude", args, {
       cwd: paths.ROOT, shell: true, env: childEnvFor("claude", config),
     });

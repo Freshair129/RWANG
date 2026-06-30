@@ -8,6 +8,7 @@ export type Task = {
   accept?: string; est?: number; worker?: string | null;
   state?: string; moscow?: string; rice?: any;
   // claim/assign/governance (DevProgress)
+  perm?: string;
   gated?: boolean; confirmed?: boolean; modelOverride?: string | null;
   claimedAt?: number | null; attempts?: number; owner?: string | null;
 };

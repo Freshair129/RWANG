@@ -300,7 +300,7 @@ export function snapshot() {
     const st = cur.tasks[t.id];
     return {
       id: t.id, title: t.title, type: t.type, phase: t.phase,
-      role: ownerRole(st.owner) || roleFor(t), model: modelFor(t, cur),
+      role: ownerRole(st.owner) || roleFor(t), model: modelFor(t, cur), perm: permissionFor(t),
       status: st.status, worker: st.worker, claimedAt: st.claimedAt,
       attempts: st.attempts, modelOverride: st.modelOverride,
       deps: t.deps || [], depsDone: depsDone(t, cur), ready: isReady(t, cur),
@@ -386,6 +386,11 @@ function isTextOnly(provider) {
   return true;
 }
 
+const FULL_PERM_TYPES = new Set(["code", "eval", "guard"]);
+function permissionFor(t) {
+  return FULL_PERM_TYPES.has(t.type) ? "full" : (CONFIG.providers?.claude?.defaultPermission || "safe");
+}
+
 export function buildPrompt(t, model, provider = "claude", reworkNote = null, pastMistakes = null, grounded = null) {
   const s = scopeFor(t);
   const deps = (t.deps || []).join(", ") || "(none)";
@@ -439,7 +444,8 @@ export function runAgent(t, model, worker, opts = {}) {
     CONFIG.providers.claude.auth.mode = getAuthMode();
   }
   const prompt = buildPrompt(t, model, parsed.provider, opts.reworkNote, opts.pastMistakes, opts.grounded);
-  const provOpts = { profile: scopeFor(t).profile };
+  const permissionMode = permissionFor(t);
+  const provOpts = { profile: scopeFor(t).profile, permissionMode };
   return runProvider(parsed.provider, t, parsed.model, worker, prompt, CONFIG, PATHS, provOpts)
     .then((r) => {
       const u = r.usage || {};

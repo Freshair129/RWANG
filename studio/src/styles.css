@@ -298,5 +298,8 @@ h3 { margin: 0 0 8px; }
 .phase-sub { font-size: 11px; color: var(--muted); margin-left: 2px; }
 .owner-av.ro { box-shadow: 0 0 0 1.5px var(--ok); }
 .ro-pill { color: var(--ok); border-color: #1d4636 !important; }
+.perm { font-size: 10px; }
+.perm-full { color: #ffb86b; border-color: #4d3520 !important; }
+.perm-safe { color: var(--muted); }
 .dp-livelog { margin: 0; white-space: pre-wrap; overflow: auto; max-height: 280px; background: #050a12; border: 1px solid var(--chip-line); border-radius: 7px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--txt); line-height: 1.55; }
 .live-dot { color: var(--ok); font-size: 9px; margin-left: 6px; }
