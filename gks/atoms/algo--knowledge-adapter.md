@@ -3,7 +3,7 @@ id: algo--knowledge-adapter
 block_id: Genesis::G-Orchestra-v2
 context_scaling_tier: H2
 role: coder
-status: todo
+status: done
 ---
 
 # ALGO: Knowledge Adapter (file | genesisdb) [L3-Logic] algo--knowledge-adapter

@@ -112,7 +112,7 @@
       "engineType": "code",
       "body": "Greenfield: a thin Node sidecar hosting the GenesisDB N-API binary in-process (no port, dodging :3000). Pin a known-good win32-x64 binary; gate startup on schemaVersionSync(); supply Ollama bge-m3 (1024-dim) embeddings. Includes the first real round-trip PoC (the phantom orchestration/poc/genesis-roundtrip.mjs never existed).",
       "accept": "Sidecar loads the pinned binary, addNode + hybridSearch + retrieveContext round-trip with bge-m3 vectors; refuses on schemaVersion mismatch.",
-      "state": "extend"
+      "state": "done"
     },
     {
       "id": "algo--knowledge-adapter",
@@ -130,7 +130,7 @@
       "moscow": "must",
       "body": "A single swappable adapter (recordOutcome/queryContext/asOf/linkTrace) with a MANDATORY flat-file fallback. Markdown atoms stay the source of truth; GenesisDB is the rebuildable derived index. Default backend = file; genesisdb when the sidecar is up + Windows.",
       "accept": "Same API passes in BOTH file and genesisdb modes; off-Windows auto-degrades to file; semantic query falls back to lexical when embeddings are down.",
-      "state": "extend"
+      "state": "done"
     },
     {
       "id": "config--cost-cap-tiers",

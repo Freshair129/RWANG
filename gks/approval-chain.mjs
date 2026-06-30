@@ -45,3 +45,29 @@ export function runChain(classification = {}, decide, ctx = {}) {
   }
   return { ok: true, verdicts };
 }
+
+/**
+ * Feed a chain result into the hard governance gate (guard--governance-gate / engine.mjs
+ * needsConfirm+isConfirmed) WITHOUT bypassing it. The DACI chain is advisory only: it can
+ * make the gate STRICTER (recommend "block" on any chain failure) but it can NEVER flip a
+ * gated atom to confirmed — `autoConfirm` is always false, so a human confirm stays required.
+ * The engine's setStatus(running) check is unchanged; this just supplies evidence to it.
+ *
+ * @param {{ok:boolean, blockedAt?:string, reason?:string, verdicts:Array}} chainResult runChain output
+ * @param {{gated?:boolean}} atom  whether the governance gate flags this atom (needsConfirm === true)
+ * @returns {{recommend:"confirm"|"block", autoConfirm:false, requiresHumanConfirm:boolean,
+ *            chainPassed:boolean, blockedAt?:string, reason?:string, evidence:Array}}
+ */
+export function feedGate(chainResult = {}, atom = {}) {
+  const chainPassed = chainResult.ok === true;
+  return {
+    // chain may only ADD a stop; a pass is a recommendation, never an authorization
+    recommend: chainPassed ? "confirm" : "block",
+    autoConfirm: false,                 // the hard gate is never bypassed — a human still confirms
+    requiresHumanConfirm: atom.gated === true,
+    chainPassed,
+    blockedAt: chainResult.blockedAt,
+    reason: chainResult.reason,
+    evidence: chainResult.verdicts || [],
+  };
+}

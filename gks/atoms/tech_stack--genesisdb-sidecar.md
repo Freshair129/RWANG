@@ -3,7 +3,7 @@ id: tech_stack--genesisdb-sidecar
 block_id: Genesis::G-Orchestra-v2
 context_scaling_tier: H2
 role: coder
-status: todo
+status: done
 ---
 
 # TECH_STACK: GenesisDB Node Sidecar [L4-Infrastructure] tech_stack--genesisdb-sidecar
