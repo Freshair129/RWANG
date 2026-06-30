@@ -44,7 +44,7 @@ export function modelFor(task, state) {
     const parsed = parseModel(task.model);
     return parsed ? `${parsed.provider}:${parsed.model}` : task.model;
   }
-  const role = roleFor(task);
+  const role = ownerRole(st?.owner) || roleFor(task);
   if (role === "manual" || role === null) return null;
   const resolved = resolveForRole(role, CONFIG);
   if (!resolved) return null;
@@ -71,6 +71,16 @@ function tierDowngrade(model, role, state) {
   return null;
 }
 export function roleFor(task) { return CONFIG.routing[task.type] ?? "manual"; }
+// owner/persona routing (config--persona-presets): an assigned owner overrides the task's
+// type-routed role, so dispatch resolves the persona's role model (ARCHON -> architect -> opus).
+let PERSONAS_CACHE = null;
+function personaList() {
+  if (PERSONAS_CACHE) return PERSONAS_CACHE;
+  try { PERSONAS_CACHE = JSON.parse(readFileSync(new URL("./personas.json", import.meta.url), "utf8")).personas || []; }
+  catch { PERSONAS_CACHE = []; }
+  return PERSONAS_CACHE;
+}
+export function ownerRole(owner) { if (!owner) return null; const p = personaList().find((x) => x.id === owner); return p ? p.role : null; }
 // re-export for other modules
 export { parseModel, resolveForRole, listProviders, checkHealth, childEnvFor };
 
@@ -282,7 +292,7 @@ export function snapshot() {
     const st = cur.tasks[t.id];
     return {
       id: t.id, title: t.title, type: t.type, phase: t.phase,
-      role: roleFor(t), model: modelFor(t, cur),
+      role: ownerRole(st.owner) || roleFor(t), model: modelFor(t, cur),
       status: st.status, worker: st.worker, claimedAt: st.claimedAt,
       attempts: st.attempts, modelOverride: st.modelOverride,
       deps: t.deps || [], depsDone: depsDone(t, cur), ready: isReady(t, cur),
