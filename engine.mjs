@@ -81,6 +81,9 @@ function personaList() {
   return PERSONAS_CACHE;
 }
 export function ownerRole(owner) { if (!owner) return null; const p = personaList().find((x) => x.id === owner); return p ? p.role : null; }
+// DACI borrow capability (algo--ownership-borrow-checker): "exclusive" (&mut, a doer) | "shared"
+// (& only, a reviewer/auditor — may NOT claim/dispatch). Reviewer/Informed personas are shared.
+export function personaBorrow(owner) { if (!owner) return null; const p = personaList().find((x) => x.id === owner); return p ? (p.borrow || null) : null; }
 // re-export for other modules
 export { parseModel, resolveForRole, listProviders, checkHealth, childEnvFor };
 
@@ -201,6 +204,11 @@ export function claim(id, worker = "w1") {
   const t = byId(id); if (!t) return { ok: false, error: `ไม่พบ task ${id}` };
   return withLock(() => {
     const s = loadState(); reapStale(s);
+    const owner = s.tasks[id]?.owner;
+    if (owner && personaBorrow(owner) === "shared") {
+      saveState(s);
+      return { ok: false, error: `⛔ DACI borrow: owner ${owner} is review-only (shared &) — cannot claim/&mut. Reassign to a doer (architect/coder/worker).` };
+    }
     if (!isReady(t, s)) { saveState(s); return { ok: false, error: `${id} ยังไม่พร้อม (status=${s.tasks[id].status}, depsDone=${depsDone(t, s)})` }; }
     s.tasks[id] = { ...s.tasks[id], status: "claimed", worker, claimedAt: now(), attempts: s.tasks[id].attempts + 1 };
     saveState(s);

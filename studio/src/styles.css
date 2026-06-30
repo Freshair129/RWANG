@@ -277,3 +277,24 @@ h3 { margin: 0 0 8px; }
 .ap-id { color: var(--txt); font-family: ui-monospace, monospace; }
 .owner-av { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; color: #08121f; }
 .pcard.drop-hover { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), 0 0 14px rgba(100,199,255,.25); }
+.ro-dot { font-family: ui-monospace, monospace; font-weight: 700; color: var(--ok); font-size: 11px; margin-left: 1px; }
+
+/* ---- filter / group / batch toolbar ---- */
+.dev-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.tb-l { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+.tb-sel { background: #0c1626; color: var(--cyan); border: 1px solid var(--chip-line); border-radius: 6px; padding: 4px 8px; font-size: 11px; }
+.tb-gap { width: 8px; }
+.tb-toggle { display: inline-flex; border: 1px solid var(--chip-line); border-radius: 7px; overflow: hidden; }
+.tb-toggle button { background: var(--chip); color: var(--muted); border: 0; padding: 4px 12px; font-size: 11.5px; cursor: pointer; }
+.tb-toggle button.on { background: linear-gradient(180deg, var(--blue), var(--deep)); color: var(--bg); font-weight: 700; }
+.batch-bar { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; background: #11203a; border: 1px solid var(--deep); border-radius: 8px; padding: 4px 8px; }
+.bb-n { font-size: 11.5px; color: var(--blue); font-weight: 700; }
+.bb-clear { background: var(--chip); border: 1px solid var(--chip-line); color: var(--txt); border-radius: 6px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+
+/* ---- batch select checkbox + owner section header ---- */
+.pcard-sel { accent-color: var(--blue); cursor: pointer; margin-right: 2px; }
+.pcard.sel { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+.phase-av { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #08121f; }
+.phase-sub { font-size: 11px; color: var(--muted); margin-left: 2px; }
+.owner-av.ro { box-shadow: 0 0 0 1.5px var(--ok); }
+.ro-pill { color: var(--ok); border-color: #1d4636 !important; }
