@@ -254,12 +254,34 @@ function TaskRow({ t, atoms, personas, assignOwner, selected, onSelect, expanded
           title={expanded ? "collapse detail" : "expand detail"} onClick={onToggle}>▸</button>
       </div>
 
-      {expanded && <TaskDetail t={t} atoms={atoms} />}
+      {expanded && <TaskDetail t={t} atoms={atoms} active={isActive(t)} />}
     </article>
   );
 }
 
-function TaskDetail({ t, atoms }: { t: Task; atoms: Record<string, Task> }) {
+// LiveLog — streams the dispatched agent's real output (GET /api/log?id&offset, incremental).
+function LiveLog({ id, active }: { id: string; active: boolean }) {
+  const [text, setText] = useState("");
+  const [file, setFile] = useState<string | null>(null);
+  useEffect(() => {
+    let offset = 0, stop = false;
+    const poll = async () => {
+      try {
+        const d = await (await fetch(`/api/log?id=${encodeURIComponent(id)}&offset=${offset}`)).json();
+        if (d.file) setFile(d.file);
+        if (d.text) { setText((t) => (t + d.text).slice(-12000)); offset = d.offset ?? offset; }
+        else if (d.size != null) offset = d.size;
+      } catch { /* engine offline */ }
+    };
+    poll();
+    const iv = setInterval(() => { if (!stop) poll(); }, active ? 1200 : 5000);
+    return () => { stop = true; clearInterval(iv); };
+  }, [id, active]);
+  if (!file && !text) return <div className="dp-none">no agent log yet — dispatch (▶ run) to spawn a real agent</div>;
+  return <pre className="dp-livelog">{text || "(waiting for agent output…)"}</pre>;
+}
+
+function TaskDetail({ t, atoms, active }: { t: Task; atoms: Record<string, Task>; active: boolean }) {
   const cells: [string, string, string?][] = [
     ["State", t.state || "new", "st-" + (t.state || "new")],
     ["Status", t.status, "ss-" + t.status],
@@ -309,6 +331,10 @@ function TaskDetail({ t, atoms }: { t: Task; atoms: Record<string, Task> }) {
       <div className="dp-sec">
         <div className="dp-l">State log</div>
         <pre className="dp-log">{log}</pre>
+      </div>
+      <div className="dp-sec">
+        <div className="dp-l">Agent log {active ? <span className="live-dot">● live</span> : null}</div>
+        <LiveLog id={t.id} active={active} />
       </div>
     </div>
   );
