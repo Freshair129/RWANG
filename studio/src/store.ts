@@ -9,7 +9,7 @@ export type Task = {
   state?: string; moscow?: string; rice?: any;
   // claim/assign/governance (DevProgress)
   gated?: boolean; confirmed?: boolean; modelOverride?: string | null;
-  claimedAt?: number | null; attempts?: number;
+  claimedAt?: number | null; attempts?: number; owner?: string | null;
 };
 export type Meta = {
   pool?: any; usage?: any; usageLimits?: any;

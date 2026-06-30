@@ -216,6 +216,13 @@ export function assign(id, model) {
   withLock(() => { const s = loadState(); s.tasks[id].modelOverride = model || null; saveState(s); });
   return { ok: true, task: id, model };
 }
+// assign an owner / persona (DevProgress agent assignment, config--persona-presets) — a planning/
+// ownership label, independent of claim/worker (which the engine sets on claim/dispatch).
+export function assignOwner(id, owner) {
+  if (!byId(id)) return { ok: false, error: `ไม่พบ task ${id}` };
+  withLock(() => { const s = loadState(); s.tasks[id].owner = owner || null; saveState(s); });
+  return { ok: true, task: id, owner: owner || null };
+}
 export function reset() { withLock(() => saveState(freshState())); return { ok: true }; }
 
 // ---------- editable deps (feature--graph-editable) — writes back to the atom SOURCE + recompiles ----------
@@ -280,7 +287,7 @@ export function snapshot() {
       attempts: st.attempts, modelOverride: st.modelOverride,
       deps: t.deps || [], depsDone: depsDone(t, cur), ready: isReady(t, cur),
       accept: t.accept, est: t.est, state: t.state, moscow: t.moscow, rice: t.rice,
-      gated: needsConfirm(t), confirmed: !!st.confirmed,
+      gated: needsConfirm(t), confirmed: !!st.confirmed, owner: st.owner ?? null,
     };
   });
   // build model options from all enabled providers' models

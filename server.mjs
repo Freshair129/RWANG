@@ -32,6 +32,10 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/ollama") return send(res, 200, await E.ollamaInfo());
     if (req.method === "GET" && url.pathname === "/api/providers") return send(res, 200, await E.providersInfo());
     if (req.method === "GET" && url.pathname === "/api/knowledge") return send(res, 200, E.knowledgeOutcomes());
+    if (req.method === "GET" && url.pathname === "/api/personas") {
+      try { const p = JSON.parse(readFileSync(new URL("./personas.json", import.meta.url), "utf8")); return send(res, 200, p.personas || []); }
+      catch { return send(res, 200, []); }
+    }
     if (req.method === "GET" && url.pathname === "/api/log") {
       const id = url.searchParams.get("id") || "";
       const offset = Number(url.searchParams.get("offset") || 0) || 0;
@@ -54,7 +58,7 @@ const server = createServer(async (req, res) => {
       catch (e) { return send(res, 500, { ok: false, error: e.message }); }
     }
     if (req.method === "POST" && url.pathname === "/api/cmd") {
-      const { action, id, worker, model, mode, max, on, tier, deps } = await readBody(req);
+      const { action, id, worker, model, owner, mode, max, on, tier, deps } = await readBody(req);
       let r;
       switch (action) {
         case "claim": r = E.claim(id, worker || "ui"); break;
@@ -62,6 +66,7 @@ const server = createServer(async (req, res) => {
         case "fail": r = E.setStatus(id, "failed"); break;
         case "release": r = E.setStatus(id, "todo"); break;
         case "assign": r = E.assign(id, model || null); break;
+        case "assignowner": r = E.assignOwner(id, owner || null); break;
         case "dispatch": r = E.dispatchOne(id, worker || "ui"); break;
         case "run": r = E.runPool({ mode: mode || "wave", max: Number(max) || undefined }); break;
         case "stop": r = E.stopPool(); break;

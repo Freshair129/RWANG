@@ -1,9 +1,10 @@
-// DevProgress (feature--board / Development Progress) — phase-grouped roadmap WHERE AGENTS
-// CLAIM / ASSIGN / DISPATCH / RELEASE backlog tasks, with governance-gate confirm + expand-to-detail.
-// A superset of the old read-only Progress.tsx. Harvested UX from GoVibe Mission Control.
-// Reuses useStore + cmd (store.ts); mirrors Board.tsx's cmd() calls. Engine API (server.mjs /api/cmd):
-//   claim {worker} · assign {model} · dispatch {worker} · confirm/unconfirm · release · reset
-import { useState } from "react";
+// DevProgress (Development Progress) — phase-grouped roadmap WHERE AGENTS CLAIM / ASSIGN /
+// DISPATCH / RELEASE backlog tasks, with governance-gate confirm + expand-to-detail. Assign an
+// agent/persona (config--persona-presets) via the dropdown OR by DRAGGING an agent chip onto a
+// task card (ref③). Harvested UX from GoVibe Mission Control. Reuses useStore + cmd (store.ts).
+// Engine /api/cmd: claim {worker} · assignowner {owner} · assign {model} · dispatch {worker} ·
+// confirm/unconfirm · release · reset. Agents from GET /api/personas.
+import { useState, useEffect } from "react";
 import { useStore, cmd, type Task } from "./store";
 
 const PHASES = [
@@ -18,11 +19,25 @@ const isDone = (t: Task) => t.status === "done";
 const isActive = (t: Task) => ACTIVE.has(t.status);
 const tier = (m?: string | null) => (m ? m.split(":")[1] || m : "—");
 
+type Persona = { id: string; title?: string; role: string };
+const ROLE_COLOR: Record<string, string> = { architect: "#64c7ff", coder: "#9be7ff", reviewer: "#31d0a0", worker: "#ffb86b", scout: "#b9a6ff" };
+const initials = (s: string) => s.slice(0, 2).toUpperCase();
+const ownerColor = (personas: Persona[], id?: string | null) => {
+  const p = personas.find((x) => x.id === id);
+  return (p && ROLE_COLOR[p.role]) || "#5f7191";
+};
+
+const DRAG_KEY = "text/persona";
+
 export default function DevProgress() {
   const order = useStore((s) => s.order);
   const atoms = useStore((s) => s.atoms);
-  const modelOptions = useStore((s) => s.meta.modelOptions || []);
   const list = order.map((id) => atoms[id]).filter(Boolean) as Task[];
+
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  useEffect(() => {
+    fetch("/api/personas").then((r) => r.json()).then((p) => setPersonas(Array.isArray(p) ? p : [])).catch(() => {});
+  }, []);
 
   const total = list.length;
   const done = list.filter(isDone).length;
@@ -33,6 +48,8 @@ export default function DevProgress() {
 
   const [openPhase, setOpenPhase] = useState<Record<string, boolean>>({ P0: true, P1: true });
   const [openTask, setOpenTask] = useState<Record<string, boolean>>({});
+
+  const assignOwner = (id: string, owner: string) => cmd("assignowner", id, { owner: owner || null });
 
   const exportBacklog = async () => {
     try {
@@ -49,7 +66,7 @@ export default function DevProgress() {
   };
 
   const resetBoard = () => {
-    if (window.confirm("Reset the board? Restores every atom to fresh state (todo, no worker, no override).")) cmd("reset", "");
+    if (window.confirm("Reset the board? Restores every atom to fresh state (todo, no worker, no owner).")) cmd("reset", "");
   };
 
   return (
@@ -73,6 +90,20 @@ export default function DevProgress() {
       </div>
 
       <div className="prog-bar"><div className="prog-fill" style={{ width: pct + "%" }} /></div>
+
+      {/* Agent palette — drag a chip onto any task card to assign it */}
+      <div className="agent-palette">
+        <span className="ap-label">Agents · ลากไปวางบน task เพื่อ assign</span>
+        {personas.length === 0 && <span className="ap-empty">— no personas (start engine) —</span>}
+        {personas.map((p) => (
+          <div key={p.id} className="agent-chip" draggable
+            onDragStart={(e) => { e.dataTransfer.setData(DRAG_KEY, p.id); e.dataTransfer.effectAllowed = "copy"; }}
+            title={`${p.id} · ${p.role}${p.title ? " · " + p.title : ""}`}>
+            <span className="avatar" style={{ background: ROLE_COLOR[p.role] || "#5f7191" }}>{initials(p.id)}</span>
+            <span className="ap-id">{p.id}</span>
+          </div>
+        ))}
+      </div>
 
       <div className="prog-stats">
         <div className="pstat"><div className="n">{total}</div><div className="l">total atoms</div></div>
@@ -103,7 +134,8 @@ export default function DevProgress() {
             {phaseOpen && (
               <div className="phase-body">
                 {items.map((t) => (
-                  <TaskRow key={t.id} t={t} atoms={atoms} modelOptions={modelOptions}
+                  <TaskRow key={t.id} t={t} atoms={atoms} personas={personas}
+                    assignOwner={assignOwner}
                     expanded={!!openTask[t.id]} onToggle={() => setOpenTask((o) => ({ ...o, [t.id]: !o[t.id] }))} />
                 ))}
                 {items.length === 0 && <div className="empty">no atoms in this phase</div>}
@@ -116,18 +148,26 @@ export default function DevProgress() {
   );
 }
 
-function TaskRow({ t, atoms, modelOptions, expanded, onToggle }: {
-  t: Task; atoms: Record<string, Task>; modelOptions: string[]; expanded: boolean; onToggle: () => void;
+function TaskRow({ t, atoms, personas, assignOwner, expanded, onToggle }: {
+  t: Task; atoms: Record<string, Task>; personas: Persona[];
+  assignOwner: (id: string, owner: string) => void; expanded: boolean; onToggle: () => void;
 }) {
+  const [over, setOver] = useState(false);
   const blockedGate = !!t.gated && !t.confirmed;
+
   return (
-    <article className={"pcard s-" + t.status}>
+    <article className={"pcard s-" + t.status + (over ? " drop-hover" : "")}
+      onDragOver={(e) => { if (e.dataTransfer.types.includes(DRAG_KEY)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
+      onDragEnter={(e) => { if (e.dataTransfer.types.includes(DRAG_KEY)) { e.preventDefault(); setOver(true); } }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { e.preventDefault(); setOver(false); const pid = e.dataTransfer.getData(DRAG_KEY); if (pid) assignOwner(t.id, pid); }}>
       <div className="pcard-top">
         <span className={"check" + (isDone(t) ? " on" : isActive(t) ? " run" : "")}>{isDone(t) ? "✓" : isActive(t) ? "◐" : "○"}</span>
         <span className="pcard-id">{t.id}</span>
         <span className={"st-badge st-" + (t.state || "new")}>{t.state || "new"}</span>
         {t.gated ? <span className={"gate-pill" + (t.confirmed ? " ok" : "")}>{t.confirmed ? "confirmed" : "gated"}</span> : null}
         <span className="pcard-spacer" />
+        {t.owner ? <span className="owner-av" style={{ background: ownerColor(personas, t.owner) }} title={"owner: " + t.owner}>{initials(t.owner)}</span> : null}
         <span className={"status-pill ss-" + t.status}>{t.status}</span>
       </div>
       <div className="pcard-title">{(t.title || t.id).split(" — ")[0]}</div>
@@ -146,10 +186,10 @@ function TaskRow({ t, atoms, modelOptions, expanded, onToggle }: {
           title={t.ready ? "claim for worker 'studio'" : "not ready (status=" + t.status + ", depsDone=" + t.depsDone + ")"}
           onClick={() => cmd("claim", t.id, { worker: "studio" })}>{t.ready ? "claim" : "blocked"}</button>
 
-        <select className="ctl assign-sel" value={t.modelOverride ?? ""} title="override the routed model for this atom"
-          onChange={(e) => cmd("assign", t.id, { model: e.target.value || null })}>
-          <option value="">— route by role ({t.role}) —</option>
-          {modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+        <select className="ctl assign-sel" value={t.owner ?? ""} title="assign an agent/persona (or drag a chip onto this card)"
+          onChange={(e) => assignOwner(t.id, e.target.value)}>
+          <option value="">— unassigned —</option>
+          {personas.map((p) => <option key={p.id} value={p.id}>{p.id} · {p.role}</option>)}
         </select>
 
         {t.gated && (
@@ -178,6 +218,7 @@ function TaskDetail({ t, atoms }: { t: Task; atoms: Record<string, Task> }) {
   const cells: [string, string, string?][] = [
     ["State", t.state || "new", "st-" + (t.state || "new")],
     ["Status", t.status, "ss-" + t.status],
+    ["Owner", t.owner || "—"],
     ["Role", t.role],
     ["Model", t.model || "—", "mono"],
     ["Override", t.modelOverride || "—", "mono"],
@@ -191,7 +232,7 @@ function TaskDetail({ t, atoms }: { t: Task; atoms: Record<string, Task> }) {
   const log = [
     "[" + t.phase + "] " + t.id,
     "  status=" + t.status + " · ready=" + t.ready + " · depsDone=" + t.depsDone,
-    "  model=" + (t.model || "—") + (t.modelOverride ? " (override " + t.modelOverride + ")" : ""),
+    "  owner=" + (t.owner || "—") + " · model=" + (t.model || "—") + (t.modelOverride ? " (override " + t.modelOverride + ")" : ""),
     ...(t.gated ? ["  gate=" + (t.confirmed ? "confirmed ✓" : "BLOCKING ⛔")] : []),
   ].join("\n");
 

@@ -265,3 +265,15 @@ h3 { margin: 0 0 8px; }
 .dp-none, .dp-accept { font-size: 11.5px; color: var(--muted); }
 .dp-accept { background: #0b1626; border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; }
 .dp-log { margin: 0; white-space: pre-wrap; overflow-x: auto; background: #050a12; border: 1px solid #1d4636; border-radius: 7px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--ok); line-height: 1.6; box-shadow: inset 0 1px 6px rgba(0,0,0,.4); }
+
+/* ---- agent palette (drag agent -> task) ---- */
+.agent-palette { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 14px; }
+.ap-label { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-right: 4px; }
+.ap-empty { font-size: 11px; color: #3a5070; }
+.agent-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--chip); border: 1px solid var(--chip-line); border-radius: 99px; padding: 3px 11px 3px 3px; cursor: grab; font-size: 11px; transition: border-color .15s; }
+.agent-chip:hover { border-color: var(--blue); }
+.agent-chip:active { cursor: grabbing; }
+.avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #08121f; letter-spacing: .2px; }
+.ap-id { color: var(--txt); font-family: ui-monospace, monospace; }
+.owner-av { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; color: #08121f; }
+.pcard.drop-hover { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), 0 0 14px rgba(100,199,255,.25); }
