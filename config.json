@@ -96,7 +96,7 @@
       }
     },
     "codex": {
-      "enabled": false,
+      "enabled": true,
       "capabilities": [
         "file_edit",
         "shell_exec",
@@ -180,25 +180,9 @@
         {
           "id": "ag-1",
           "envKey": "ANTIGRAVITY_TOKEN"
-        },
-        {
-          "id": "ag-2",
-          "envKey": "ANTIGRAVITY_TOKEN"
-        },
-        {
-          "id": "ag-3",
-          "envKey": "ANTIGRAVITY_TOKEN"
-        },
-        {
-          "id": "ag-4",
-          "envKey": "ANTIGRAVITY_TOKEN"
-        },
-        {
-          "id": "ag-5",
-          "envKey": "ANTIGRAVITY_TOKEN"
         }
       ],
-      "_comment": "Antigravity IDE agent. à¹€à¸›à¸´à¸” enabled=true à¹€à¸¡à¸·à¹ˆà¸­à¸•à¸´à¸”à¸•à¸±à¹‰à¸‡à¹à¸¥à¹‰à¸§."
+      "_comment": "Antigravity CLI (agy) — API-token auth only (ANTIGRAVITY_TOKEN), single id per token. Add more accounts ONLY if you actually hold more tokens."
     },
     "openai-image": {
       "enabled": false,

@@ -15,6 +15,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readLoginIdentity } from "./account-identity.mjs";
 
 const DEFAULT_COOLDOWN_MS = 60 * 60 * 1000; // 1h if a provider gives no reset time
 const __acctdir = dirname(fileURLToPath(import.meta.url));
@@ -171,8 +172,12 @@ export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = D
         // kind drives the UI: login-dir accounts need a browser OAuth (codex/claude);
         // key accounts need a pasted token (antigravity/openrouter). configured = secret/dir present.
         const kind = a.configDir ? "login" : "key";
+        // authed = REALLY usable: login accounts read the CLI credential file (email/plan too);
+        // key accounts are authed once a token is set. This replaces the misleading "live" (=cooldown).
+        const ident = kind === "login" ? readLoginIdentity(provider, a.configDir) : { authed: !!a.apiKey };
         return {
           id: a.id, kind, configured: !!(a.configDir || a.apiKey),
+          authed: !!ident.authed, email: ident.email || null, plan: ident.plan || null, tier: ident.tier || null,
           live: !(cd > now), cooldownUntil: cd, cooldownMs: Math.max(0, cd - now),
           uses: u.uses || 0, cost: u.cost || 0, tokens: u.tokens || 0,
         };
