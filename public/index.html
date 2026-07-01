@@ -567,9 +567,12 @@ function accCard(p,a){
   const keyrow = a.kind==="key"
     ? `<div class="keyrow"><input type="password" id="k-${p.provider}-${a.id}" placeholder="${a.configured?'••• update token':'paste token'}" />
         <button class="btn go" onclick="saveKey('${p.provider}','${a.id}')">save</button></div>` : "";
+  const w5=a.w5h||{uses:0,tokens:0}, w7=a.w7d||{uses:0,tokens:0};
+  const bar=(u,lim)=>{ if(!lim) return ""; const pct=Math.min(100,u/lim*100); const c=pct>=100?"var(--bad)":pct>=80?"var(--warn)":"var(--ice)"; return `<div class="ubar" style="margin-top:4px"><i style="width:${pct}%;background:${c}"></i></div>`; };
   return `<div class="acc ${cls}">
     <div class="acch"><span class="sdot ${dot}"></span><span class="aid">${a.id}</span><span class="grow"></span>${stTxt}</div>
-    <div class="accu"><span>uses <b>${a.uses}</b></span><span>tok <b>${fmtTok(a.tokens)}</b></span><span>$<b>${(a.cost||0).toFixed(4)}</b></span></div>
+    <div class="accu"><span>5h <b>${w5.uses}</b>${p.limit5h?`/${p.limit5h}`:''} · ${fmtTok(w5.tokens)}</span><span>7d <b>${w7.uses}</b>${p.limit7d?`/${p.limit7d}`:''} · ${fmtTok(w7.tokens)}</span><span>Σ ${a.uses} · $${(a.cost||0).toFixed(4)}</span></div>
+    ${bar(w5.uses,p.limit5h)}${bar(w7.uses,p.limit7d)}
     <div class="acca">${acts||'<span class="hint">—</span>'}</div>${keyrow}</div>`;
 }
 async function saveKey(provider,id){

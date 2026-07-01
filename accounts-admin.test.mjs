@@ -77,14 +77,21 @@ test("startLogin: key-based provider returns a non-interactive hint (no spawn)",
   assert.match(r.hint, /key-based/);
 });
 
-test("startLogin: login-dir provider spawns with the right config-dir env", () => {
+test("startLogin: login-dir provider spawns the login with the right config-dir env", () => {
   let captured = null;
   const spawnFn = (cmd, args, o) => { captured = { cmd, args, env: o.env }; return { on() {}, unref() {} }; };
   const r = startLogin({ provider: "codex", id: "codex-1" }, { config: CFG, spawnFn });
   assert.equal(r.ok, true);
   assert.equal(r.interactive, true);
-  assert.equal(captured.cmd, "codex");
-  assert.deepEqual(captured.args, ["login"]);
+  // env carries the login dir; the descriptor's command is stable across platforms
   assert.ok(captured.env.CODEX_HOME && captured.env.CODEX_HOME.includes(".codex-1"));
   assert.match(r.command, /CODEX_HOME=~\/\.codex-1 codex login/);
+  if (process.platform === "win32") {
+    // opens a VISIBLE console so the OAuth URL shows + the browser opens
+    assert.equal(captured.cmd, "cmd");
+    assert.ok(captured.args.join(" ").includes("codex login"));
+  } else {
+    assert.equal(captured.cmd, "codex");
+    assert.deepEqual(captured.args, ["login"]);
+  }
 });

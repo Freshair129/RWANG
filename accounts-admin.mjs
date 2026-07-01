@@ -127,7 +127,19 @@ export function startLogin({ provider, id } = {}, { config, spawnFn = spawn, roo
   const cmdline = `${spec.envKey}=${acc.configDir} ${spec.cmd} ${spec.args.join(" ")}`;
   let started = false, error = null;
   try {
-    const child = spawnFn(spec.cmd, spec.args, { cwd: root, env, shell: true, detached: true, stdio: "ignore" });
+    let child;
+    if (process.platform === "win32") {
+      // The OAuth CLI needs a real console to print the device URL, open the browser, and stay alive
+      // for the callback. A detached stdio:"ignore" spawn shows nothing and often never opens the
+      // browser — so open a VISIBLE terminal window that runs the login (dir env set inside it).
+      const inner = `set "${spec.envKey}=${dir}" && ${spec.cmd} ${spec.args.join(" ")}`;
+      child = spawnFn("cmd", ["/c", "start", `${provider} login`, "cmd", "/k", inner], {
+        cwd: root, env, detached: true, stdio: "ignore",
+      });
+    } else {
+      // macOS/Linux: open a terminal if available, else spawn directly (still inherits the dir env)
+      child = spawnFn(spec.cmd, spec.args, { cwd: root, env, shell: true, detached: true, stdio: "ignore" });
+    }
     child.on?.("error", () => {}); // swallow async spawn errors; surfaced via started flag below
     child.unref?.();
     started = true;
@@ -135,7 +147,7 @@ export function startLogin({ provider, id } = {}, { config, spawnFn = spawn, roo
   return {
     ok: started, provider, id, interactive: true, configDir: acc.configDir, command: cmdline, error,
     hint: started
-      ? `login started for ${provider}/${id} — complete the OAuth in the browser window, then re-check status`
-      : `could not spawn '${spec.cmd}' — run in a terminal: ${cmdline}`,
+      ? `เปิดหน้าต่าง terminal ให้ login ${provider}/${id} แล้ว — ทำ OAuth ในนั้น (browser จะเด้ง). ถ้าไม่เด้ง รันเอง: ${cmdline}`
+      : `เปิด login ไม่ได้ — รันในเทอร์มินัลเอง: ${cmdline}`,
   };
 }

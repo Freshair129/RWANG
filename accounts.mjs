@@ -116,12 +116,25 @@ export function parseLimit(providerName, result = {}) {
 }
 
 // ── record the outcome of a dispatch onto the account state ──────────────────────────────────
+const WINDOW_RETAIN_MS = 7 * 24 * 60 * 60 * 1000; // keep 7 days of events for the 5h/7d windows
 export function noteResult(pstate, accId, { cost = 0, tokens = 0, limited = false, resetMs, now = Date.now() } = {}) {
   pstate.accounts = pstate.accounts || {};
   const a = (pstate.accounts[accId] = pstate.accounts[accId] || { uses: 0, cost: 0, tokens: 0, cooldownUntil: 0 });
   a.uses += 1; a.cost += cost; a.tokens += tokens; a.lastUsedAt = now;
+  // rolling event log powering the 5h / 7d usage windows (pruned to 7d, capped)
+  a.events = (a.events || []).filter((e) => e.at >= now - WINDOW_RETAIN_MS);
+  a.events.push({ at: now, tokens, cost });
+  if (a.events.length > 2000) a.events = a.events.slice(-2000);
   if (limited) { a.cooldownUntil = now + (resetMs || DEFAULT_COOLDOWN_MS); a.lastLimitAt = now; }
   return pstate;
+}
+
+// sum usage within a trailing time window
+export function windowUsage(events, now, ms) {
+  const from = now - ms;
+  let uses = 0, tokens = 0, cost = 0;
+  for (const e of events || []) if (e.at >= from) { uses++; tokens += e.tokens || 0; cost += e.cost || 0; }
+  return { uses, tokens, cost };
 }
 
 // ── file-backed state convenience (load → mutate → save) ─────────────────────────────────────
@@ -161,11 +174,15 @@ export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = D
   // surfaced (the apiKey value itself is never returned).
   const reg = loadAccounts(config, { secretsPath });
   const state = loadState(statePath);
+  const H5 = 5 * 60 * 60 * 1000, D7 = 7 * 24 * 60 * 60 * 1000;
   return Object.entries(reg).map(([provider, prov]) => {
     const ps = state[provider] || { accounts: {} };
+    // optional per-provider usage caps (uses count) → UI draws a % bar. config.providers.<p>.usage
+    const uconf = config.providers?.[provider]?.usage || {};
     return {
       provider, rotation: prov.rotation,
       enabled: config.providers?.[provider]?.enabled !== false,
+      limit5h: uconf.limit5h ?? null, limit7d: uconf.limit7d ?? null,
       accounts: prov.accounts.map((a) => {
         const u = (ps.accounts || {})[a.id] || {};
         const cd = u.cooldownUntil || 0;
@@ -180,6 +197,7 @@ export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = D
           authed: !!ident.authed, email: ident.email || null, plan: ident.plan || null, tier: ident.tier || null,
           live: !(cd > now), cooldownUntil: cd, cooldownMs: Math.max(0, cd - now),
           uses: u.uses || 0, cost: u.cost || 0, tokens: u.tokens || 0,
+          w5h: windowUsage(u.events, now, H5), w7d: windowUsage(u.events, now, D7),
         };
       }),
     };
