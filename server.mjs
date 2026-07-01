@@ -117,6 +117,7 @@ const server = createServer(async (req, res) => {
         case "run": r = E.runPool({ mode: mode || "wave", max: Number(max) || undefined }); break;
         case "stop": r = E.stopPool(); break;
         case "setauth": r = E.setAuthMode(mode); break;
+        case "setmode": r = E.setMode(mode); break;
         case "reset": r = E.reset(); break;
         case "killswitch": r = E.setKillSwitch(!!on); break;
         case "settier": r = E.setTier(tier); break;

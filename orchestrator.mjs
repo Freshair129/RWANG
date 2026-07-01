@@ -219,7 +219,8 @@ try {
       executor: arg(["--executor"], "frontier"),
       execute: process.argv.includes("--execute"),
     }); break;
+    case "mode": if (a1) { out(E.setMode(a1)); if (process.exitCode !== 1) console.log(`→ cost-mode = ${a1}  (normal=all · free=local+OpenRouter:free · local=offline only)`); } else console.log(`cost-mode: ${E.getMode()}`); break;
     case "stop": stopAutonomous(); console.log("→ pool stop requested"); break;
-    default: console.log("commands: status | accounts | next | graph [--mermaid] | claim <id> [-w name] | release|done|fail <id> | assign <id> <model> | run [--max N] [--execute] | auto-wave [--max-waves N] [--supervisor MODEL] [--max N] [--dry-run] | auto-loop <goalId> [--target 1.0] [--max-rounds 5] [--executor frontier] [--execute] | stop | reset");
+    default: console.log("commands: status | accounts | mode [normal|free|local] | next | graph [--mermaid] | claim <id> [-w name] | release|done|fail <id> | assign <id> <model> | run [--max N] [--execute] | auto-wave [--max-waves N] [--supervisor MODEL] [--max N] [--dry-run] | auto-loop <goalId> [--target 1.0] [--max-rounds 5] [--executor frontier] [--execute] | stop | reset");
   }
 } catch (e) { console.error("ERROR: " + e.message); process.exitCode = 1; }
