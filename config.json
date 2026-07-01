@@ -1,21 +1,45 @@
 ﻿{
   "concurrency": 3,
   "leaseMs": 1800000,
-
   "providers": {
     "claude": {
       "enabled": true,
-      "capabilities": ["file_edit", "shell_exec", "code_review", "streaming", "long_context"],
+      "capabilities": [
+        "file_edit",
+        "shell_exec",
+        "code_review",
+        "streaming",
+        "long_context"
+      ],
       "transport": "subprocess",
       "command": "claude",
-      "baseArgs": ["-p", "--output-format", "stream-json", "--verbose"],
+      "baseArgs": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose"
+      ],
       "extraArgs": [],
       "permissionModes": {
-        "safe": ["--permission-mode", "acceptEdits"],
-        "full": ["--permission-mode", "bypassPermissions"],
+        "safe": [
+          "--permission-mode",
+          "acceptEdits"
+        ],
+        "full": [
+          "--permission-mode",
+          "bypassPermissions"
+        ],
         "_comment": "safe=แก้ไฟล์ได้แต่ Bash ถูก block, full=ทำได้ทุกอย่าง (รัน test/build). เลือกต่อ task ผ่าน routing หรือ UI"
       },
       "defaultPermission": "safe",
+      "accountEnv": "CLAUDE_CONFIG_DIR",
+      "rotation": "failover",
+      "accounts": [
+        {
+          "id": "claude-1",
+          "configDir": "~/.claude"
+        }
+      ],
       "auth": {
         "mode": "plan",
         "apiKey": "",
@@ -29,7 +53,10 @@
     },
     "ollama": {
       "enabled": true,
-      "capabilities": ["text_gen", "file_edit"],
+      "capabilities": [
+        "text_gen",
+        "file_edit"
+      ],
       "transport": "http",
       "host": "http://127.0.0.1:11434",
       "think": false,
@@ -39,85 +66,191 @@
       "defaultProfile": "balanced",
       "_perfComment": "num_ctx sized for micro-tasks to keep KV small (12GB GPU is VRAM-contended ~5GB free when Chrome open). Do NOT set OLLAMA_KV_CACHE_TYPE=q8_0 — it tanks prefill to ~7 tok/s on this box.",
       "profiles": {
-        "fast": { "temperature": 0.3, "num_predict": 2048, "num_ctx": 8192 },
-        "balanced": { "temperature": 0.4, "num_predict": 4096, "num_ctx": 8192 },
-        "ui-heavy": { "temperature": 0.5, "num_predict": 8192, "num_ctx": 12288 },
-        "tools": { "temperature": 0.3, "num_predict": 8192, "num_ctx": 16384 }
+        "fast": {
+          "temperature": 0.3,
+          "num_predict": 2048,
+          "num_ctx": 8192
+        },
+        "balanced": {
+          "temperature": 0.4,
+          "num_predict": 4096,
+          "num_ctx": 8192
+        },
+        "ui-heavy": {
+          "temperature": 0.5,
+          "num_predict": 8192,
+          "num_ctx": 12288
+        },
+        "tools": {
+          "temperature": 0.3,
+          "num_predict": 8192,
+          "num_ctx": 16384
+        }
       },
       "defaultToolsProfile": "tools"
     },
     "codex": {
       "enabled": false,
-      "capabilities": ["file_edit", "shell_exec", "sandbox"],
+      "capabilities": [
+        "file_edit",
+        "shell_exec",
+        "sandbox"
+      ],
       "transport": "subprocess",
       "command": "codex",
-      "baseArgs": ["--approval-mode", "auto-edit", "--quiet"],
+      "baseArgs": [
+        "--approval-mode",
+        "auto-edit",
+        "--quiet"
+      ],
       "extraArgs": [],
       "accountEnv": "CODEX_HOME",
-      "rotation": "round-robin",
+      "rotation": "least-used",
       "accounts": [
-        { "id": "codex-a", "configDir": "~/.codex-a" },
-        { "id": "codex-b", "configDir": "~/.codex-b" }
+        {
+          "id": "codex-1",
+          "configDir": "~/.codex-1"
+        },
+        {
+          "id": "codex-2",
+          "configDir": "~/.codex-2"
+        },
+        {
+          "id": "codex-3",
+          "configDir": "~/.codex-3"
+        }
       ],
-      "auth": { "envKey": "OPENAI_API_KEY", "apiKey": "" },
+      "auth": {
+        "envKey": "OPENAI_API_KEY",
+        "apiKey": ""
+      },
       "_comment": "OpenAI Codex CLI. à¹€à¸›à¸´à¸” enabled=true à¹€à¸¡à¸·à¹ˆà¸­à¸•à¸´à¸”à¸•à¸±à¹‰à¸‡à¹à¸¥à¹‰à¸§ + à¸•à¸±à¹‰à¸‡ OPENAI_API_KEY."
     },
     "openrouter": {
       "enabled": false,
-      "capabilities": ["text_gen", "streaming", "vision", "long_context"],
+      "capabilities": [
+        "text_gen",
+        "streaming",
+        "vision",
+        "long_context"
+      ],
       "transport": "http",
       "host": "https://openrouter.ai/api/v1",
       "apiKeyEnv": "OPENROUTER_API_KEY",
-      "accounts": [ { "id": "or-1", "envKey": "OPENROUTER_API_KEY" } ],
-      "auth": { "envKey": "OPENROUTER_API_KEY", "apiKey": "" },
+      "accounts": [
+        {
+          "id": "or-1",
+          "envKey": "OPENROUTER_API_KEY"
+        }
+      ],
+      "auth": {
+        "envKey": "OPENROUTER_API_KEY",
+        "apiKey": ""
+      },
       "_comment": "OpenRouter unified API. model = provider slug à¹€à¸Šà¹ˆà¸™ 'anthropic/claude-sonnet-4', 'google/gemma-3-27b'. à¹€à¸›à¸´à¸” enabled + à¸•à¸±à¹‰à¸‡ API key."
     },
     "antigravity": {
       "enabled": false,
-      "capabilities": ["text_gen", "file_edit"],
+      "capabilities": [
+        "text_gen",
+        "file_edit"
+      ],
       "transport": "subprocess",
       "command": "agy",
-      "baseArgs": ["--headless", "--approve", "auto"],
+      "baseArgs": [
+        "--headless",
+        "--approve",
+        "auto"
+      ],
       "extraArgs": [],
       "promptMode": "arg",
       "apiKeyEnv": "ANTIGRAVITY_TOKEN",
       "rotation": "round-robin",
       "accounts": [
-        { "id": "ag-a", "envKey": "ANTIGRAVITY_TOKEN" },
-        { "id": "ag-b", "envKey": "ANTIGRAVITY_TOKEN" }
+        {
+          "id": "ag-1",
+          "envKey": "ANTIGRAVITY_TOKEN"
+        },
+        {
+          "id": "ag-2",
+          "envKey": "ANTIGRAVITY_TOKEN"
+        },
+        {
+          "id": "ag-3",
+          "envKey": "ANTIGRAVITY_TOKEN"
+        },
+        {
+          "id": "ag-4",
+          "envKey": "ANTIGRAVITY_TOKEN"
+        },
+        {
+          "id": "ag-5",
+          "envKey": "ANTIGRAVITY_TOKEN"
+        }
       ],
       "_comment": "Antigravity IDE agent. à¹€à¸›à¸´à¸” enabled=true à¹€à¸¡à¸·à¹ˆà¸­à¸•à¸´à¸”à¸•à¸±à¹‰à¸‡à¹à¸¥à¹‰à¸§."
     }
   },
-
   "roles": {
     "architect": {
       "description": "Complex design, planning, spike analysis, architecture decisions",
-      "requires": ["long_context"],
-      "preferred": ["claude:opus", "openrouter:anthropic/claude-sonnet-4", "ollama:hf.co/unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL", "ollama:gemma4:latest"]
+      "requires": [
+        "long_context"
+      ],
+      "preferred": [
+        "claude:opus",
+        "openrouter:anthropic/claude-sonnet-4",
+        "ollama:hf.co/unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL",
+        "ollama:gemma4:latest"
+      ]
     },
     "coder": {
       "description": "Implementation, testing, integration â€” needs file access",
-      "requires": ["file_edit"],
-      "preferred": ["claude:sonnet", "codex:o4-mini", "antigravity:default", "ollama:hf.co/sillykiwi/Aroow-Rust-Coder-9B-Q4_K_S-GGUF:Q4_K_S", "ollama:gemma4-rust-coder:latest"]
+      "requires": [
+        "file_edit"
+      ],
+      "preferred": [
+        "claude:sonnet",
+        "codex:o4-mini",
+        "antigravity:default",
+        "ollama:hf.co/sillykiwi/Aroow-Rust-Coder-9B-Q4_K_S-GGUF:Q4_K_S",
+        "ollama:gemma4-rust-coder:latest"
+      ]
     },
     "worker": {
       "description": "Scaffolding, config files, documentation â€” light work",
-      "requires": ["text_gen"],
-      "preferred": ["claude:haiku", "ollama:qwen3.5:4b", "ollama:gemma4:latest", "openrouter:google/gemma-3-27b"]
+      "requires": [
+        "text_gen"
+      ],
+      "preferred": [
+        "claude:haiku",
+        "ollama:qwen3.5:4b",
+        "ollama:gemma4:latest",
+        "openrouter:google/gemma-3-27b"
+      ]
     },
     "reviewer": {
       "description": "Independent verification of worker output (Verify Gate)",
-      "requires": ["code_review"],
-      "preferred": ["claude:opus", "claude:sonnet"]
+      "requires": [
+        "code_review"
+      ],
+      "preferred": [
+        "claude:opus",
+        "claude:sonnet"
+      ]
     },
     "scout": {
       "description": "Research, drafting, analysis â€” text generation focus",
-      "requires": ["text_gen"],
-      "preferred": ["ollama:qwen3.5:4b", "claude:haiku", "openrouter:google/gemma-3-27b"]
+      "requires": [
+        "text_gen"
+      ],
+      "preferred": [
+        "ollama:qwen3.5:4b",
+        "claude:haiku",
+        "openrouter:google/gemma-3-27b"
+      ]
     }
   },
-
   "routing": {
     "manual": null,
     "spike": "architect",
@@ -135,16 +268,22 @@
     "research": "scout",
     "draft": "scout"
   },
-
   "routingCloudLocal": {
     "_doc": "config--routing-cloud-local (ADR-O-005 T-axis). Declares which roles are cloud-first (plan/architecture/review/complex-logic) vs local-first (code/refactor/scaffold). Orthogonal to the H-tier — a small H0 task may still go cloud if complex. The live provider chains are roles[].preferred; this is the policy view for the Loadout/Cockpit.",
-    "cloud": ["architect", "reviewer"],
-    "local": ["coder", "worker"],
-    "hybrid": ["scout"],
+    "cloud": [
+      "architect",
+      "reviewer"
+    ],
+    "local": [
+      "coder",
+      "worker"
+    ],
+    "hybrid": [
+      "scout"
+    ],
     "localCoderHint": "qwen2.5-coder-7b Q4 fits an RTX 3060 (~5GB free); shred tasks via algo--adaptive-decompose",
     "_note": "Policy intent. To make 'coder' truly local-first, move an ollama model to the front of roles.coder.preferred (it currently leads with claude:sonnet for quality on weak local hardware)."
   },
-
   "review": {
     "enabled": true,
     "requireReviewDefault": true,
@@ -155,44 +294,137 @@
     "reviewerRole": "reviewer",
     "_comment": "Verify Gate (ADR-O-001). reviewerRole à¸à¸³à¸«à¸™à¸”à¸§à¹ˆà¸²à¹ƒà¸Šà¹‰ role à¹„à¸«à¸™à¸£à¸µà¸§à¸´à¸§ â€” resolve à¸œà¹ˆà¸²à¸™ roles[reviewerRole].preferred."
   },
-
   "usageLimits": {
     "tier": "studio",
     "tiers": {
-      "free":   { "sessionUsd": 1,  "weeklyUsd": 5 },
-      "pro":    { "sessionUsd": 5,  "weeklyUsd": 25 },
-      "studio": { "sessionUsd": 20, "weeklyUsd": 100 }
+      "free": {
+        "sessionUsd": 1,
+        "weeklyUsd": 5
+      },
+      "pro": {
+        "sessionUsd": 5,
+        "weeklyUsd": 25
+      },
+      "studio": {
+        "sessionUsd": 20,
+        "weeklyUsd": 100
+      }
     },
     "_comment": "Cost-cap (config--cost-cap-tiers). 'tier' = active license tier (runtime override via state.tier / UI); caps from tiers[tier]. runPool + dispatchOne auto-stop when session/weekly cost >= cap (in-flight finishes). Emergency kill-switch = state.json s.killSwitch."
   },
-
   "docsForContext": [
-    { "path": "docs/architecture/tech-stack.md", "tier": "shared" },
-    { "path": "docs/architecture/engineering-spec.md", "tier": "shared" },
-    { "path": "docs/architecture/technical-design-document.md", "tier": "shared" },
-    { "path": "docs/product/roadmap-legacy.md", "tier": "shared" },
-    { "path": "docs/architecture/implementation-plan.md", "tier": "shared" },
-    { "path": "docs/research/concepts/subagent-context-scoping.md", "tier": "orchestrator-only" },
-    { "path": "docs/guides/small-model-prompting.md", "tier": "worker-guide" }
+    {
+      "path": "docs/architecture/tech-stack.md",
+      "tier": "shared"
+    },
+    {
+      "path": "docs/architecture/engineering-spec.md",
+      "tier": "shared"
+    },
+    {
+      "path": "docs/architecture/technical-design-document.md",
+      "tier": "shared"
+    },
+    {
+      "path": "docs/product/roadmap-legacy.md",
+      "tier": "shared"
+    },
+    {
+      "path": "docs/architecture/implementation-plan.md",
+      "tier": "shared"
+    },
+    {
+      "path": "docs/research/concepts/subagent-context-scoping.md",
+      "tier": "orchestrator-only"
+    },
+    {
+      "path": "docs/guides/small-model-prompting.md",
+      "tier": "worker-guide"
+    }
   ],
-
   "scope": {
     "_comment": "POLA: parent à¸›à¸£à¸°à¸à¸²à¸¨ scope à¸•à¹ˆà¸­ task.",
-    "default": { "docs": ["docs/architecture/engineering-spec.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 8000 },
+    "default": {
+      "docs": [
+        "docs/architecture/engineering-spec.md",
+        "docs/architecture/technical-design-document.md"
+      ],
+      "budgetTokens": 8000
+    },
     "byPhase": {
-      "spike": { "docs": ["docs/architecture/engineering-spec.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 12000 },
-      "0": { "docs": ["docs/architecture/tech-stack.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 8000 },
-      "1": { "docs": ["docs/architecture/engineering-spec.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 9000 },
-      "2": { "docs": ["docs/architecture/engineering-spec.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 10000 },
-      "3": { "docs": ["docs/architecture/engineering-spec.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 12000 },
-      "4": { "docs": ["docs/architecture/tech-stack.md", "docs/architecture/engineering-spec.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 10000 },
-      "5": { "docs": ["docs/architecture/engineering-spec.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 9000 },
-      "6": { "docs": ["docs/architecture/engineering-spec.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 9000 },
-      "7": { "docs": ["docs/architecture/tech-stack.md", "docs/architecture/technical-design-document.md"], "budgetTokens": 9000 },
-      "8": { "docs": ["docs/architecture/tech-stack.md", "docs/product/roadmap-legacy.md"], "budgetTokens": 8000 }
+      "0": {
+        "docs": [
+          "docs/architecture/tech-stack.md",
+          "docs/architecture/technical-design-document.md"
+        ],
+        "budgetTokens": 8000
+      },
+      "1": {
+        "docs": [
+          "docs/architecture/engineering-spec.md",
+          "docs/architecture/technical-design-document.md"
+        ],
+        "budgetTokens": 9000
+      },
+      "2": {
+        "docs": [
+          "docs/architecture/engineering-spec.md",
+          "docs/architecture/technical-design-document.md"
+        ],
+        "budgetTokens": 10000
+      },
+      "3": {
+        "docs": [
+          "docs/architecture/engineering-spec.md",
+          "docs/architecture/technical-design-document.md"
+        ],
+        "budgetTokens": 12000
+      },
+      "4": {
+        "docs": [
+          "docs/architecture/tech-stack.md",
+          "docs/architecture/engineering-spec.md",
+          "docs/architecture/technical-design-document.md"
+        ],
+        "budgetTokens": 10000
+      },
+      "5": {
+        "docs": [
+          "docs/architecture/engineering-spec.md",
+          "docs/architecture/technical-design-document.md"
+        ],
+        "budgetTokens": 9000
+      },
+      "6": {
+        "docs": [
+          "docs/architecture/engineering-spec.md",
+          "docs/architecture/technical-design-document.md"
+        ],
+        "budgetTokens": 9000
+      },
+      "7": {
+        "docs": [
+          "docs/architecture/tech-stack.md",
+          "docs/architecture/technical-design-document.md"
+        ],
+        "budgetTokens": 9000
+      },
+      "8": {
+        "docs": [
+          "docs/architecture/tech-stack.md",
+          "docs/product/roadmap-legacy.md"
+        ],
+        "budgetTokens": 8000
+      },
+      "spike": {
+        "docs": [
+          "docs/architecture/engineering-spec.md",
+          "docs/architecture/technical-design-document.md"
+        ],
+        "budgetTokens": 12000
+      }
     }
   },
-
   "store": {
     "knowledge": "genesisdb",
     "genesisdb": {
@@ -204,10 +436,3 @@
     }
   }
 }
-
-
-
-
-
-
-

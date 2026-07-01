@@ -52,30 +52,61 @@ exactly as before (single-account, unchanged).
 - State (rotation index + per-account `uses`/`cost`/`tokens`/`cooldownUntil`) persists to
   `store/.accounts-state.json` (gitignored).
 
-## Per-provider setup (this box)
+## Per-provider setup (this box — 9 seats: codex ×3, antigravity ×5, claude ×1)
 
-- **Codex (2 ChatGPT-plan accounts)** ✅ working path. One-time login per dir:
-  `CODEX_HOME=~/.codex-a codex` (login), `CODEX_HOME=~/.codex-b codex` (login). Then the engine
-  rotates `CODEX_HOME` per dispatch — quota is spread across both plans.
-- **OpenRouter (1 key)** ✅ put the key in `accounts.local.json`; single account, no rotation needed.
-- **Antigravity (`agy` CLI, 2 tokens)** 🟢 wired: command is `agy`, headless dispatch is
-  `agy --headless --approve auto -p "<prompt>" --model <m>` (config `baseArgs` + `promptMode: "arg"`;
-  set `promptMode: "stdin"` if your `agy` build reads the prompt on stdin), and `ANTIGRAVITY_TOKEN`
-  rotates per account. Remaining one-time setup: **install the `agy` CLI** (the in-repo install is
-  the GUI IDE only — get the CLI from `antigravity.google/docs/cli/install`), put the two tokens in
-  `accounts.local.json`, and confirm the exact `--approve` policy value once `agy` is on PATH.
+- **Codex (3 ChatGPT-plan seats)** ✅ working path — login dirs. One-time login per dir:
+  `CODEX_HOME=~/.codex-1 codex login` (then `-2`, `-3`), or click **login** in the Account Pool UI.
+  Each dir keeps its own refresh token that auto-renews → **login once, lasts long** (no proxy/VM).
+  The engine rotates `CODEX_HOME` per dispatch, spreading quota across all three plans.
+- **Claude (1 seat)** ✅ login dir `CLAUDE_CONFIG_DIR=~/.claude` — already your logged-in CLI. In the
+  pool for monitoring; `rotation: failover` (single seat, nothing to spread).
+- **OpenRouter (1 key)** ✅ paste the key in the UI (or `accounts.local.json`); single account.
+- **Antigravity (`agy` CLI, 5 seats)** 🟡 **keyring caveat — read this.** `agy`'s interactive login is
+  stored in the **OS keyring** (Windows Credential Manager) = **ONE slot per OS user**. So the
+  config-dir-swap trick that works for codex/claude does **not** give 5 concurrent agy seats. The only
+  per-account path on a single box is **`ANTIGRAVITY_TOKEN`** (the CI/non-interactive token) — which is
+  exactly what our `envKey` rotation applies. Paste one token per seat (UI or `accounts.local.json`).
+  **OPEN RISK:** confirm you can actually obtain 5 tokens for subscription accounts — if a subscription
+  seat can't mint a token, only one agy seat is usable at a time on one OS user (alternatives: separate
+  OS users, or accept a single agy seat). Also: **install the `agy` CLI** (the in-repo install is the
+  GUI IDE only — get the CLI from `antigravity.google/docs/cli/install`), and note the known
+  **non-TTY stdout drop** on `agy -p` under CI/cron (final output can vanish while exit=0).
+  Dispatch is `agy --headless --approve auto -p "<prompt>" --model <m>` (config `baseArgs` +
+  `promptMode: "arg"`; set `promptMode: "stdin"` if your build reads the prompt on stdin).
 
 > ⚠️ Rotating multiple subscriptions to extend a combined usage limit may breach the provider's ToS
 > (OpenAI / Google). These are your accounts; the mechanism is provided — the policy call is yours.
 
-## Inspect (you can check + manage accounts)
+## Account Pool UI — login + manage + monitor in one place (:4577 → 🔑 Account Pool)
+
+A single tab in the dashboard for the whole pool. Read side polls `GET /api/accounts` every 4s;
+write side is **localhost-only** (`isLocal(req)` guards every `POST /api/accounts/*`).
+
+- **Monitor** — per-account card: `● live` / `⏳ cooldown Nm`, `uses`, tokens, `$cost`; per-provider
+  header shows `configured/total` + cooling count.
+- **Manage** — rotation dropdown (round-robin / least-used / failover) and enable/disable per provider
+  (writes `config.json`, BOM-preserving, and syncs the running engine's in-memory config +
+  drops the provider registry cache so it takes effect immediately); **clear cooldown** and
+  **reset usage** per account (writes `store/.accounts-state.json`).
+- **Login** — two kinds:
+  - **key accounts** (openrouter, antigravity) → a paste-token field per card → `POST /api/accounts/key`
+    writes `accounts.local.json` (merge by id). The token value is **never** returned by any GET.
+  - **login-dir accounts** (codex, claude) → a **login / re-login** button → `POST /api/accounts/login`
+    spawns the CLI OAuth (`CODEX_HOME=<dir> codex login` / `CLAUDE_CONFIG_DIR=<dir> claude /login`) with
+    the right dir env; the browser flow completes outside, then the card flips to `● live` on next poll.
+
+Endpoints (all POSTs localhost-only): `POST /api/accounts/key` `{provider,id,apiKey}` ·
+`POST /api/accounts/login` `{provider,id}` · `POST /api/accounts/manage`
+`{action: enable|disable|rotation|reset-cooldown|reset-usage, provider, id?, rotation?}`.
+Logic lives in `accounts-admin.mjs` (6 unit tests, `accounts-admin.test.mjs`).
+
+## Inspect (CLI)
 
 - **CLI:** `node orchestrator.mjs accounts` — prints every provider's accounts with `● live` /
   `○ cooldown <m>m`, `uses`, `tokens`, and `cost`.
-- **API:** `GET /api/accounts` (server.mjs) returns the same per-account status as JSON — the data
-  hook for a Cockpit/Loadout tile (per-account usage bar + cooldown).
 - **Add an account:** drop it in `config.json → providers.<name>.accounts[]` (id + `configDir` for a
-  login dir, or id + `envKey` for a key), put any secret in `accounts.local.json`. No code change.
+  login dir, or id + `envKey` for a key), put any secret in `accounts.local.json` (or paste in the UI).
+  No code change.
 
 ## Tests
 

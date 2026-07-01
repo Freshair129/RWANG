@@ -153,18 +153,25 @@ export function selectAccount(providerName, provider, statePath, { now = Date.no
 }
 
 // ── read-only status view (CLI `accounts` + GET /api/accounts) ───────────────────────────────
-export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = Date.now() } = {}) {
-  const reg = loadAccounts(config);
+export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = Date.now(), secretsPath = DEFAULT_SECRETS_PATH } = {}) {
+  // Read secrets too so `configured` reflects a pasted key/token — but only its PRESENCE is
+  // surfaced (the apiKey value itself is never returned).
+  const reg = loadAccounts(config, { secretsPath });
   const state = loadState(statePath);
   return Object.entries(reg).map(([provider, prov]) => {
     const ps = state[provider] || { accounts: {} };
     return {
       provider, rotation: prov.rotation,
+      enabled: config.providers?.[provider]?.enabled !== false,
       accounts: prov.accounts.map((a) => {
         const u = (ps.accounts || {})[a.id] || {};
         const cd = u.cooldownUntil || 0;
+        // kind drives the UI: login-dir accounts need a browser OAuth (codex/claude);
+        // key accounts need a pasted token (antigravity/openrouter). configured = secret/dir present.
+        const kind = a.configDir ? "login" : "key";
         return {
-          id: a.id, live: !(cd > now), cooldownUntil: cd, cooldownMs: Math.max(0, cd - now),
+          id: a.id, kind, configured: !!(a.configDir || a.apiKey),
+          live: !(cd > now), cooldownUntil: cd, cooldownMs: Math.max(0, cd - now),
           uses: u.uses || 0, cost: u.cost || 0, tokens: u.tokens || 0,
         };
       }),

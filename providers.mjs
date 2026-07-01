@@ -20,6 +20,9 @@ function accountRegistry(config) {
   if (!_ACCT_REG) _ACCT_REG = loadAccounts(config, { secretsPath: ACCOUNTS_SECRETS });
   return _ACCT_REG;
 }
+// Drop the cached registry so the next dispatch re-reads config.json + accounts.local.json.
+// Called by the Account Pool admin routes after a key paste / enable / rotation change.
+export function resetAccountRegistry() { _ACCT_REG = null; }
 
 // ─── capability tags ───
 export const CAPS = Object.freeze({
