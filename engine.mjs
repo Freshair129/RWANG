@@ -46,7 +46,7 @@ export function modelFor(task, state) {
   }
   const role = ownerRole(st?.owner) || roleFor(task);
   if (role === "manual" || role === null) return null;
-  const resolved = resolveForRole(role, CONFIG);
+  const resolved = resolveForRole(role, CONFIG, false, { costMode: state?.mode || "normal" });
   if (!resolved) return null;
   const base = `${resolved.provider}:${resolved.model}`;
   // planner-tiering: auto-downgrade to cheaper model when nearing cost cap (>80% spent)
@@ -117,6 +117,15 @@ export function loadState() {
 }
 
 // ---------- auth (Plan quota ↔ API key — claude provider) ----------
+// ── cost-mode (config--cost-mode): normal | free | local — gate routing to $0 providers ──
+const COST_MODES = ["normal", "free", "local"];
+export function getMode() { return loadState().mode || "normal"; }
+export function setMode(mode) {
+  if (!COST_MODES.includes(mode)) return { ok: false, error: "mode ต้องเป็น normal|free|local" };
+  withLock(() => { const s = loadState(); s.mode = mode; saveState(s); });
+  return { ok: true, mode };
+}
+
 export function getAuthMode() { return loadState().authMode || CONFIG.providers?.claude?.auth?.mode || "plan"; }
 export function setAuthMode(mode) {
   if (!["plan", "apikey"].includes(mode)) return { ok: false, error: "mode ต้องเป็น plan|apikey" };
@@ -324,6 +333,7 @@ export function snapshot() {
     waves: waves().map((w) => w.map((t) => t.id)),
     pool: poolStatus(),
     auth: { mode: cur.authMode || CONFIG.providers?.claude?.auth?.mode || "plan", apiKeyAvailable: apiKeyAvailable() },
+    mode: cur.mode || "normal",
     usage: readUsage(),
     usageLimits: effectiveLimits(cur),
     tasks,
@@ -572,7 +582,7 @@ export function runPool({ mode = "wave", max = CONFIG.concurrency, worker = "poo
 // ---------- Verify Gate (ADR-O-001 / SPEC--VERIFY-GATE) ----------
 function reviewerModelFor(_workerModel) {
   const reviewerRole = CONFIG.review?.reviewerRole || "reviewer";
-  const resolved = resolveForRole(reviewerRole, CONFIG);
+  const resolved = resolveForRole(reviewerRole, CONFIG, false, { costMode: loadState().mode || "normal" });
   return resolved ? `${resolved.provider}:${resolved.model}` : "claude:sonnet";
 }
 export function requireReviewFor(t) {

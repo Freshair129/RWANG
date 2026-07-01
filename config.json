@@ -55,7 +55,8 @@
       "enabled": true,
       "capabilities": [
         "text_gen",
-        "file_edit"
+        "file_edit",
+        "code_review"
       ],
       "transport": "http",
       "host": "http://127.0.0.1:11434",
@@ -307,7 +308,8 @@
       ],
       "preferred": [
         "claude:opus",
-        "claude:sonnet"
+        "claude:sonnet",
+        "ollama:hf.co/unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL"
       ],
       "rotation": "failover"
     },
@@ -527,5 +529,6 @@
       "embedModel": "bge-m3:latest",
       "ollamaHost": "http://127.0.0.1:11434"
     }
-  }
+  },
+  "costMode": "normal"
 }

@@ -483,8 +483,17 @@ function renderMeta(){
         ? `<span class="hint" style="color:#7ee0a0">🦙 ollama up · ${OLLAMA.models.length} model${OLLAMA.models.length!==1?'s':''}</span>`
         : `<span class="hint" style="color:var(--bad)">🦙 ollama down</span>`)
     : "";
+  const m = DATA.mode || "normal";
+  const modeSeg = `<span class="lbl">cost</span><div class="seg">
+    <button class="${m==='normal'?'on':''}" onclick="api('setmode',{mode:'normal'})" title="ทุก provider (คิดเงินได้)">normal</button>
+    <button class="${m==='free'?'on':''}" onclick="api('setmode',{mode:'free'})" title="local + OpenRouter :free เท่านั้น ($0)">🆓 free</button>
+    <button class="${m==='local'?'on':''}" onclick="api('setmode',{mode:'local'})" title="ในเครื่องล้วน ออฟไลน์ ($0)">🖥 local</button>
+  </div>`;
+  const modeNote = m==='free' ? '<span class="hint" style="color:#7ee0a0">$0 · local + OpenRouter free models</span>'
+    : m==='local' ? '<span class="hint" style="color:#7ee0a0">$0 · offline (ollama + local SD)</span>' : '';
   $("#metabar").innerHTML =
     `<div class="authbox"><span class="lbl">auth</span>${seg}${note}${oll?` · ${oll}`:""}</div>`
+    + `<div class="authbox">${modeSeg}${modeNote}</div>`
     + card("Current session","≤"+(u.sessionWindowH||5)+"h", u.session, lim.sessionUsd)
     + card("Weekly","≤"+(u.weekWindowD||7)+"d", u.weekly, lim.weeklyUsd);
 }

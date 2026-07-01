@@ -57,15 +57,34 @@ export function parseModel(model) {
 }
 
 // ─── resolve model for a role using fallback chain ───
-const LOCAL_PROVIDERS = new Set(["ollama"]);
-export function resolveForRole(roleName, config, preferLocal = false) {
+// Local = zero-cost, on-box (the image local runner counts as local too).
+const LOCAL_PROVIDERS = new Set(["ollama", "local-image"]);
+export function isLocalProvider(p) { return LOCAL_PROVIDERS.has(p); }
+
+// Cost-mode gate (config--cost-mode): constrain the preferred chain to $0 providers.
+//   "normal" → everything · "local" → local providers only (fully offline) ·
+//   "free"   → local + OpenRouter *:free* models (network but $0 billing). Paid providers
+//   (claude / codex / openai-image / non-free openrouter) are excluded under free/local.
+export function isAllowedUnderMode(pref, costMode = "normal") {
+  if (!costMode || costMode === "normal") return true;
+  const parsed = parseModel(pref);
+  if (!parsed) return false;
+  if (LOCAL_PROVIDERS.has(parsed.provider)) return true;
+  if (costMode === "free" && (parsed.provider === "openrouter" || parsed.provider === "openrouter-image")) {
+    return /:free$/i.test(parsed.model || "");
+  }
+  return false;
+}
+
+export function resolveForRole(roleName, config, preferLocal = false, { costMode = "normal" } = {}) {
   const role = config.roles?.[roleName];
   if (!role?.preferred?.length) return null;
-  const prefs = preferLocal ? [...role.preferred].sort((a, b) => {
+  let prefs = preferLocal ? [...role.preferred].sort((a, b) => {
     const aLocal = LOCAL_PROVIDERS.has(parseModel(a)?.provider);
     const bLocal = LOCAL_PROVIDERS.has(parseModel(b)?.provider);
     return (bLocal ? 1 : 0) - (aLocal ? 1 : 0);
   }) : role.preferred;
+  prefs = prefs.filter((pref) => isAllowedUnderMode(pref, costMode)); // cost-mode gate
   for (const pref of prefs) {
     const parsed = parseModel(pref);
     if (!parsed) continue;
