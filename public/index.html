@@ -525,6 +525,10 @@ async function acctPost(path, body){
   loadAcct(); return j;
 }
 function renderAcctPool(){
+  // don't wipe a token the user is mid-typing: skip the 4s auto re-render while a key field is
+  // focused or already has a value (it would blow away the input before they hit save).
+  const editing = document.querySelector('#pool .keyrow input:focus') || [...document.querySelectorAll('#pool .keyrow input')].some(i=>i.value.trim());
+  if(editing) return;
   if(!ACCT.length){ $("#pool").innerHTML=`<div class="empty">ยังไม่มี provider ที่ลงทะเบียน account<br><span style="font-size:12px">เพิ่มใน <b>config.json → providers.&lt;name&gt;.accounts[]</b></span></div>`; return; }
   const warn = `<div class="warnbox">⚠ การหมุนหลาย subscription เพื่อรวมโควต้าอาจผิด ToS ของผู้ให้บริการ (OpenAI/Google) — เป็นบัญชีของคุณเอง คุณตัดสินใจ · secret เก็บใน <b>accounts.local.json</b> (ไม่เข้า git) · หน้านี้แก้ไขได้จาก localhost เท่านั้น</div>`;
   $("#pool").innerHTML = warn + ACCT.map(pgHTML).join("");
