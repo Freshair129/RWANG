@@ -88,7 +88,12 @@
           "num_ctx": 16384
         }
       },
-      "defaultToolsProfile": "tools"
+      "defaultToolsProfile": "tools",
+      "vram": {
+        "serialize": true,
+        "keepResidentPatterns": [],
+        "_comment": "serialize big-model loading on 12GB GPU: unload other resident models before dispatch; keep embeddings + sub-1B. false=off."
+      }
     },
     "codex": {
       "enabled": false,

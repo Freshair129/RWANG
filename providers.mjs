@@ -12,6 +12,17 @@ import { join, resolve, isAbsolute, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAccounts, applyAccount, selectAccount, parseLimit } from "./accounts.mjs";
 import { runImage } from "./image.mjs";
+import { ensureVram } from "./ollama-vram.mjs";
+
+// Serialize big-model loading on a VRAM-tight GPU: unload other resident models before dispatching
+// (keeps embeddings + sub-1B). Best-effort; disable with providers.ollama.vram.serialize=false.
+async function ollamaVramGuard(prov, host, model, ws) {
+  if (prov.vram?.serialize === false) return;
+  try {
+    await ensureVram({ host, target: model, patterns: prov.vram?.keepResidentPatterns || [],
+      onLog: (m) => ws.write(`# ${m}\n`) });
+  } catch { /* never block dispatch on VRAM housekeeping */ }
+}
 
 const __accdir = dirname(fileURLToPath(import.meta.url));
 const ACCOUNTS_STATE = join(__accdir, "store", ".accounts-state.json");
@@ -308,6 +319,7 @@ async function runOllama(t, model, worker, prompt, config, paths, opts) {
   const host = (prov.host || "http://127.0.0.1:11434").replace(/\/$/, "");
   const profile = opts.profile || prov.defaultProfile || "balanced";
   const options = (prov.profiles || {})[profile] || {};
+  await ollamaVramGuard(prov, host, model, ws); // serialize: unload other big models first
   let inTok = 0, outTok = 0, ok = false, acc = "", blocked = false, empty = false;
   try {
     const payload = {
@@ -448,6 +460,7 @@ async function runOllamaTools(t, model, worker, prompt, config, paths, opts) {
   const profile = opts.profile || prov.defaultToolsProfile || prov.defaultProfile || "balanced";
   const options = (prov.profiles || {})[profile] || {};
   ws.write(`# ${t.id} · ${worker} · ollama:${model} · provider=ollama(tools) · profile=${profile} · started ${new Date().toISOString()}\n# ● ollama ${model} (no quota / $0)\n\n`);
+  await ollamaVramGuard(prov, host, model, ws); // serialize: unload other big models first
 
   const messages = [{ role: "user", content: prompt }];
   let inTok = 0, outTok = 0, acc = "", blocked = false, ok = false;
