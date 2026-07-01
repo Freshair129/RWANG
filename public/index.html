@@ -153,12 +153,15 @@
   @media (max-width:680px){ .acctgrid{ grid-template-columns:minmax(0,1fr); } }
 
   .card{ perspective:1600px; }
-  .card-in{ position:relative; width:100%; min-height:198px; transition:transform .55s cubic-bezier(.4,.15,.2,1); transform-style:preserve-3d; }
+  .card-in{ position:relative; width:100%; transition:transform .55s cubic-bezier(.4,.15,.2,1); transform-style:preserve-3d; }
   .card.flipped .card-in{ transform:rotateY(180deg); }
-  .face{ position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden;
-    border:1px solid var(--line); border-radius:16px; padding:15px 17px; display:flex; flex-direction:column; gap:11px; overflow:hidden;
+  .face{ backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    border:1px solid var(--line); border-radius:16px; padding:15px 17px; display:flex; flex-direction:column; gap:10px;
     background:linear-gradient(158deg, rgba(30,35,48,.92), rgba(15,17,25,.95)); box-shadow:0 8px 30px rgba(0,0,0,.35); }
-  .face.back{ transform:rotateY(180deg); gap:9px; }
+  /* front is IN-FLOW so the card grows to fit its content (no fixed height → no clipping);
+     back overlays the same box and scrolls if it's ever taller */
+  .face.front{ position:relative; }
+  .face.back{ position:absolute; inset:0; transform:rotateY(180deg); gap:9px; overflow:auto; }
   .card.cool .face{ border-color:rgba(255,207,107,.45); }
   .card.off .face{ opacity:.6; }
 
