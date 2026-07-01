@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { loadAccounts, applyAccount, selectAccount, parseLimit } from "./accounts.mjs";
 import { runImage } from "./image.mjs";
 import { ensureVram } from "./ollama-vram.mjs";
+import { wantsTextFile, writeAnswerFile } from "./worker-io.mjs";
 
 // Serialize big-model loading on a VRAM-tight GPU: unload other resident models before dispatching
 // (keeps embeddings + sub-1B). Best-effort; disable with providers.ollama.vram.serialize=false.
@@ -310,7 +311,8 @@ function runClaude(t, model, worker, prompt, config, paths, opts) {
 //  OLLAMA — HTTP streaming (/api/chat)
 // ─────────────────────────────────────────────
 async function runOllama(t, model, worker, prompt, config, paths, opts) {
-  if (config.providers.ollama?.tools) return runOllamaTools(t, model, worker, prompt, config, paths, opts);
+  // text-to-file tasks skip the fragile tool loop: the model writes content, the engine saves it
+  if (config.providers.ollama?.tools && !wantsTextFile(t)) return runOllamaTools(t, model, worker, prompt, config, paths, opts);
   if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
   const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
   const ws = createWriteStream(logFile, { flags: "w" });
@@ -346,7 +348,7 @@ async function runOllama(t, model, worker, prompt, config, paths, opts) {
         if (content) {
           if (inThink && !sawContent) ws.write("\n\n# ── answer ──\n");
           sawContent = true; ws.write(content); acc += content;
-          if (acc.length > 6000) acc = acc.slice(-6000);
+          if (!wantsTextFile(t) && acc.length > 6000) acc = acc.slice(-6000); // keep full text when writing a file
         }
         if (o.error) ws.write(`\n# ollama error: ${o.error}\n`);
         if (o.done) { inTok = o.prompt_eval_count || 0; outTok = o.eval_count || 0; ok = true; }
@@ -354,6 +356,12 @@ async function runOllama(t, model, worker, prompt, config, paths, opts) {
     }
     if (/^[\s>*-]*BLOCKED:/m.test(acc)) { blocked = true; ws.write(`\n# ⚠ ESCALATION: worker ตอบ BLOCKED\n`); }
     if (ok && !acc.trim()) { empty = true; ws.write(`\n# ⚠ ไม่มี answer/content — ถือว่าไม่สำเร็จ\n`); }
+    // text-to-file: the engine writes the model's answer to the atom's target (no tool loop needed)
+    const outTarget = wantsTextFile(t);
+    if (ok && !blocked && !empty && outTarget) {
+      try { const p = writeAnswerFile(paths.ROOT, outTarget, acc); ws.write(`\n# ✅ wrote answer → ${p}\n`); }
+      catch (e) { blocked = true; ws.write(`\n# ⚠ writeOutputTo failed: ${e.message}\n`); }
+    }
     ws.write(`\n\n# done · ${inTok} in / ${outTok} out tokens (local, $0) · profile=${profile}${empty ? " · EMPTY" : ""}\n`);
   } catch (e) {
     ws.write(`\n# ollama error: ${e.message}\n# ตรวจว่า ollama รันอยู่ (ollama serve) และมี model '${model}' (ollama pull ${model})\n`);
@@ -555,7 +563,69 @@ function runCodex(t, model, worker, prompt, config, paths, opts) {
 // ─────────────────────────────────────────────
 //  OPENROUTER — HTTP (OpenAI-compatible API)
 // ─────────────────────────────────────────────
+// Tool loop (OpenAI-compatible /chat/completions with `tools`): lets an OpenRouter model — including
+// a smart `:free` one — do agentic file editing, reusing the same tool schema + executor as ollama.
+// This is what makes free mode capable (a :free model as the coder/worker, not a weak local 4B).
+export async function runOpenRouterTools(t, model, worker, prompt, config, paths, opts) {
+  if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
+  const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
+  const ws = createWriteStream(logFile, { flags: "w" });
+  const prov = config.providers.openrouter;
+  const host = (prov.host || "https://openrouter.ai/api/v1").replace(/\/$/, "");
+  const apiKey = opts.account?.apiKey || prov.auth?.apiKey || process.env[prov.auth?.envKey || "OPENROUTER_API_KEY"];
+  const fetchFn = opts.fetchFn || fetch;
+  ws.write(`# ${t.id} · ${worker} · openrouter:${model} · provider=openrouter(tools) · started ${new Date().toISOString()}\n\n`);
+  if (!apiKey) { ws.write(`# ⚠ no API key for OpenRouter\n`); ws.end(); return { ok: false, logFile, code: -1, provider: "openrouter", usage: {} }; }
+  const messages = [{ role: "user", content: prompt }];
+  let inTok = 0, outTok = 0, acc = "", blocked = false, ok = false;
+  const maxIter = prov.toolsMaxIter || 15;
+  try {
+    for (let iter = 0; iter < maxIter; iter++) {
+      const resp = await fetchFn(`${host}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`,
+          "HTTP-Referer": "https://github.com/Freshair129/G-Maiden", "X-Title": "G-Maiden Orchestrator" },
+        body: JSON.stringify({ model, messages, tools: OLLAMA_TOOLS, tool_choice: "auto" }),
+      });
+      if (!resp.ok) { const err = await resp.text(); throw new Error(`OpenRouter HTTP ${resp.status}: ${err.slice(0, 200)}`); }
+      const o = await resp.json();
+      inTok += o.usage?.prompt_tokens || 0; outTok += o.usage?.completion_tokens || 0;
+      const msg = o.choices?.[0]?.message || {};
+      messages.push(msg);
+      if (msg.tool_calls?.length) {
+        for (const tc of msg.tool_calls) {
+          const fn = tc.function?.name;
+          let parsed; try { parsed = JSON.parse(tc.function?.arguments ?? "{}"); } catch { parsed = {}; }
+          ws.write(`# → tool: ${fn}(${JSON.stringify(parsed)})\n`);
+          const result = execOllamaTool(fn, parsed, paths.ROOT);
+          ws.write(`# ← ${result.slice(0, 300)}${result.length > 300 ? "..." : ""}\n\n`);
+          messages.push({ role: "tool", tool_call_id: tc.id, content: result });
+        }
+      } else { acc = msg.content || ""; ok = true; break; }
+    }
+    if (!ok) ws.write(`\n# ⚠ hit maxIter (${maxIter}) without final answer\n`);
+    if (acc) ws.write(acc);
+    if (/^[\s>*-]*BLOCKED:/m.test(acc)) { blocked = true; ws.write(`\n# ⚠ ESCALATION: agent ตอบ BLOCKED\n`); }
+    const empty = ok && !acc.trim();
+    const outTarget = wantsTextFile(t);
+    if (ok && !blocked && !empty && outTarget) {
+      try { const p = writeAnswerFile(paths.ROOT, outTarget, acc); ws.write(`\n# ✅ wrote answer → ${p}\n`); }
+      catch (e) { blocked = true; ws.write(`\n# ⚠ writeOutputTo failed: ${e.message}\n`); }
+    }
+    ws.write(`\n\n# done · ${inTok} in / ${outTok} out tokens · openrouter(tools):${model}\n`);
+    ws.end();
+    const good = ok && !blocked && !empty;
+    return { ok: good, blocked, empty, logFile, code: good ? 0 : 1, provider: "openrouter", usage: { cost: 0, inTok, outTok, cache: 0 } };
+  } catch (e) {
+    ws.write(`\n# openrouter error: ${e.message}\n`); ws.end();
+    return { ok: false, logFile, code: 1, provider: "openrouter", usage: { cost: 0, inTok, outTok, cache: 0 } };
+  }
+}
+// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
 async function runOpenRouter(t, model, worker, prompt, config, paths, opts) {
+  // agentic file work goes through the tool loop (so OpenRouter incl. :free models can edit files)
+  if (config.providers.openrouter?.tools) return runOpenRouterTools(t, model, worker, prompt, config, paths, opts);
   if (!existsSync(paths.LOGS)) mkdirSync(paths.LOGS, { recursive: true });
   const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
   const ws = createWriteStream(logFile, { flags: "w" });
