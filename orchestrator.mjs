@@ -8,11 +8,67 @@
  *   node orchestrator.mjs assign <id> <model> | reset
  *   node orchestrator.mjs run [--max N] [--execute] [-w name]
  */
+import { join } from "node:path";
 import * as E from "./engine.mjs";
 import { runAutonomous, stopAutonomous } from "./auto-wave.mjs";
 import { accountsStatus, DEFAULT_STATE_PATH } from "./accounts.mjs";
+import { autonomasAsync } from "./gks/autoloop.mjs";
+import { makeEngineDispatch, engineCostRemaining } from "./gks/engine-dispatch.mjs";
+import { assignTier } from "./planner.mjs";
+import { decompose } from "./gks/adaptive-decompose.mjs";
+import { classifyVerdict } from "./gks/verify-gate.mjs";
+import { scoreGoldset } from "./gks/goldset.mjs";
+import { writeNode, writeEdge } from "./store/knowledge.mjs";
 
 const ACTIVE = E.ACTIVE;
+
+// ── auto-loop: the closed autonomous loop (PLAN→BUILD→TEST→BENCH→refine), engine-bound ──
+// Dry-run shows the decomposition + tiers; --execute runs the governed loop for real (stops on
+// target / plateau / round-cap / cost-cap; checkpoints every round so a crash resumes).
+async function cmdAutoLoop(goalId, { target, maxRounds, execute, executor }) {
+  const goal = E.byId(goalId);
+  if (!goal) { console.error(`ERROR: ไม่พบ atom '${goalId}' ใน backlog`); process.exitCode = 1; return; }
+
+  let leaves = [];
+  try { leaves = decompose(goal, { executorCapability: executor, assignTier }) || []; }
+  catch (e) { console.error("ERROR: decompose ล้ม — " + e.message); process.exitCode = 1; return; }
+
+  console.log(`\n  🔁 auto-loop: ${goalId} — "${goal.title}"`);
+  console.log(`  executor=${executor} · decompose → ${leaves.length} leaf(s):`);
+  for (const l of leaves) {
+    const real = !!E.byId(l.id);
+    let tier = "?"; try { tier = JSON.stringify(assignTier(l)); } catch { /* */ }
+    console.log(`    - ${l.id.padEnd(18)} tier=${tier}${real ? "" : "  ⚠ synthetic (not a backlog atom → skipped in dispatch)"}`);
+  }
+
+  if (!execute) {
+    console.log(`\n  DRY-RUN. ใส่ --execute เพื่อรันจริง (ปล่อยต่อเนื่องจนถึง target/plateau/cost-cap — ใช้โทเค็นจริง).\n`);
+    return;
+  }
+
+  const runDir = join(E.PATHS.LOGS, "auto-loop", goalId.replace(/[^\w.-]/g, "_"));
+  // traceability: record each round + link it to the goal via the knowledge store (best-effort)
+  const store = {
+    recordOutcome: (o) => writeNode(E.CONFIG, { id: `${o.goal}#r${o.round}`, labels: ["AutoloopRound"],
+      props: { status: o.status, score: o.score, round: o.round, goal: o.goal }, text: `autoloop ${o.goal} round ${o.round} → ${o.status}` }).catch(() => {}),
+    linkTrace: (from, to, meta) => writeEdge(E.CONFIG, { from, to, rel: meta?.rel || "refined_in_round" }).catch(() => {}),
+  };
+  const gateCtx = {
+    reviewEnabled: E.CONFIG.review?.enabled !== false,
+    atCap: engineCostRemaining(E) <= 0, offline: false, governance: false, workerTier: "local",
+  };
+  const dispatchWave = makeEngineDispatch({ engine: E, worker: "auto-loop", onLog: (m) => console.log("  " + m) });
+
+  console.log(`\n  ▶ EXECUTE auto-loop — target=${target} max-rounds=${maxRounds} · cost-cap governs (Ctrl+C to stop)\n`);
+  const res = await autonomasAsync(goal, {
+    assignTier, decompose, classifyVerdict, scoreGoldset, dispatchWave,
+    store, labels: [], executorCapability: executor, runDir, gateCtx,
+  }, { target, maxRounds, costRemaining: () => engineCostRemaining(E) });
+
+  console.log(`\n  === auto-loop done ===`);
+  console.log(`  stop: ${res.stopReason}${res.done ? " ✅ target-met" : ""} · rounds: ${res.rounds} · best score: ${res.score}`);
+  console.log(`  checkpoint: ${join(runDir, "autoloop.checkpoint.json")}\n`);
+}
 
 function cmdAccounts() {
   const rows = accountsStatus(E.CONFIG, DEFAULT_STATE_PATH);
@@ -155,7 +211,13 @@ try {
       concurrency: Number(arg(["--max", "--concurrency"], 0)) || E.CONFIG.concurrency,
       dryRun: process.argv.includes("--dry-run"),
     }); break;
+    case "auto-loop": await cmdAutoLoop(a1, {
+      target: Number(arg(["--target"], 0)) || 1.0,
+      maxRounds: Number(arg(["--max-rounds"], 0)) || 5,
+      executor: arg(["--executor"], "frontier"),
+      execute: process.argv.includes("--execute"),
+    }); break;
     case "stop": stopAutonomous(); console.log("→ pool stop requested"); break;
-    default: console.log("commands: status | accounts | next | graph [--mermaid] | claim <id> [-w name] | release|done|fail <id> | assign <id> <model> | run [--max N] [--execute] | auto-wave [--max-waves N] [--supervisor MODEL] [--max N] [--dry-run] | stop | reset");
+    default: console.log("commands: status | accounts | next | graph [--mermaid] | claim <id> [-w name] | release|done|fail <id> | assign <id> <model> | run [--max N] [--execute] | auto-wave [--max-waves N] [--supervisor MODEL] [--max N] [--dry-run] | auto-loop <goalId> [--target 1.0] [--max-rounds 5] [--executor frontier] [--execute] | stop | reset");
   }
 } catch (e) { console.error("ERROR: " + e.message); process.exitCode = 1; }
