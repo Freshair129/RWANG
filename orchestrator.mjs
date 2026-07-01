@@ -18,6 +18,7 @@ import { assignTier } from "./planner.mjs";
 import { decompose } from "./gks/adaptive-decompose.mjs";
 import { classifyVerdict } from "./gks/verify-gate.mjs";
 import { scoreGoldset } from "./gks/goldset.mjs";
+import { makeRcaRefine } from "./gks/refine.mjs";
 import { writeNode, writeEdge } from "./store/knowledge.mjs";
 
 const ACTIVE = E.ACTIVE;
@@ -60,9 +61,10 @@ async function cmdAutoLoop(goalId, { target, maxRounds, execute, executor }) {
   const dispatchWave = makeEngineDispatch({ engine: E, worker: "auto-loop", onLog: (m) => console.log("  " + m) });
 
   console.log(`\n  ▶ EXECUTE auto-loop — target=${target} max-rounds=${maxRounds} · cost-cap governs (Ctrl+C to stop)\n`);
+  const refine = makeRcaRefine({ onFailure: (reasons, round) => console.log(`  ⟲ refine r${round}: ${reasons.slice(0, 3).join(" · ")}`) });
   const res = await autonomasAsync(goal, {
     assignTier, decompose, classifyVerdict, scoreGoldset, dispatchWave,
-    store, labels: [], executorCapability: executor, runDir, gateCtx,
+    store, labels: [], executorCapability: executor, runDir, gateCtx, refine,
   }, { target, maxRounds, costRemaining: () => engineCostRemaining(E) });
 
   console.log(`\n  === auto-loop done ===`);

@@ -81,10 +81,23 @@ so the loop is unit-testable and decoupled from `engine.mjs`.
    round → crash-resume). Tests: `gks/engine-dispatch.test.mjs` (5), `gks/autoloop-async.test.mjs`
    (6). Note: reviewer issue *text* lands in the async knowledge store, so the binding derives the
    verdict from the final dispatch status (the one decision the gate needs), not from stored issues.
-2. **goldset growth** — the shipped `goldset.data.json` is a 6-entry seed; grow it before flipping
-   `autoSpendAllowed` on for real auto-spend.
-3. **refine hook** — `autonomas` ships a pass-through `refine`; wire it to the RCA/anti-error-loop
-   (G1/G2/G3) so failed rounds inject past mistakes (see `docs/guides/small-model-prompting.md`).
+2. ✅ **Goldset growth — DONE.** `goldset.data.json` grown 6 → 11 with definitional ground-truth
+   verdict combinations (multi-severity: `major+minor`→rework, `critical+major`→fail, etc. — the
+   labels are rule-defined, not fabricated predictions). `appendGoldset(entries, {path})` added to
+   `gks/goldset.mjs` (dedup by id, persists) so curated growth continues toward a trustworthy size
+   before `autoSpendAllowed` is flipped on. Never auto-labels predictions. Tests:
+   `gks/goldset-append.test.mjs` (2); the existing half-wrong test made size-agnostic.
+3. ✅ **Refine hook — DONE.** `autonomas`/`autonomasAsync` now take an injectable `refine`;
+   `gks/refine.mjs` `makeRcaRefine({ onFailure })` is the RCA/anti-error-loop step: it extracts WHY a
+   round failed (from the round's `classifyVerdict` reasons / plateau score) and accumulates them onto
+   `spec.priorIssues` (deduped, capped), firing `onFailure(reasons, round)` for telemetry — the G1
+   signal from `docs/guides/small-model-prompting.md`. It complements the engine's existing
+   knowledge-store L1 injection (`onRound` records the failed round → `engine.queryPastMistakes`
+   injects it at the next dispatch). Primitive specs are returned unchanged (decompose expects the
+   atom object); the CLI wires it into `auto-loop`. Tests: `gks/refine.test.mjs` (6, incl. an
+   `autonomasAsync` integration proving refine fires on failing rounds).
+
+**All three P0 follow-ups are now closed** — the autonomous engine is fully wired. Full suite 162/162.
 
 ## Provenance
 

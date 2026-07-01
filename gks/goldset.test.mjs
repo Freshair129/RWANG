@@ -43,12 +43,12 @@ test("perfect predictions → accuracy 1.0, pass true, autoSpendAllowed true", (
   assert.equal(autoSpendAllowed(score), true);
 });
 
-test("half-wrong predictions → accuracy 0.5, pass false, autoSpendAllowed false", () => {
+test("half-wrong predictions → below threshold, pass false, autoSpendAllowed false", () => {
+  // corrupt every other label; assert the gate CLOSES (size-agnostic so the gold-set can grow)
   const preds = LABELS.map((l, i) =>
     i % 2 === 0 ? predict(l) : { id: l.id, tier: "H9-WRONG", verdict: "WRONG" });
   const score = scoreGoldset(preds, LABELS);
-  assert.equal(score.tierAccuracy, 0.5);
-  assert.equal(score.verdictAccuracy, 0.5);
+  assert.ok(score.verdictAccuracy < 0.8, `verdictAccuracy ${score.verdictAccuracy} should be below threshold`);
   assert.equal(score.pass, false);
   assert.equal(autoSpendAllowed(score), false);
 });
