@@ -13,7 +13,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expandHome, DEFAULT_STATE_PATH, DEFAULT_SECRETS_PATH } from "./accounts.mjs";
 
@@ -122,7 +122,10 @@ export function startLogin({ provider, id } = {}, { config, spawnFn = spawn, roo
   }
   const { acc } = findAccount(config, provider, id);
   if (!acc.configDir) throw new Error(`${provider}/${id} has no configDir to log into`);
-  const dir = expandHome(acc.configDir);
+  // codex/claude REQUIRE the config dir to exist before login (else "CODEX_HOME ... does not exist").
+  // normalize() also fixes the mixed C:\Users\x/.codex-1 slashes that some CLIs reject on Windows.
+  const dir = normalize(expandHome(acc.configDir));
+  try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
   const env = { ...process.env, [spec.envKey]: dir };
   const cmdline = `${spec.envKey}=${acc.configDir} ${spec.cmd} ${spec.args.join(" ")}`;
   let started = false, error = null;
