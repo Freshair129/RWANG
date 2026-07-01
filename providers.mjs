@@ -11,6 +11,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { join, resolve, isAbsolute, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAccounts, applyAccount, selectAccount, parseLimit } from "./accounts.mjs";
+import { runImage } from "./image.mjs";
 
 const __accdir = dirname(fileURLToPath(import.meta.url));
 const ACCOUNTS_STATE = join(__accdir, "store", ".accounts-state.json");
@@ -34,12 +35,13 @@ export const CAPS = Object.freeze({
   VISION:        "vision",
   LONG_CONTEXT:  "long_context",
   SANDBOX:       "sandbox",
+  IMAGE_GEN:     "image_gen",
 });
 
 // ─── model string parsing ───
 // format: "provider:model" — e.g. "claude:opus", "ollama:gemma4", "openrouter:anthropic/claude-sonnet-4"
 // legacy bare names ("opus", "sonnet", "haiku") → claude:name for backward compat
-const KNOWN_PREFIXES = new Set(["claude", "ollama", "codex", "openrouter", "antigravity"]);
+const KNOWN_PREFIXES = new Set(["claude", "ollama", "codex", "openrouter", "antigravity", "openai-image", "local-image", "openrouter-image"]);
 
 export function parseModel(model) {
   if (!model || typeof model !== "string") return null;
@@ -86,6 +88,8 @@ export async function checkHealth(providerName, config) {
     case "codex": return checkSubprocessHealth(prov, "codex");
     case "openrouter": return checkOpenRouterHealth(prov);
     case "antigravity": return checkSubprocessHealth(prov, "antigravity");
+    case "openai-image": case "openrouter-image": return checkImageHealth(prov);
+    case "local-image": return checkA1111Health(prov);
     default: return { up: false, reason: "unknown provider" };
   }
 }
@@ -122,6 +126,19 @@ async function checkOpenRouterHealth(prov) {
     });
     return r.ok ? { up: true } : { up: false, reason: `HTTP ${r.status}` };
   } catch (e) { return { up: false, reason: e.message }; }
+}
+
+// image providers: OpenAI-compatible = key present; A1111 = local API reachable.
+function checkImageHealth(prov) {
+  const key = prov.auth?.apiKey || process.env[prov.apiKeyEnv || prov.auth?.envKey || "OPENAI_API_KEY"];
+  return Promise.resolve(key ? { up: true } : { up: false, reason: `no API key (${prov.apiKeyEnv || "OPENAI_API_KEY"})` });
+}
+async function checkA1111Health(prov) {
+  const host = (prov.host || "http://127.0.0.1:7860").replace(/\/$/, "");
+  try {
+    const r = await fetch(`${host}/sdapi/v1/sd-models`, { signal: AbortSignal.timeout(1500) });
+    return r.ok ? { up: true } : { up: false, reason: `HTTP ${r.status}` };
+  } catch (e) { return { up: false, reason: `A1111 not reachable: ${e.message}` }; }
 }
 
 function checkSubprocessHealth(prov, name) {
@@ -170,18 +187,28 @@ export function childEnvFor(providerName, config, account = null, provReg = null
 }
 
 // ─── main dispatch ───
-const RUNNERS = { claude: runClaude, ollama: runOllama, codex: runCodex, openrouter: runOpenRouter, antigravity: runAntigravity };
+const RUNNERS = {
+  claude: runClaude, ollama: runOllama, codex: runCodex, openrouter: runOpenRouter, antigravity: runAntigravity,
+  "openai-image": runImage, "local-image": runImage, "openrouter-image": runImage,
+};
 
 export async function runProvider(providerName, task, model, worker, prompt, config, paths, opts = {}) {
   const runner = RUNNERS[providerName];
   if (!runner) return { ok: false, error: `unknown provider: ${providerName}`, code: -1 };
 
+  // providerName lets image (and other multi-name) runners resolve their own config block.
+  opts = { ...opts, providerName };
+
   // Multi-account rotation: if this provider registered accounts, pick one (spreading quota,
   // skipping cooled-down ones), apply it to the child env, then record usage + cooldown after.
+  // Per-role rotation override (article's cache-vs-quota split): the task's role can pin its own
+  // policy — cache-heavy roles run sticky (failover), quota-heavy/parallel roles run round-robin.
   const provReg = accountRegistry(config)[providerName];
   let sel = null;
   if (provReg && provReg.accounts?.length) {
-    sel = selectAccount(providerName, provReg, ACCOUNTS_STATE);
+    const role = config.routing?.[task?.type];
+    const rotationOverride = (role && config.roles?.[role]?.rotation) || null;
+    sel = selectAccount(providerName, provReg, ACCOUNTS_STATE, { rotationOverride });
     if (!sel.account) {
       return { ok: false, blocked: true, code: -2, provider: providerName, usage: {},
         error: `all ${providerName} accounts are cooling down (quota) — downgrade or wait for reset` };

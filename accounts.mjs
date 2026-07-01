@@ -66,7 +66,7 @@ export function applyAccount(account, provider, env = {}) {
 
 // ── pick the next usable account (skips cooling-down ones) ───────────────────────────────────
 // state shape per provider: { rrIndex, accounts: { [id]: { uses, cost, tokens, cooldownUntil } } }
-export function pickAccount(provider, pstate, { now = Date.now() } = {}) {
+export function pickAccount(provider, pstate, { now = Date.now(), rotationOverride = null } = {}) {
   const accounts = provider?.accounts || [];
   if (!accounts.length) return null;
   const st = pstate || {};
@@ -74,7 +74,9 @@ export function pickAccount(provider, pstate, { now = Date.now() } = {}) {
   const live = accounts.filter((a) => !((acc[a.id]?.cooldownUntil || 0) > now));
   if (!live.length) return null; // all cooling down -> caller escalates (downgrade/local/pause)
 
-  const pol = provider.rotation || "round-robin";
+  // rotationOverride lets a workload pick its own policy (article's insight): cache-heavy roles run
+  // "failover" (sticky → preserve prompt cache); quota-heavy/parallel roles run "round-robin".
+  const pol = rotationOverride || provider.rotation || "round-robin";
   if (pol === "failover") return live[0];
   if (pol === "least-used") {
     return live.reduce((m, a) =>
@@ -136,10 +138,10 @@ export function saveState(statePath, state) {
 //   applyAccount(sel.account, registry[name], childEnv)
 //   ... run ...
 //   sel.note({ cost, tokens, limited, resetMs })   // persists usage + cooldown + advances RR
-export function selectAccount(providerName, provider, statePath, { now = Date.now() } = {}) {
+export function selectAccount(providerName, provider, statePath, { now = Date.now(), rotationOverride = null } = {}) {
   const state = loadState(statePath);
   const pstate = (state[providerName] = state[providerName] || { rrIndex: 0, accounts: {} });
-  const account = pickAccount(provider, pstate, { now });
+  const account = pickAccount(provider, pstate, { now, rotationOverride });
   return {
     account,
     note(outcome = {}) {
