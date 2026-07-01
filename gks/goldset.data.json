@@ -6,6 +6,11 @@
     { "id": "g-story",      "rung": "story",      "tier": "H2", "issues": [{ "severity": "major" }],        "verdict": "rework" },
     { "id": "g-epic",       "rung": "epic",       "tier": "H3", "issues": [{ "severity": "critical" }],     "verdict": "fail" },
     { "id": "g-phase",      "rung": "phase",      "tier": "H4", "issues": [],                              "verdict": "pass" },
-    { "id": "g-masterplan", "rung": "masterplan", "tier": "H5", "issues": [{ "severity": "critical" }],     "verdict": "fail" }
+    { "id": "g-masterplan", "rung": "masterplan", "tier": "H5", "issues": [{ "severity": "critical" }],     "verdict": "fail" },
+    { "id": "v-two-minor",     "issues": [{ "severity": "minor" }, { "severity": "minor" }],    "verdict": "pass" },
+    { "id": "v-major-minor",   "issues": [{ "severity": "major" }, { "severity": "minor" }],    "verdict": "rework" },
+    { "id": "v-two-major",     "issues": [{ "severity": "major" }, { "severity": "major" }],    "verdict": "rework" },
+    { "id": "v-critical-major","issues": [{ "severity": "critical" }, { "severity": "major" }], "verdict": "fail" },
+    { "id": "v-critical-minor","issues": [{ "severity": "critical" }, { "severity": "minor" }], "verdict": "fail" }
   ]
 }

@@ -150,6 +150,7 @@ function _composeAutonomas(goal, deps = {}, opts = {}) {
   const {
     assignTier, decompose, classifyVerdict, scoreGoldset, dispatchWave,
     store = null, labels = [], executorCapability = "frontier", runDir = null, gateCtx = {},
+    refine = null,
   } = deps;
   const gid = goalId(goal);
 
@@ -187,7 +188,7 @@ function _composeAutonomas(goal, deps = {}, opts = {}) {
       }
       return quality;
     },
-    refine: (spec) => spec, // hook point for RCA-driven refinement
+    refine: refine || ((spec) => spec), // injectable RCA/anti-error-loop hook (see gks/refine.mjs)
   };
 
   const onRound = (entry, st) => {

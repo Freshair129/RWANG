@@ -59,7 +59,7 @@ export function autonomyGate({ tiering, verdicts } = {}, threshold = 0.9) {
 // Verify-Gate verdicts against ground-truth labels, BEFORE auto-spend is trusted.
 // This is the gate on the "full autonomous" switch (autoSpendAllowed).
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join } from "node:path";
 
@@ -138,4 +138,29 @@ export function autoSpendAllowed(score, { threshold = 0.8 } = {}) {
   const t = Number(score.tierAccuracy ?? 0);
   const v = Number(score.verdictAccuracy ?? 0);
   return t >= threshold && v >= threshold;
+}
+
+/**
+ * Grow the gold-set: append curated, human-confirmed label entries (deduped by id) to
+ * goldset.data.json (or a given path). This is how the gold-set grows toward a trustworthy size
+ * BEFORE auto-spend is enabled — labels must be ground truth (tier↔rung and verdict↔severity are
+ * rule-defined), never auto-labeled predictions.
+ * @returns {{added:number, total:number, file:string}}
+ */
+export function appendGoldset(entries, { path = null } = {}) {
+  const file = path ? (isAbsolute(path) ? path : join(__dir, path)) : join(__dir, "goldset.data.json");
+  let doc = { labels: [] };
+  if (existsSync(file)) {
+    try { const p = JSON.parse(readFileSync(file, "utf8")); doc = Array.isArray(p) ? { labels: p } : (p || { labels: [] }); }
+    catch { doc = { labels: [] }; }
+  }
+  doc.labels = doc.labels || [];
+  const seen = new Set(doc.labels.map((l) => l.id));
+  const list = Array.isArray(entries) ? entries : [entries];
+  let added = 0;
+  for (const e of list) {
+    if (e && e.id != null && !seen.has(e.id)) { doc.labels.push(e); seen.add(e.id); added++; }
+  }
+  writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
+  return { added, total: doc.labels.length, file };
 }
