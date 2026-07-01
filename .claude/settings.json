@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/open-dashboard.mjs",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

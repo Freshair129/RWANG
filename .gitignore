@@ -35,6 +35,7 @@ Thumbs.db
 .env.*.local
 accounts.local.json
 store/.accounts-state.json
+store/dashboard.log
 
 # Tauri build
 *.exe
