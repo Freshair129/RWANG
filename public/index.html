@@ -611,14 +611,33 @@ function accCard(p,a){
     : (a.kind==="login"?"needs login":"needs token");
   const planBadge = (a.plan&&a.authed) ? `<span class="plan">${esc(a.plan)}${a.tier?` · ${esc(a.tier)}`:''}</span>` : "";
   const w5=a.w5h||{uses:0,tokens:0,resetMs:0}, w7=a.w7d||{uses:0,tokens:0};
-  const cap=p.limit5h||0;
-  const pct=cap?Math.min(100,w5.uses/cap*100):(w5.uses?10:0);
-  const barC=cap?(pct>=100?"var(--bad)":pct>=80?"var(--warn)":"var(--ice)"):"var(--ice-dim)";
-  const rst=fmtDur(w5.resetMs);
-  const quota=`<div class="quota">
-    <div class="qh"><span>Usage · 5h window${cap?'':' <span style="opacity:.6">(ตั้ง cap ที่หัว provider)</span>'}</span>${rst?`<span class="rst ${pct>=80?'hot':''}">⏳ ${rst}</span>`:''}</div>
-    <div class="qtrack"><i style="width:${pct}%;background:${barC}"></i></div>
-    <div class="qf"><span>${w5.uses}${cap?` / ${cap}`:''} uses · ${fmtTok(w5.tokens)} tok</span><span>7d ${w7.uses}${p.limit7d?`/${p.limit7d}`:''}</span></div></div>`;
+  const pq=a.planQuota; // real subscribed-plan quota (OpenRouter today); null elsewhere
+  let stats, quota;
+  if(pq){
+    // ── REAL plan quota from the provider API (OpenRouter: $ usage/limit) ──
+    const money=v=>v==null?'∞':'$'+Number(v).toFixed(v<1?4:2);
+    const hasLim=pq.limit!=null;
+    const pct=hasLim&&pq.limit>0?Math.min(100,(pq.used||0)/pq.limit*100):0;
+    const barC=pct>=90?"var(--bad)":pct>=70?"var(--warn)":"var(--ok,#39d98a)";
+    stats=`<div class="cstats"><div class="stat"><div class="l">SPENT</div><div class="v">${money(pq.used)}</div></div><div class="stat"><div class="l">${hasLim?'PLAN LIMIT':'MODE'}</div><div class="v">${hasLim?money(pq.limit):'PAYG'}</div></div></div>`;
+    quota=`<div class="quota">
+      <div class="qh"><span>Plan quota · live</span><span class="rst">◉ API</span></div>
+      <div class="qtrack"><i style="width:${pct}%;background:${barC}"></i></div>
+      <div class="qf"><span>${money(pq.used)}${hasLim?` / ${money(pq.limit)}`:' spent'}</span><span>${hasLim?`${money(pq.remaining)} left`:'pay-as-you-go'}</span></div></div>`;
+  } else {
+    // ── no provider quota API (claude/codex/antigravity): Rwang-tracked estimate vs your cap ──
+    const noApi=["claude","codex","antigravity"].includes(p.provider);
+    const cap=p.limit5h||0;
+    const pct=cap?Math.min(100,w5.uses/cap*100):(w5.uses?10:0);
+    const barC=cap?(pct>=100?"var(--bad)":pct>=80?"var(--warn)":"var(--ice)"):"var(--ice-dim)";
+    const rst=fmtDur(w5.resetMs);
+    stats=`<div class="cstats"><div class="stat"><div class="l">5H USES</div><div class="v">${w5.uses}<small>${cap?` / ${cap}`:''}</small></div></div><div class="stat"><div class="l">7D USES</div><div class="v">${w7.uses}<small>${p.limit7d?` / ${p.limit7d}`:''}</small></div></div></div>`;
+    const lbl=noApi?`Rwang-tracked · 5h <span class="tip" title="ผู้ให้บริการไม่เปิด API quota ของแพลน (claude/codex/antigravity) — แถบนี้นับจากที่ Rwang ยิงเทียบ cap ที่คุณตั้งเอง ไม่ใช่ยอดจริงของแพลน">ⓘ</span>`:`Usage · 5h${cap?'':' <span style="opacity:.6">(ตั้ง cap ที่หัว provider)</span>'}`;
+    quota=`<div class="quota">
+      <div class="qh"><span>${lbl}</span>${rst?`<span class="rst ${pct>=80?'hot':''}">⏳ ${rst}</span>`:''}</div>
+      <div class="qtrack"><i style="width:${pct}%;background:${barC}"></i></div>
+      <div class="qf"><span>${w5.uses}${cap?` / ${cap}`:''} uses · ${fmtTok(w5.tokens)} tok</span><span>${noApi?'ไม่มี API quota':`7d ${w7.uses}${p.limit7d?`/${p.limit7d}`:''}`}</span></div></div>`;
+  }
   let chips="";
   if(a.canLogin) chips+=`<button class="chip" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${a.authed?'↻ re-login':'🔓 login'}</button>`;
   if(cool) chips+=`<button class="chip" onclick="acctPost('manage',{action:'reset-cooldown',provider:'${p.provider}',id:'${a.id}'})">clear cooldown</button>`;
@@ -637,7 +656,7 @@ function accCard(p,a){
     <div class="face front">
       <div class="chead"><div class="cav">${PEMOJI[p.provider]||'🔌'}</div><div class="cname"><b>${a.id}</b><small>${esc(who)}</small></div>${pill}</div>
       ${planBadge}
-      <div class="cstats"><div class="stat"><div class="l">5H USES</div><div class="v">${w5.uses}<small>${cap?` / ${cap}`:''}</small></div></div><div class="stat"><div class="l">7D USES</div><div class="v">${w7.uses}<small>${p.limit7d?` / ${p.limit7d}`:''}</small></div></div></div>
+      ${stats}
       ${quota}
       <div class="cchips">${chips}</div>
     </div>

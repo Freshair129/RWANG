@@ -10,7 +10,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import * as E from "./engine.mjs";
 import { writeNode, writeEdge, queryNodes } from "./store/knowledge.mjs";
-import { accountsStatus, DEFAULT_STATE_PATH } from "./accounts.mjs";
+import { accountsStatus, fetchPlanQuotas, DEFAULT_STATE_PATH } from "./accounts.mjs";
 import { resetAccountRegistry } from "./providers.mjs";
 import {
   setAccountKey, resetCooldown, resetUsage,
@@ -49,7 +49,16 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, E.snapshot());
     if (req.method === "GET" && url.pathname === "/api/ollama") return send(res, 200, await E.ollamaInfo());
     if (req.method === "GET" && url.pathname === "/api/providers") return send(res, 200, await E.providersInfo());
-    if (req.method === "GET" && url.pathname === "/api/accounts") return send(res, 200, accountsStatus(E.CONFIG, DEFAULT_STATE_PATH));
+    if (req.method === "GET" && url.pathname === "/api/accounts") {
+      const status = accountsStatus(E.CONFIG, DEFAULT_STATE_PATH);
+      // overlay the real subscribed-plan quota where the provider exposes one (OpenRouter today).
+      const quotas = await fetchPlanQuotas(E.CONFIG).catch(() => ({}));
+      for (const p of status) for (const a of p.accounts) {
+        const q = quotas[`${p.provider}/${a.id}`];
+        if (q) a.planQuota = q;
+      }
+      return send(res, 200, status);
+    }
     // ── Account Pool write-side (localhost only): login / paste-key / manage ──
     if (req.method === "POST" && url.pathname.startsWith("/api/accounts/")) {
       if (!isLocal(req)) return send(res, 403, { ok: false, error: "account admin is localhost-only" });

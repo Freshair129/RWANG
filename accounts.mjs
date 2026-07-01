@@ -173,6 +173,38 @@ export function selectAccount(providerName, provider, statePath, { now = Date.no
   };
 }
 
+// ── live PLAN quota (only where the provider actually exposes one) ────────────────────────────
+// The card should show the *subscribed plan's* quota, not Rwang's own dispatch tally. That's only
+// readable for OpenRouter (GET /api/v1/key → usage/limit/limit_remaining, in $). claude/codex/
+// antigravity CLIs write no quota to disk and expose no endpoint, so there is nothing to read —
+// their cards fall back to a Rwang-tracked estimate vs the cap you declare (clearly labelled).
+// Returns a map keyed "<provider>/<id>" → { source, used, limit, remaining, unit }.
+export async function fetchPlanQuotas(config, { secretsPath = DEFAULT_SECRETS_PATH, fetchImpl = fetch } = {}) {
+  const reg = loadAccounts(config, { secretsPath });
+  const out = {};
+  const or = reg.openrouter;
+  if (or) {
+    const host = (config.providers?.openrouter?.host || "https://openrouter.ai/api/v1").replace(/\/$/, "");
+    for (const a of or.accounts) {
+      const key = a.apiKey || (a.envKey && process.env[a.envKey]) || process.env.OPENROUTER_API_KEY;
+      if (!key) continue;
+      try {
+        const r = await fetchImpl(`${host}/key`, {
+          headers: { Authorization: `Bearer ${key}` },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!r.ok) continue;
+        const d = (await r.json())?.data || {};
+        const limit = d.limit ?? null; // null = pay-as-you-go / no hard cap
+        const used = d.usage ?? null;
+        const remaining = d.limit_remaining ?? (limit != null ? Math.max(0, limit - (used || 0)) : null);
+        out[`openrouter/${a.id}`] = { source: "api", used, limit, remaining, unit: "$" };
+      } catch { /* offline / bad key → leave to the Rwang-tracked fallback */ }
+    }
+  }
+  return out;
+}
+
 // ── read-only status view (CLI `accounts` + GET /api/accounts) ───────────────────────────────
 export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = Date.now(), secretsPath = DEFAULT_SECRETS_PATH } = {}) {
   // Read secrets too so `configured` reflects a pasted key/token — but only its PRESENCE is

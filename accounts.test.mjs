@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   loadAccounts, applyAccount, pickAccount, advanceRR,
-  parseLimit, noteResult, selectAccount, accountsStatus,
+  parseLimit, noteResult, selectAccount, accountsStatus, fetchPlanQuotas,
 } from "./accounts.mjs";
 
 const CFG = {
@@ -128,4 +128,37 @@ test("accountsStatus reports per-account live/cooldown + usage (CLI + /api/accou
   assert.equal(b.live, true);
   assert.equal(codex.rotation, "round-robin");
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("fetchPlanQuotas reads OpenRouter's real plan quota via /api/v1/key ($ usage/limit)", async () => {
+  const cfg = { providers: { openrouter: {
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    accounts: [{ id: "or-1", envKey: "OPENROUTER_API_KEY", apiKey: "sk-or-test" }],
+  } } };
+  let hitUrl = null, hitAuth = null;
+  const fetchImpl = async (url, opts) => {
+    hitUrl = url; hitAuth = opts.headers.Authorization;
+    return { ok: true, json: async () => ({ data: { usage: 3.5, limit: 10, limit_remaining: 6.5 } }) };
+  };
+  const q = await fetchPlanQuotas(cfg, { secretsPath: null, fetchImpl });
+  assert.match(hitUrl, /\/key$/);           // hits the key endpoint
+  assert.equal(hitAuth, "Bearer sk-or-test"); // with the account's token
+  const pq = q["openrouter/or-1"];
+  assert.equal(pq.source, "api");
+  assert.equal(pq.used, 3.5);
+  assert.equal(pq.limit, 10);
+  assert.equal(pq.remaining, 6.5);
+});
+
+test("fetchPlanQuotas: no key → no entry; provider with no quota API → not fetched", async () => {
+  const cfg = { providers: {
+    openrouter: { apiKeyEnv: "OPENROUTER_API_KEY", accounts: [{ id: "or-1", envKey: "OPENROUTER_API_KEY" }] },
+    claude: { accountEnv: "CLAUDE_CONFIG_DIR", accounts: [{ id: "claude-1", configDir: "~/.claude-1" }] },
+  } };
+  const prev = process.env.OPENROUTER_API_KEY; delete process.env.OPENROUTER_API_KEY;
+  let called = false;
+  const q = await fetchPlanQuotas(cfg, { secretsPath: null, fetchImpl: async () => { called = true; return { ok: true, json: async () => ({}) }; } });
+  if (prev !== undefined) process.env.OPENROUTER_API_KEY = prev;
+  assert.equal(called, false);              // no key → never fetched
+  assert.deepEqual(q, {});                  // claude has no quota API → absent
 });
