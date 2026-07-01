@@ -138,7 +138,9 @@
         "text_gen",
         "streaming",
         "vision",
-        "long_context"
+        "long_context",
+        "file_edit",
+        "code_review"
       ],
       "transport": "http",
       "host": "https://openrouter.ai/api/v1",
@@ -153,7 +155,9 @@
         "envKey": "OPENROUTER_API_KEY",
         "apiKey": ""
       },
-      "_comment": "OpenRouter unified API. model = provider slug à¹€à¸Šà¹ˆà¸™ 'anthropic/claude-sonnet-4', 'google/gemma-3-27b'. à¹€à¸›à¸´à¸” enabled + à¸•à¸±à¹‰à¸‡ API key."
+      "_comment": "OpenRouter unified API. model = provider slug à¹€à¸Šà¹ˆà¸™ 'anthropic/claude-sonnet-4', 'google/gemma-3-27b'. à¹€à¸›à¸´à¸” enabled + à¸•à¸±à¹‰à¸‡ API key. | tools=true: OpenRouter goes through an OpenAI-compatible tool loop (can edit files). :free models below power free mode — VERIFY slugs exist on OpenRouter.",
+      "tools": true,
+      "toolsMaxIter": 15
     },
     "antigravity": {
       "enabled": false,
@@ -274,6 +278,7 @@
       "preferred": [
         "claude:opus",
         "openrouter:anthropic/claude-sonnet-4",
+        "openrouter:deepseek/deepseek-r1:free",
         "ollama:hf.co/unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL",
         "ollama:gemma4:latest"
       ],
@@ -288,6 +293,7 @@
         "claude:sonnet",
         "codex:o4-mini",
         "antigravity:default",
+        "openrouter:qwen/qwen-2.5-coder-32b-instruct:free",
         "ollama:hf.co/sillykiwi/Aroow-Rust-Coder-9B-Q4_K_S-GGUF:Q4_K_S",
         "ollama:gemma4-rust-coder:latest"
       ],
@@ -300,6 +306,7 @@
       ],
       "preferred": [
         "claude:haiku",
+        "openrouter:meta-llama/llama-3.3-70b-instruct:free",
         "ollama:qwen3.5:4b",
         "ollama:gemma4:latest",
         "openrouter:google/gemma-3-27b"
@@ -314,6 +321,7 @@
       "preferred": [
         "claude:opus",
         "claude:sonnet",
+        "openrouter:deepseek/deepseek-r1:free",
         "ollama:hf.co/unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL"
       ],
       "rotation": "failover"
@@ -324,6 +332,7 @@
         "text_gen"
       ],
       "preferred": [
+        "openrouter:google/gemini-2.0-flash-exp:free",
         "ollama:qwen3.5:4b",
         "claude:haiku",
         "openrouter:google/gemma-3-27b"
