@@ -546,11 +546,14 @@ function pgHTML(p){
     <div class="acctgrid">${p.accounts.map(a=>accCard(p,a)).join("")}</div></div>`;
 }
 function accCard(p,a){
-  const cls = a.live?(a.configured?"":"unconf"):"cool";
-  const dot = a.live?(a.configured?"":"unconf"):"cool";
-  const stTxt = !a.configured ? '<span style="color:var(--mut)">not configured</span>'
-    : a.live ? '<span style="color:var(--ok)">● live</span>'
-    : `<span style="color:var(--warn)">⏳ cooldown ${Math.ceil(a.cooldownMs/60000)}m</span>`;
+  // authed = really usable (login: credential file present; key: token set) — NOT just "not cooling"
+  const cool = !a.live;
+  const cls = cool?"cool":(a.authed?"":"unconf");
+  const dot = cool?"cool":(a.authed?"":"unconf");
+  const idTxt = a.authed
+    ? `<span style="color:var(--ok)">● ${a.email?esc(a.email):(a.kind==="login"?"logged in":"token set")}${a.plan?` · <b>${esc(a.plan)}</b>`:""}${a.tier?` (${esc(a.tier)})`:""}</span>`
+    : (a.kind==="login" ? '<span style="color:var(--warn)">○ not logged in</span>' : '<span style="color:var(--mut)">no token</span>');
+  const stTxt = cool ? `<span style="color:var(--warn)">⏳ cooldown ${Math.ceil(a.cooldownMs/60000)}m</span>` : idTxt;
   let acts = "";
   if(a.kind==="login"){
     acts = `<button class="btn" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${a.configured?'↻ re-login':'🔓 login'}</button>`;

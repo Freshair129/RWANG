@@ -78,8 +78,10 @@ function cmdAccounts() {
   for (const r of rows) {
     console.log(`\n  ${r.provider}  ·  rotation=${r.rotation}`);
     for (const a of r.accounts) {
-      const st = a.live ? "● live" : `○ cooldown ${Math.ceil(a.cooldownMs / 60000)}m`;
-      console.log(`    ${a.id.padEnd(12)} ${st.padEnd(16)} uses=${a.uses}  tokens=${a.tokens}  cost=$${(a.cost || 0).toFixed(4)}`);
+      const st = !a.live ? `○ cooldown ${Math.ceil(a.cooldownMs / 60000)}m`
+        : a.authed ? `● ${a.email || (a.kind === "login" ? "logged in" : "token set")}${a.plan ? " · " + a.plan : ""}`
+        : (a.kind === "login" ? "○ not logged in" : "○ no token");
+      console.log(`    ${a.id.padEnd(12)} ${st.padEnd(34)} uses=${a.uses}  tok=${a.tokens}  $${(a.cost || 0).toFixed(4)}`);
     }
   }
 }
