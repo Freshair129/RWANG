@@ -192,11 +192,14 @@ export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = D
         // authed = REALLY usable: login accounts read the CLI credential file (email/plan too);
         // key accounts are authed once a token is set. This replaces the misleading "live" (=cooldown).
         const ident = kind === "login" ? readLoginIdentity(provider, a.configDir) : { authed: !!a.apiKey };
+        // antigravity authenticates via the Antigravity IDE (Google keyring) — `agy -p` works with no
+        // token, so treat it as authed (identity is fetched live by agy; not readable from disk here).
+        const keyringAuth = provider === "antigravity";
         return {
           id: a.id, kind, configured: !!(a.configDir || a.apiKey),
-          // providers with an interactive OAuth login get a login button (codex/claude=dir, antigravity=keyring)
-          canLogin: ["codex", "claude", "antigravity"].includes(provider),
-          authed: !!ident.authed, email: ident.email || null, plan: ident.plan || null, tier: ident.tier || null,
+          // codex/claude have an interactive CLI login (dir) → login button. antigravity uses the IDE keyring.
+          canLogin: ["codex", "claude"].includes(provider), keyringAuth,
+          authed: keyringAuth ? true : (!!ident.authed), email: ident.email || null, plan: ident.plan || (keyringAuth ? "Antigravity IDE (keyring)" : null), tier: ident.tier || null,
           live: !(cd > now), cooldownUntil: cd, cooldownMs: Math.max(0, cd - now),
           uses: u.uses || 0, cost: u.cost || 0, tokens: u.tokens || 0,
           w5h: windowUsage(u.events, now, H5), w7d: windowUsage(u.events, now, D7),

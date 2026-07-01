@@ -111,10 +111,12 @@ export function setRotation({ provider, rotation } = {}, { configPath = DEFAULT_
 //   keyring   (antigravity):  `agy auth login` → Google OAuth stored in the OS keyring (single global
 //                             session, no dir). agy then works without a token.
 // Returns a descriptor (never the token). openrouter/openai-image are key-only → use setAccountKey.
+// NOTE: antigravity is NOT here — `agy` has no `auth login` subcommand (running it just drops into
+// the interactive agent and hangs). agy authenticates via the Antigravity IDE (Google keyring), so
+// `agy -p` already works with no token; the pool surfaces that instead of a broken login button.
 const LOGIN_SPEC = {
-  codex:       { cmd: "codex",  args: ["login"], envKey: "CODEX_HOME" },
-  claude:      { cmd: "claude", args: ["/login"], envKey: "CLAUDE_CONFIG_DIR" },
-  antigravity: { cmd: "agy",    args: ["auth", "login"], keyring: true },
+  codex:  { cmd: "codex",  args: ["login"], envKey: "CODEX_HOME" },
+  claude: { cmd: "claude", args: ["/login"], envKey: "CLAUDE_CONFIG_DIR" },
 };
 export const LOGIN_PROVIDERS = Object.keys(LOGIN_SPEC); // who shows a login button
 
