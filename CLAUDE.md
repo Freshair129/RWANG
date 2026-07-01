@@ -78,6 +78,32 @@ pnpm -C studio tauri build    # Release build
 - Provider adapters (`providers.mjs`) handle spawn, streaming, cost extraction
 - Claude spawns with `--output-format stream-json --verbose`
 
+### Local-model (SLM) dispatch — read before routing a task to ollama
+
+A local 4B on a non-micro task with missing context **loops on the same failed tool call**
+until `toolsMaxIter` and returns nothing (observed: `qwen3.5:4b` burned 20 iterations, $0,
+no answer). The must-know rules (full guide + benchmarks: `docs/guides/small-model-prompting.md`):
+
+- **Right model for the job.** Implementation/Rust code → **Aroow-9B**
+  (`ollama:hf.co/sillykiwi/Aroow-Rust-Coder-9B-Q4_K_S-GGUF:Q4_K_S`, benchmarked 4/4, warm 2s).
+  Design/quality/review → **Gemma-12B** (`gemma-4-12b-it:UD-Q4_K_XL`) or escalate to Claude.
+  **`qwen3.5:4b` is worker/scout tier (light text only) — never route impl to it.**
+- **Micro-task or don't bother.** 1 prompt = 1 change, ≤150 lines, scaffold-first, send only
+  the relevant lines (never a whole file), append "Output ONLY the code block."
+- **Anti-loop.** Give shortcuts, not broad asks ("mock only X, use `as unknown as`, DO NOT
+  mock every property"). Bounds: `toolsMaxIter: 20`, `maxReworkRounds: 1` then **escalate**.
+  On BLOCKED / overflow → return `BLOCKED:<reason>` and stop, never retry endlessly.
+- **Inject past mistakes (G1/G2/G3).** Failures are stored (`brain/failures.jsonl` + GenesisDB,
+  `bge-m3` embed) and the top-k (`k=3`, `alpha=0.5`, threshold `0.6`) are injected as a
+  `[ANTI-ERROR BLOCK]` into the next prompt. Degrade to static rules + Verify Gate in file mode.
+- **When NOT local.** architecture / PRD / scope-approval / broad multi-subsystem search →
+  `escalate_to_lead`. Local is for extraction / one-line edits / bounded single-file / H0.
+- **Reviewer must out-tier the worker** (ollama→`sonnet`, sonnet→`opus`); a model can't
+  self-review. Gate order: L0 shell (free) → L1 local pre-filter (escalate-only) → L2 paid.
+- **Hardware (3060 12GB):** don't set `num_ctx` globally (cold-load prefill stalls); don't set
+  `OLLAMA_KV_CACHE_TYPE=q8_0`; `num_ctx 8192` sweet spot; keep prompt ≤ `scope.budgetTokens`.
+  `node vram-mode.mjs build|match` toggles the Ollama VRAM budget (~9GB dev / ~3GB gaming).
+
 ### Coding standards
 - ES modules (`import`/`export`)
 - Async/await throughout
