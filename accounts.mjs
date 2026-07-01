@@ -194,6 +194,8 @@ export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = D
         const ident = kind === "login" ? readLoginIdentity(provider, a.configDir) : { authed: !!a.apiKey };
         return {
           id: a.id, kind, configured: !!(a.configDir || a.apiKey),
+          // providers with an interactive OAuth login get a login button (codex/claude=dir, antigravity=keyring)
+          canLogin: ["codex", "claude", "antigravity"].includes(provider),
           authed: !!ident.authed, email: ident.email || null, plan: ident.plan || null, tier: ident.tier || null,
           live: !(cd > now), cooldownUntil: cd, cooldownMs: Math.max(0, cd - now),
           uses: u.uses || 0, cost: u.cost || 0, tokens: u.tokens || 0,

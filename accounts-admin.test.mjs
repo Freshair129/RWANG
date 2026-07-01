@@ -71,10 +71,21 @@ test("setProviderEnabled / setRotation edit config.json and preserve a BOM", () 
   rmSync(d, { recursive: true, force: true });
 });
 
-test("startLogin: key-based provider returns a non-interactive hint (no spawn)", () => {
-  const r = startLogin({ provider: "antigravity", id: "ag-1" }, { config: CFG });
+test("startLogin: key-only provider returns a non-interactive hint (no spawn)", () => {
+  const r = startLogin({ provider: "openrouter", id: "or-1" }, { config: CFG });
   assert.equal(r.interactive, false);
   assert.match(r.hint, /key-based/);
+});
+
+test("startLogin: antigravity logs in via the keyring (agy auth login, no dir env)", () => {
+  let captured = null;
+  const spawnFn = (cmd, args, o) => { captured = { cmd, args, env: o.env }; return { on() {}, unref() {} }; };
+  const r = startLogin({ provider: "antigravity", id: "ag-1" }, { config: CFG, spawnFn });
+  assert.equal(r.ok, true);
+  assert.equal(r.interactive, true);
+  assert.equal(r.keyring, true);
+  assert.match(r.command, /agy auth login/);
+  assert.equal(captured.env.ANTIGRAVITY_TOKEN, undefined); // keyring login sets NO token env
 });
 
 test("startLogin: login-dir provider spawns the login with the right config-dir env", () => {
