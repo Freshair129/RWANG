@@ -1,12 +1,12 @@
 // accounts-admin.test.mjs — write-side (login / manage) acceptance.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   setAccountKey, resetCooldown, resetUsage,
-  setProviderEnabled, setRotation, setUsageLimit, startLogin,
+  setProviderEnabled, setRotation, setUsageLimit, startLogin, clearAccount,
 } from "./accounts-admin.mjs";
 
 function tmp() { return mkdtempSync(join(tmpdir(), "acct-adm-")); }
@@ -54,6 +54,28 @@ test("resetCooldown clears cooldown; resetUsage zeroes counters", () => {
   const r2 = resetUsage({ provider: "codex", id: "codex-1" }, { statePath: sp });
   assert.equal(r2.account.uses, 0);
   assert.equal(r2.account.tokens, 0);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("clearAccount: login-dir deletes credential file; key removes token from secrets", () => {
+  const d = tmp();
+  const cfgPath = join(d, "config.json");
+  const dir5 = join(d, "codexdir");
+  writeFileSync(cfgPath, JSON.stringify({ providers: {
+    codex: { accounts: [{ id: "codex-1", configDir: dir5 }] },
+    openrouter: { apiKeyEnv: "OPENROUTER_API_KEY", accounts: [{ id: "or-1", envKey: "OPENROUTER_API_KEY" }] },
+  } }));
+  const secPath = join(d, "sec.json");
+  // login-dir: write an auth.json then log out → file gone
+  mkdirSync(dir5, { recursive: true });
+  writeFileSync(join(dir5, "auth.json"), "{}");
+  const r1 = clearAccount({ provider: "codex", id: "codex-1" }, { configPath: cfgPath, secretsPath: secPath });
+  assert.equal(r1.loggedOut, true);
+  assert.equal(existsSync(join(dir5, "auth.json")), false);
+  // key: seed a token then clear → gone from secrets
+  writeFileSync(secPath, JSON.stringify({ openrouter: { accounts: [{ id: "or-1", apiKey: "sk-or-x" }] } }));
+  clearAccount({ provider: "openrouter", id: "or-1" }, { configPath: cfgPath, secretsPath: secPath });
+  assert.equal(JSON.parse(readFileSync(secPath, "utf8")).openrouter, undefined);
   rmSync(d, { recursive: true, force: true });
 });
 

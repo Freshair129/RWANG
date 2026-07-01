@@ -14,7 +14,7 @@ import { accountsStatus, DEFAULT_STATE_PATH } from "./accounts.mjs";
 import { resetAccountRegistry } from "./providers.mjs";
 import {
   setAccountKey, resetCooldown, resetUsage,
-  setProviderEnabled, setRotation, setUsageLimit, startLogin,
+  setProviderEnabled, setRotation, setUsageLimit, startLogin, clearAccount,
 } from "./accounts-admin.mjs";
 
 // Account-pool mutations touch secrets on disk — allow them from localhost only.
@@ -71,6 +71,7 @@ const server = createServer(async (req, res) => {
             case "set-limit": r = setUsageLimit({ provider, limit5h: body.limit5h, limit7d: body.limit7d }); syncProvider(provider, { usage: { limit5h: r.limit5h, limit7d: r.limit7d } }); break;
             case "reset-cooldown": r = resetCooldown({ provider, id }); break;
             case "reset-usage": r = resetUsage({ provider, id }); break;
+            case "logout": r = clearAccount({ provider, id }); resetAccountRegistry(); break;
             default: return send(res, 400, { ok: false, error: "unknown manage action: " + action });
           }
           return send(res, 200, r);

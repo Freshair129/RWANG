@@ -11,7 +11,7 @@
 // Secrets are NEVER logged or returned. config.json is preserved byte-for-shape (BOM kept).
 // Zero-dependency Node ESM.
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,6 +67,38 @@ export function setAccountKey(
   if (existing) Object.assign(existing, entry); else list.push(entry);
   writeJson(secretsPath, sec); // no BOM for the local secrets file
   return { ok: true, provider, id, envKey: key, stored: true };
+}
+
+// ── clearAccount (logout): drop the credential so the account is no longer authed ──────────────
+// login-dir (codex/claude) → delete the dir's credential file (a real logout).
+// key (openrouter/…) → remove the pasted token from accounts.local.json.
+// keyring (antigravity) → can't clear the IDE keyring from here; report it.
+export function clearAccount({ provider, id } = {}, { configPath = DEFAULT_CONFIG_PATH, secretsPath = DEFAULT_SECRETS_PATH } = {}) {
+  assertId(id);
+  const config = readJson(configPath);
+  const prov = config.providers?.[provider];
+  if (!prov) throw new Error(`unknown provider: ${provider}`);
+  const acc = (prov.accounts || []).find((a) => a.id === id) || {};
+  if (acc.configDir) {
+    const dir = normalize(expandHome(acc.configDir));
+    const files = provider === "claude" ? [".credentials.json"] : ["auth.json"];
+    const removed = [];
+    for (const f of files) { const p = join(dir, f); try { if (existsSync(p)) { unlinkSync(p); removed.push(f); } } catch { /* */ } }
+    return { ok: true, provider, id, loggedOut: removed.length > 0, hint: removed.length ? `logged out ${provider}/${id}` : `${provider}/${id} was not logged in` };
+  }
+  if (provider === "antigravity") {
+    // token (if any) is removed below; the IDE keyring session can only be cleared from Antigravity itself
+    const sec = readJson(secretsPath);
+    if (sec.antigravity?.accounts) { sec.antigravity.accounts = sec.antigravity.accounts.filter((a) => a.id !== id); writeJson(secretsPath, sec); }
+    return { ok: true, provider, id, hint: "cleared any token — the Antigravity IDE keyring session is managed by the IDE" };
+  }
+  const sec = readJson(secretsPath);
+  if (sec[provider]?.accounts) {
+    sec[provider].accounts = sec[provider].accounts.filter((a) => a.id !== id);
+    if (!sec[provider].accounts.length) delete sec[provider];
+    writeJson(secretsPath, sec);
+  }
+  return { ok: true, provider, id, hint: `cleared token for ${provider}/${id}` };
 }
 
 // ── mutate the per-account state file (cooldown / usage) ───────────────────────────────────────
