@@ -47,6 +47,11 @@
     background:linear-gradient(90deg,var(--ice),#56e0b0); box-shadow:0 0 12px rgba(143,212,255,0.6); }
   .ctrls{ display:flex; align-items:center; gap:8px; }
   button,select,input{ font:inherit; color:var(--txt); }
+  /* native <select> renders light/unreadable on Windows — force a solid dark bg on the box + its options */
+  select.btn,.filters select{ background-color:#161a24; -webkit-appearance:none; appearance:none;
+    padding-right:26px; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 0l5 6 5-6z' fill='%238fd4ff'/></svg>");
+    background-repeat:no-repeat; background-position:right 9px center; }
+  select option{ background-color:#161a24; color:var(--txt); }
   .btn{ background:var(--panel-2); border:1px solid var(--line); border-radius:9px;
     padding:7px 12px; cursor:pointer; transition:.15s; white-space:nowrap; }
   .btn:hover{ border-color:var(--ice-dim); background:rgba(143,212,255,0.10); }
