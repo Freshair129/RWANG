@@ -64,3 +64,22 @@ test("makeEngineDispatch catches a dispatch throw as a critical issue (never cra
   assert.equal(r.ok, false);
   assert.match(r.review.issues[0].detail, /provider exploded/);
 });
+
+test("resets a prior-round failed leaf to todo before re-dispatch; a blocked claim is CRITICAL", async () => {
+  // reproduces the live-run bug: a round-1 failure left the leaf 'failed'; round 2 must reset it,
+  // and a claim that stays blocked must map to a critical review (never a silent pass).
+  const setCalls = [];
+  const engine = {
+    byId: (id) => ({ id }),
+    modelFor: () => "ollama:x",
+    loadState: () => ({ tasks: { L1: { status: "failed" } } }),
+    setStatus: (id, s) => setCalls.push([id, s]),
+    claim: () => ({ ok: false, error: "still blocked" }),
+    executeWithReview: async () => "done",
+    snapshot: () => ({}),
+  };
+  const [r] = await makeEngineDispatch({ engine })([{ id: "L1" }], 2);
+  assert.deepEqual(setCalls[0], ["L1", "todo"]);          // released before claim
+  assert.equal(r.ok, false);
+  assert.equal(r.review.issues[0].severity, "critical");  // blocked claim = critical, not major
+});

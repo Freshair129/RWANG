@@ -95,3 +95,14 @@ test("a mid-loop crash resumes from the last checkpoint", () => {
   assert.ok(r2.history.length >= 2, "resumed past round 1");
   assert.equal(r2.history[0].round, 1);
 });
+
+test("a leaf that did not run (ok:false) fails the gate even with a non-critical review", () => {
+  // regression for the live-run false-target-met: a blocked dispatch carried a `major` review
+  // (which the gate passes) but ok:false — it must NOT count as success.
+  const r = autonomas("g-block", {
+    decompose: () => [{ id: "L1" }],
+    dispatchWave: () => [{ review: { issues: [{ severity: "major" }] }, ok: false }],
+    classifyVerdict: (review) => ({ pass: !(review.issues || []).some((i) => i.severity === "critical") }),
+  }, { target: 1.0, maxRounds: 1, plateauRounds: 5 });
+  assert.equal(r.done, false); // not a false target-met
+});
