@@ -173,13 +173,18 @@ function _composeAutonomas(goal, deps = {}, opts = {}) {
     },
     test(planned) {
       const results = planned.results || [];
-      const verdicts = results.map((r) =>
-        classifyVerdict ? classifyVerdict(r.review, gateCtx) : { pass: r.ok !== false });
+      // A leaf passes only if it actually ran (ok !== false) AND its review has no blocking issue.
+      // Honoring `ok` stops a blocked/failed dispatch (which may carry a non-critical review) from
+      // being counted as a silent pass.
+      const verdicts = results.map((r) => {
+        const gv = classifyVerdict ? classifyVerdict(r.review, gateCtx) : { pass: true };
+        return { ...gv, pass: gv.pass && r.ok !== false };
+      });
       return { ok: verdicts.length > 0 && verdicts.every((v) => v.pass), verdicts };
     },
     benchmark(planned) {
       const results = planned.results || [];
-      const passed = results.filter((r) => !isCritical(r.review)).length;
+      const passed = results.filter((r) => r.ok !== false && !isCritical(r.review)).length;
       const quality = results.length ? passed / results.length : 0;
       // gold-set cross-check feeds the autonomy-trust gate; does not replace build quality
       if (scoreGoldset && labels.length) {

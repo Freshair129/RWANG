@@ -55,11 +55,16 @@ export function makeEngineDispatch({ engine = EngineDefault, worker = "auto-loop
         out.push({ leaf, review: { issues: [] }, ok: true, skipped: true });
         continue;
       }
+      // Retry across rounds: a leaf left failed/needs-rework/active by a prior round must be
+      // released to `todo` before this round can re-dispatch it (else claim is blocked forever).
+      const curStatus = engine.loadState?.().tasks?.[id]?.status;
+      if (curStatus && !["todo", "done"].includes(curStatus)) { try { engine.setStatus?.(id, "todo"); } catch { /* */ } }
       const w = `${worker}-r${round}`;
       const c = engine.claim(id, w);
       if (c && c.ok === false) {
         onLog(`claim ${id} blocked: ${c.error}`);
-        out.push({ leaf, review: { issues: [{ severity: "major", area: "dispatch", detail: c.error }] }, ok: false });
+        // a leaf that could not even be dispatched is a hard failure (critical), never a silent pass
+        out.push({ leaf, review: { issues: [{ severity: "critical", area: "dispatch", detail: c.error }] }, ok: false });
         continue;
       }
       let status;
