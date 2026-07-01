@@ -65,6 +65,14 @@ test("all accounts cooling down returns null (caller escalates)", () => {
   assert.equal(pickAccount(prov, st, { now }), null);
 });
 
+test("rotationOverride pins a per-workload policy over the provider default", () => {
+  // provider default = round-robin (spread); a cache-heavy role overrides to failover (sticky)
+  const prov = CFG.providers.codex; // rotation: round-robin
+  const st = { rrIndex: 1, accounts: {} };
+  assert.equal(pickAccount(prov, st).id, "codex-b");                                  // round-robin honors rrIndex
+  assert.equal(pickAccount(prov, st, { rotationOverride: "failover" }).id, "codex-a"); // sticky -> first live
+});
+
 test("least-used picks the account with fewest uses", () => {
   const prov = { ...CFG.providers.codex, rotation: "least-used" };
   const st = { accounts: { "codex-a": { uses: 5 }, "codex-b": { uses: 1 } } };

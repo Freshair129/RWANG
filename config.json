@@ -1,4 +1,4 @@
-﻿{
+{
   "concurrency": 3,
   "leaseMs": 1800000,
   "providers": {
@@ -189,6 +189,74 @@
         }
       ],
       "_comment": "Antigravity IDE agent. à¹€à¸›à¸´à¸” enabled=true à¹€à¸¡à¸·à¹ˆà¸­à¸•à¸´à¸”à¸•à¸±à¹‰à¸‡à¹à¸¥à¹‰à¸§."
+    },
+    "openai-image": {
+      "enabled": false,
+      "capabilities": [
+        "image_gen"
+      ],
+      "transport": "http",
+      "imageBackend": "openai-compatible",
+      "host": "https://api.openai.com/v1",
+      "model": "gpt-image-1",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "rotation": "round-robin",
+      "defaultSize": "1024x1024",
+      "defaultN": 1,
+      "outDir": "store/assets",
+      "costPerImage": 0.04,
+      "accounts": [
+        {
+          "id": "oai-1",
+          "envKey": "OPENAI_API_KEY"
+        },
+        {
+          "id": "oai-2",
+          "envKey": "OPENAI_API_KEY"
+        }
+      ],
+      "_comment": "gpt-image via OpenAI Images API (generations + edits/img2img). round-robin เฉลี่ย quota + ยิง parallel. ใส่ key ใน accounts.local.json แล้ว enabled=true."
+    },
+    "local-image": {
+      "enabled": false,
+      "capabilities": [
+        "image_gen"
+      ],
+      "transport": "http",
+      "imageBackend": "a1111",
+      "host": "http://127.0.0.1:7860",
+      "model": null,
+      "rotation": "round-robin",
+      "defaultSize": "1024x1024",
+      "defaultN": 1,
+      "outDir": "store/assets",
+      "a1111": {
+        "steps": 28,
+        "cfg_scale": 5,
+        "denoising_strength": 0.6
+      },
+      "_comment": "Local SD บน RTX 3060 (Automatic1111/Forge/SD.Next). quota-free. รัน webui --api (:7860) ก่อน แล้ว enabled=true."
+    },
+    "openrouter-image": {
+      "enabled": false,
+      "capabilities": [
+        "image_gen"
+      ],
+      "transport": "http",
+      "imageBackend": "openai-compatible",
+      "host": "https://openrouter.ai/api/v1",
+      "model": "google/gemini-2.5-flash-image",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "rotation": "round-robin",
+      "defaultSize": "1024x1024",
+      "outDir": "store/assets",
+      "accounts": [
+        {
+          "id": "or-img-1",
+          "envKey": "OPENROUTER_API_KEY"
+        }
+      ],
+      "_comment": "OpenRouter images (OpenAI-compatible). 1 key. ตรวจว่า model รองรับ image ก่อนใช้."
     }
   },
   "roles": {
@@ -202,7 +270,8 @@
         "openrouter:anthropic/claude-sonnet-4",
         "ollama:hf.co/unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL",
         "ollama:gemma4:latest"
-      ]
+      ],
+      "rotation": "failover"
     },
     "coder": {
       "description": "Implementation, testing, integration â€” needs file access",
@@ -215,7 +284,8 @@
         "antigravity:default",
         "ollama:hf.co/sillykiwi/Aroow-Rust-Coder-9B-Q4_K_S-GGUF:Q4_K_S",
         "ollama:gemma4-rust-coder:latest"
-      ]
+      ],
+      "rotation": "failover"
     },
     "worker": {
       "description": "Scaffolding, config files, documentation â€” light work",
@@ -227,7 +297,8 @@
         "ollama:qwen3.5:4b",
         "ollama:gemma4:latest",
         "openrouter:google/gemma-3-27b"
-      ]
+      ],
+      "rotation": "round-robin"
     },
     "reviewer": {
       "description": "Independent verification of worker output (Verify Gate)",
@@ -237,7 +308,8 @@
       "preferred": [
         "claude:opus",
         "claude:sonnet"
-      ]
+      ],
+      "rotation": "failover"
     },
     "scout": {
       "description": "Research, drafting, analysis â€” text generation focus",
@@ -248,6 +320,19 @@
         "ollama:qwen3.5:4b",
         "claude:haiku",
         "openrouter:google/gemma-3-27b"
+      ],
+      "rotation": "round-robin"
+    },
+    "designer": {
+      "description": "Image asset generation — logos, icons, component art, img2img",
+      "requires": [
+        "image_gen"
+      ],
+      "rotation": "round-robin",
+      "preferred": [
+        "openai-image:gpt-image-1",
+        "local-image:default",
+        "openrouter-image:google/gemini-2.5-flash-image"
       ]
     }
   },
@@ -266,7 +351,15 @@
     "config": "worker",
     "docs": "worker",
     "research": "scout",
-    "draft": "scout"
+    "draft": "scout",
+    "image": "designer",
+    "logo": "designer",
+    "icon": "designer",
+    "asset": "designer",
+    "texture": "designer",
+    "graphic": "designer",
+    "motion": "coder",
+    "animation": "coder"
   },
   "routingCloudLocal": {
     "_doc": "config--routing-cloud-local (ADR-O-005 T-axis). Declares which roles are cloud-first (plan/architecture/review/complex-logic) vs local-first (code/refactor/scaffold). Orthogonal to the H-tier — a small H0 task may still go cloud if complex. The live provider chains are roles[].preferred; this is the policy view for the Loadout/Cockpit.",

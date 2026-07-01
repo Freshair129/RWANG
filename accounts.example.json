@@ -39,5 +39,19 @@
       { "id": "ag-4", "envKey": "ANTIGRAVITY_TOKEN", "apiKey": "REPLACE_agy_token_4" },
       { "id": "ag-5", "envKey": "ANTIGRAVITY_TOKEN", "apiKey": "REPLACE_agy_token_5" }
     ]
-  }
+  },
+  "openai-image": {
+    "_setup": "gpt-image via OpenAI Images API. One OPENAI_API_KEY per seat → round-robin spreads image quota + allows parallel batches.",
+    "accounts": [
+      { "id": "oai-1", "envKey": "OPENAI_API_KEY", "apiKey": "sk-REPLACE_1" },
+      { "id": "oai-2", "envKey": "OPENAI_API_KEY", "apiKey": "sk-REPLACE_2" }
+    ]
+  },
+  "openrouter-image": {
+    "_setup": "OpenRouter images — reuse your OR key; confirm the model supports image output.",
+    "accounts": [
+      { "id": "or-img-1", "envKey": "OPENROUTER_API_KEY", "apiKey": "sk-or-REPLACE_ME" }
+    ]
+  },
+  "_note_local-image": "local-image (Automatic1111/Forge on RTX 3060) needs NO secret — just run webui --api and set enabled:true in config.json."
 }
