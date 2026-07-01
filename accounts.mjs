@@ -129,12 +129,17 @@ export function noteResult(pstate, accId, { cost = 0, tokens = 0, limited = fals
   return pstate;
 }
 
-// sum usage within a trailing time window
+// sum usage within a trailing time window; `oldest` = earliest event still in-window (drives the
+// "frees up in …" countdown: when that event ages out at oldest+ms, its usage drops off).
 export function windowUsage(events, now, ms) {
   const from = now - ms;
-  let uses = 0, tokens = 0, cost = 0;
-  for (const e of events || []) if (e.at >= from) { uses++; tokens += e.tokens || 0; cost += e.cost || 0; }
-  return { uses, tokens, cost };
+  let uses = 0, tokens = 0, cost = 0, oldest = 0;
+  for (const e of events || []) if (e.at >= from) {
+    uses++; tokens += e.tokens || 0; cost += e.cost || 0;
+    if (!oldest || e.at < oldest) oldest = e.at;
+  }
+  const resetMs = oldest ? Math.max(0, oldest + ms - now) : 0;
+  return { uses, tokens, cost, resetMs };
 }
 
 // ── file-backed state convenience (load → mutate → save) ─────────────────────────────────────

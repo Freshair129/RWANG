@@ -143,32 +143,65 @@
   .legend{ margin-top:18px; color:var(--mut); font-size:11.5px; display:flex; gap:14px; flex-wrap:wrap; }
   .hidden{ display:none !important; }
 
-  /* Account Pool */
-  .pool2{ display:flex; flex-direction:column; gap:14px; }
-  .pg{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
-  .pg.off{ opacity:.6; }
-  .pgh{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
-  .pgh .nm{ font-weight:700; font-size:15px; letter-spacing:.3px; text-transform:capitalize; }
-  .pgh .kindtag{ font-size:10.5px; color:var(--mut); border:1px solid var(--line); border-radius:6px; padding:2px 7px; }
+  /* Account Pool — landscape flip cards */
+  .pool2{ display:flex; flex-direction:column; gap:18px; }
+  .pgh{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:4px 0 2px; }
+  .pgh .nm{ font-weight:700; font-size:16px; letter-spacing:.3px; text-transform:capitalize; }
+  .pgh .kindtag{ font-size:10.5px; color:var(--mut); border:1px solid var(--line); border-radius:6px; padding:2px 8px; }
   .pgh .spacer{ flex:1; }
-  .acctgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(255px,1fr)); gap:10px; }
-  .acc{ background:var(--panel-2); border:1px solid var(--line); border-radius:11px; padding:11px 13px; }
-  .acc.cool{ border-color:rgba(255,207,107,.4); }
-  .acc.unconf{ border-style:dashed; }
-  .acch{ display:flex; align-items:center; gap:8px; margin-bottom:7px; }
-  .acch .aid{ font-weight:600; }
-  .acch .grow{ flex:1; }
-  .sdot{ width:8px;height:8px;border-radius:50%; flex:none; background:var(--ok); box-shadow:0 0 7px var(--ok); }
-  .sdot.cool{ background:var(--warn); box-shadow:0 0 7px var(--warn); animation:blink 1.2s infinite; }
-  .sdot.unconf{ background:var(--mut); box-shadow:none; }
-  .accu{ color:var(--mut); font-size:11px; display:flex; gap:9px; flex-wrap:wrap; margin-bottom:8px; }
-  .accu b{ color:var(--txt); }
-  .acca{ display:flex; gap:6px; flex-wrap:wrap; }
-  .acca .btn{ padding:4px 9px; font-size:11.5px; }
-  .limrow{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0 10px; }
-  .limin{ width:78px; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:12px; }
-  .keyrow{ display:flex; gap:6px; margin-top:8px; }
-  .keyrow input{ flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:5px 9px; font-size:12px; }
+  .acctgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(390px,1fr)); gap:16px; }
+  @media (max-width:680px){ .acctgrid{ grid-template-columns:minmax(0,1fr); } }
+
+  .card{ perspective:1600px; }
+  .card-in{ position:relative; width:100%; min-height:198px; transition:transform .55s cubic-bezier(.4,.15,.2,1); transform-style:preserve-3d; }
+  .card.flipped .card-in{ transform:rotateY(180deg); }
+  .face{ position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    border:1px solid var(--line); border-radius:16px; padding:15px 17px; display:flex; flex-direction:column; gap:11px; overflow:hidden;
+    background:linear-gradient(158deg, rgba(30,35,48,.92), rgba(15,17,25,.95)); box-shadow:0 8px 30px rgba(0,0,0,.35); }
+  .face.back{ transform:rotateY(180deg); gap:9px; }
+  .card.cool .face{ border-color:rgba(255,207,107,.45); }
+  .card.off .face{ opacity:.6; }
+
+  .chead{ display:flex; align-items:center; gap:11px; }
+  .cav{ width:40px;height:40px;border-radius:12px; display:grid;place-items:center; font-size:20px; flex:none;
+    background:linear-gradient(135deg, rgba(143,212,255,.28), rgba(150,110,230,.28)); border:1px solid var(--line); }
+  .cname{ min-width:0; }
+  .cname b{ font-size:15px; letter-spacing:.2px; }
+  .cname small{ display:block; color:var(--mut); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:210px; }
+  .spill{ margin-left:auto; font-size:11px; padding:4px 11px; border-radius:99px; border:1px solid var(--line); display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+  .spill.ok{ color:var(--ok); border-color:rgba(91,227,167,.35); background:rgba(91,227,167,.08); }
+  .spill.warn{ color:var(--warn); border-color:rgba(255,207,107,.35); }
+  .spill.mut{ color:var(--mut); }
+  .spdot{ width:7px;height:7px;border-radius:50%; background:currentColor; box-shadow:0 0 7px currentColor; }
+  .plan{ font-size:11.5px; color:var(--ice); border:1px solid rgba(143,212,255,.28); background:rgba(143,212,255,.07); border-radius:8px; padding:3px 9px; align-self:flex-start; }
+
+  .cstats{ display:flex; gap:9px; }
+  .stat{ flex:1; background:rgba(255,255,255,.03); border:1px solid var(--line); border-radius:11px; padding:7px 11px; }
+  .stat .l{ color:var(--mut); font-size:9.5px; text-transform:uppercase; letter-spacing:.6px; }
+  .stat .v{ font-size:16px; font-weight:700; margin-top:1px; }
+  .stat .v small{ font-size:11px; color:var(--mut); font-weight:400; }
+
+  .quota{ margin-top:auto; }
+  .quota .qh{ display:flex; justify-content:space-between; font-size:11px; color:var(--mut); margin-bottom:5px; }
+  .quota .qh .rst{ color:var(--ice); font-variant-numeric:tabular-nums; }
+  .quota .qh .rst.hot{ color:var(--warn); }
+  .qtrack{ height:7px; border-radius:99px; background:rgba(255,255,255,.07); overflow:hidden; }
+  .qtrack i{ display:block; height:100%; border-radius:99px; transition:width .5s ease; background:var(--ice); }
+  .quota .qf{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--mut); margin-top:4px; }
+
+  .cchips{ display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+  .chip{ font-size:11px; padding:4px 10px; border-radius:9px; border:1px solid var(--line); background:var(--panel-2); cursor:pointer; white-space:nowrap; color:var(--txt); }
+  .chip:hover{ border-color:var(--ice-dim); background:rgba(143,212,255,.10); }
+  .chip.go{ color:#06121a; background:linear-gradient(135deg,var(--ice),#56c8e0); border:none; font-weight:600; }
+  .chip.x{ color:var(--bad); border-color:rgba(255,123,133,.3); }
+  .chip.cfg{ margin-left:auto; }
+
+  .back .bh{ display:flex; align-items:center; justify-content:space-between; margin-bottom:1px; }
+  .back .bh b{ font-size:13px; }
+  .brow{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .brow .lbl{ color:var(--mut); font-size:11px; min-width:52px; }
+  .kin{ flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:5px 9px; font-size:12px; color:var(--txt); }
+  .limin{ width:66px; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:5px 8px; font-size:12px; color:var(--txt); }
   .warnbox{ background:rgba(255,207,107,.07); border:1px solid rgba(255,207,107,.3); border-radius:11px;
     padding:10px 14px; color:var(--warn); font-size:12px; line-height:1.5; margin-bottom:4px; }
 
@@ -531,34 +564,32 @@ async function acctPost(path, body){
   if(j.ok===false) toast(j.error||"error", true); else toast(j.hint || (path+" ok"));
   loadAcct(); return j;
 }
+const PEMOJI={claude:"🟣",codex:"🟢",openrouter:"🔀",antigravity:"🪐","openai-image":"🎨","openrouter-image":"🖼","local-image":"🧩",ollama:"🦙"};
+function fmtDur(ms){ const m=Math.round(ms/60000); if(m<=0) return ""; if(m<60) return m+"m"; return Math.floor(m/60)+"h "+String(m%60).padStart(2,"0")+"m"; }
+function flipCard(cid){ const el=document.getElementById("card-"+cid); if(el) el.classList.toggle("flipped"); }
 function renderAcctPool(){
-  // don't wipe a token the user is mid-typing: skip the 4s auto re-render while a key field is
-  // focused or already has a value (it would blow away the input before they hit save).
-  const editing = document.querySelector('#pool .keyrow input:focus, #pool .limin:focus') || [...document.querySelectorAll('#pool .keyrow input')].some(i=>i.value.trim());
-  if(editing) return;
+  // don't disrupt the user: skip auto re-render while a field is focused/typed OR a card is flipped open
+  const busy = document.querySelector('#pool .kin:focus, #pool .limin:focus, #pool .card.flipped') || [...document.querySelectorAll('#pool .kin')].some(i=>i.value.trim());
+  if(busy) return;
   if(!ACCT.length){ $("#pool").innerHTML=`<div class="empty">ยังไม่มี provider ที่ลงทะเบียน account<br><span style="font-size:12px">เพิ่มใน <b>config.json → providers.&lt;name&gt;.accounts[]</b></span></div>`; return; }
-  const warn = `<div class="warnbox">⚠ การหมุนหลาย subscription เพื่อรวมโควต้าอาจผิด ToS ของผู้ให้บริการ (OpenAI/Google) — เป็นบัญชีของคุณเอง คุณตัดสินใจ · secret เก็บใน <b>accounts.local.json</b> (ไม่เข้า git) · หน้านี้แก้ไขได้จาก localhost เท่านั้น</div>`;
+  const warn = `<div class="warnbox">⚠ การหมุนหลาย subscription เพื่อรวมโควต้าอาจผิด ToS (OpenAI/Google) — เป็นบัญชีคุณเอง · secret อยู่ใน <b>accounts.local.json</b> (ไม่เข้า git) · แก้ได้จาก localhost เท่านั้น · กด ⚙ config เพื่อพลิกการ์ด</div>`;
   $("#pool").innerHTML = warn + ACCT.map(pgHTML).join("");
 }
 function pgHTML(p){
   const rots=["round-robin","least-used","failover"];
-  const kind = p.accounts[0]?.kind==="login" ? "login-dir · OAuth" : "key · token";
   const rotSel = `<select class="btn" onchange="acctPost('manage',{action:'rotation',provider:'${p.provider}',rotation:this.value})">${rots.map(r=>`<option ${p.rotation===r?'selected':''}>${r}</option>`).join("")}</select>`;
   const en = p.enabled
     ? `<button class="btn x" onclick="acctPost('manage',{action:'disable',provider:'${p.provider}'})">disable</button>`
     : `<button class="btn go" onclick="acctPost('manage',{action:'enable',provider:'${p.provider}'})">enable</button>`;
-  const cool=p.accounts.filter(a=>!a.live).length, conf=p.accounts.filter(a=>a.configured).length;
+  const cool=p.accounts.filter(a=>!a.live).length, conf=p.accounts.filter(a=>a.configured||a.authed).length;
   return `<div class="pg ${p.enabled?'':'off'}">
-    <div class="pgh"><span class="nm">${p.provider}</span>
-      <span class="kindtag">${kind}</span>
-      <span class="kindtag">${conf}/${p.accounts.length} configured${cool?` · ${cool} cooling`:''}</span>
+    <div class="pgh"><span class="nm">${PEMOJI[p.provider]||'🔌'} ${p.provider}</span>
+      <span class="kindtag">${conf}/${p.accounts.length} ready${cool?` · ${cool}⏳`:''}</span>
       <span class="spacer"></span>
-      <span class="hint">rotation</span>${rotSel}${en}</div>
-    <div class="limrow"><span class="hint">usage limit (uses)</span>
-      <input class="limin" id="lim5-${p.provider}" type="number" min="0" placeholder="5h cap" value="${p.limit5h??''}">
-      <input class="limin" id="lim7-${p.provider}" type="number" min="0" placeholder="7d cap" value="${p.limit7d??''}">
-      <button class="btn" onclick="setLimit('${p.provider}')">set bar</button>
-      <span class="hint">ตั้ง cap แล้วแถบ 5h/7d จะโผล่ (เหลือง ≥80% · แดง ≥100%)</span></div>
+      <span class="hint">cap 5h</span><input class="limin" id="lim5-${p.provider}" type="number" min="0" value="${p.limit5h??''}" placeholder="—">
+      <span class="hint">7d</span><input class="limin" id="lim7-${p.provider}" type="number" min="0" value="${p.limit7d??''}" placeholder="—">
+      <button class="btn" onclick="setLimit('${p.provider}')">set</button>
+      <span class="hint">rot</span>${rotSel}${en}</div>
     <div class="acctgrid">${p.accounts.map(a=>accCard(p,a)).join("")}</div></div>`;
 }
 async function setLimit(provider){
@@ -566,33 +597,49 @@ async function setLimit(provider){
   await acctPost("manage",{action:"set-limit",provider,limit5h:l5===""?null:Number(l5),limit7d:l7===""?null:Number(l7)});
 }
 function accCard(p,a){
-  // authed = really usable (login: credential file present; key: token set) — NOT just "not cooling"
-  const cool = !a.live;
-  const cls = cool?"cool":(a.authed?"":"unconf");
-  const dot = cool?"cool":(a.authed?"":"unconf");
-  const idTxt = a.keyringAuth
-    ? `<span style="color:var(--ok)">● Antigravity IDE <b>(keyring)</b></span>`
-    : a.authed
-    ? `<span style="color:var(--ok)">● ${a.email?esc(a.email):(a.kind==="login"?"logged in":"token set")}${a.plan?` · <b>${esc(a.plan)}</b>`:""}${a.tier?` (${esc(a.tier)})`:""}</span>`
-    : (a.kind==="login" ? '<span style="color:var(--warn)">○ not logged in</span>' : '<span style="color:var(--mut)">no token</span>');
-  const stTxt = cool ? `<span style="color:var(--warn)">⏳ cooldown ${Math.ceil(a.cooldownMs/60000)}m</span>` : idTxt;
-  let acts = "";
-  if(a.canLogin){
-    const lbl = a.kind==="login" ? (a.authed?'↻ re-login':'🔓 login') : (a.authed?'↻ re-login (keyring)':'🔓 login (keyring)');
-    acts = `<button class="btn" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${lbl}</button>`;
-  }
-  if(!a.live) acts += `<button class="btn" onclick="acctPost('manage',{action:'reset-cooldown',provider:'${p.provider}',id:'${a.id}'})">clear cooldown</button>`;
-  if(a.uses) acts += `<button class="btn" onclick="acctPost('manage',{action:'reset-usage',provider:'${p.provider}',id:'${a.id}'})">reset usage</button>`;
-  const keyrow = a.kind==="key"
-    ? `<div class="keyrow"><input type="password" id="k-${p.provider}-${a.id}" placeholder="${a.configured?'••• update token':'paste token'}" />
-        <button class="btn go" onclick="saveKey('${p.provider}','${a.id}')">save</button></div>` : "";
-  const w5=a.w5h||{uses:0,tokens:0}, w7=a.w7d||{uses:0,tokens:0};
-  const bar=(u,lim)=>{ if(!lim) return ""; const pct=Math.min(100,u/lim*100); const c=pct>=100?"var(--bad)":pct>=80?"var(--warn)":"var(--ice)"; return `<div class="ubar" style="margin-top:4px"><i style="width:${pct}%;background:${c}"></i></div>`; };
-  return `<div class="acc ${cls}">
-    <div class="acch"><span class="sdot ${dot}"></span><span class="aid">${a.id}</span><span class="grow"></span>${stTxt}</div>
-    <div class="accu"><span>5h <b>${w5.uses}</b>${p.limit5h?`/${p.limit5h}`:''} · ${fmtTok(w5.tokens)}</span><span>7d <b>${w7.uses}</b>${p.limit7d?`/${p.limit7d}`:''} · ${fmtTok(w7.tokens)}</span><span>Σ ${a.uses} · $${(a.cost||0).toFixed(4)}</span></div>
-    ${bar(w5.uses,p.limit5h)}${bar(w7.uses,p.limit7d)}
-    <div class="acca">${acts||'<span class="hint">—</span>'}</div>${keyrow}</div>`;
+  const cid=`${p.provider}-${a.id}`, cool=!a.live;
+  const cardCls=cool?"cool":(p.enabled?"":"off");
+  const pill = cool ? `<span class="spill warn"><span class="spdot"></span>COOLDOWN ${Math.ceil(a.cooldownMs/60000)}m</span>`
+    : a.authed ? `<span class="spill ok"><span class="spdot"></span>ACTIVE</span>`
+    : `<span class="spill mut"><span class="spdot"></span>${a.kind==="login"?"NOT LOGGED IN":"NO TOKEN"}</span>`;
+  const who = a.keyringAuth ? "Antigravity IDE · keyring"
+    : a.email ? a.email
+    : a.authed ? (a.kind==="login"?"logged in":"token set")
+    : (a.kind==="login"?"needs login":"needs token");
+  const planBadge = (a.plan&&a.authed) ? `<span class="plan">${esc(a.plan)}${a.tier?` · ${esc(a.tier)}`:''}</span>` : "";
+  const w5=a.w5h||{uses:0,tokens:0,resetMs:0}, w7=a.w7d||{uses:0,tokens:0};
+  const cap=p.limit5h||0;
+  const pct=cap?Math.min(100,w5.uses/cap*100):(w5.uses?10:0);
+  const barC=cap?(pct>=100?"var(--bad)":pct>=80?"var(--warn)":"var(--ice)"):"var(--ice-dim)";
+  const rst=fmtDur(w5.resetMs);
+  const quota=`<div class="quota">
+    <div class="qh"><span>Usage · 5h window${cap?'':' <span style="opacity:.6">(ตั้ง cap ที่หัว provider)</span>'}</span>${rst?`<span class="rst ${pct>=80?'hot':''}">⏳ ${rst}</span>`:''}</div>
+    <div class="qtrack"><i style="width:${pct}%;background:${barC}"></i></div>
+    <div class="qf"><span>${w5.uses}${cap?` / ${cap}`:''} uses · ${fmtTok(w5.tokens)} tok</span><span>7d ${w7.uses}${p.limit7d?`/${p.limit7d}`:''}</span></div></div>`;
+  let chips="";
+  if(a.canLogin) chips+=`<button class="chip" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${a.authed?'↻ re-login':'🔓 login'}</button>`;
+  if(cool) chips+=`<button class="chip" onclick="acctPost('manage',{action:'reset-cooldown',provider:'${p.provider}',id:'${a.id}'})">clear cooldown</button>`;
+  chips+=`<button class="chip cfg" onclick="flipCard('${cid}')">⚙ config</button>`;
+  // ── back face ──
+  const keyrow = a.kind==="key" ? `<div class="brow"><span class="lbl">token</span><input class="kin" type="password" id="k-${cid}" placeholder="${a.configured?'••• update':'paste token'}"><button class="chip go" onclick="saveKey('${p.provider}','${a.id}')">save</button></div>` : "";
+  const loginBtn = a.canLogin ? `<button class="chip" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${a.authed?'↻ re-login':'🔓 login'}</button>` : "";
+  const logoutBtn = (a.configured||a.authed||a.kind==="login") ? `<button class="chip x" onclick="if(confirm('Logout ${p.provider}/${a.id}?'))acctPost('manage',{action:'logout',provider:'${p.provider}',id:'${a.id}'})">logout</button>` : "";
+  const back=`<div class="face back">
+    <div class="bh"><b>⚙ ${a.id} · config</b><button class="chip" onclick="flipCard('${cid}')">✕</button></div>
+    ${keyrow}
+    <div class="brow">${loginBtn}${logoutBtn}<button class="chip" onclick="acctPost('manage',{action:'reset-usage',provider:'${p.provider}',id:'${a.id}'})">reset usage</button>${cool?`<button class="chip" onclick="acctPost('manage',{action:'reset-cooldown',provider:'${p.provider}',id:'${a.id}'})">clear cooldown</button>`:''}</div>
+    <div class="brow"><span class="lbl">total</span><span class="hint">${a.uses} uses · ${fmtTok(a.tokens)} tok · $${(a.cost||0).toFixed(4)}</span></div>
+    <div class="brow"><span class="hint">${a.kind==="login"?"login เปิด terminal ทำ OAuth · logout=ลบ credential":"paste token หรือ logout=ลบ token"} · cap 5h/7d ตั้งที่หัว provider</span></div></div>`;
+  return `<div class="card ${cardCls}" id="card-${cid}"><div class="card-in">
+    <div class="face front">
+      <div class="chead"><div class="cav">${PEMOJI[p.provider]||'🔌'}</div><div class="cname"><b>${a.id}</b><small>${esc(who)}</small></div>${pill}</div>
+      ${planBadge}
+      <div class="cstats"><div class="stat"><div class="l">5H USES</div><div class="v">${w5.uses}<small>${cap?` / ${cap}`:''}</small></div></div><div class="stat"><div class="l">7D USES</div><div class="v">${w7.uses}<small>${p.limit7d?` / ${p.limit7d}`:''}</small></div></div></div>
+      ${quota}
+      <div class="cchips">${chips}</div>
+    </div>
+    ${back}
+  </div></div>`;
 }
 async function saveKey(provider,id){
   const el=$(`#k-${provider}-${id}`); const apiKey=el.value.trim();
