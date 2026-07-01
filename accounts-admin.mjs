@@ -105,14 +105,19 @@ export function setRotation({ provider, rotation } = {}, { configPath = DEFAULT_
   return { ok: true, provider, rotation };
 }
 
-// ── startLogin: spawn the interactive CLI OAuth login for a login-dir account ──────────────────
-// codex/claude keep a refresh token per config dir (CODEX_HOME / CLAUDE_CONFIG_DIR). Logging in
-// once per dir persists — this just kicks off that browser OAuth flow with the right dir env.
-// Returns a descriptor (never the token). agy/openrouter are key-based → use setAccountKey instead.
+// ── startLogin: spawn the interactive CLI OAuth login ──────────────────────────────────────────
+// Two shapes:
+//   login-dir (codex/claude): keep a refresh token per config dir (CODEX_HOME / CLAUDE_CONFIG_DIR).
+//   keyring   (antigravity):  `agy auth login` → Google OAuth stored in the OS keyring (single global
+//                             session, no dir). agy then works without a token.
+// Returns a descriptor (never the token). openrouter/openai-image are key-only → use setAccountKey.
 const LOGIN_SPEC = {
-  codex:  { cmd: "codex",  args: ["login"], envKey: "CODEX_HOME" },
-  claude: { cmd: "claude", args: ["/login"], envKey: "CLAUDE_CONFIG_DIR" },
+  codex:       { cmd: "codex",  args: ["login"], envKey: "CODEX_HOME" },
+  claude:      { cmd: "claude", args: ["/login"], envKey: "CLAUDE_CONFIG_DIR" },
+  antigravity: { cmd: "agy",    args: ["auth", "login"], keyring: true },
 };
+export const LOGIN_PROVIDERS = Object.keys(LOGIN_SPEC); // who shows a login button
+
 export function startLogin({ provider, id } = {}, { config, spawnFn = spawn, root = __dir } = {}) {
   assertId(id);
   const spec = LOGIN_SPEC[provider];
@@ -121,34 +126,36 @@ export function startLogin({ provider, id } = {}, { config, spawnFn = spawn, roo
       hint: `${provider} is key-based — paste its token via setAccountKey (no browser login)` };
   }
   const { acc } = findAccount(config, provider, id);
-  if (!acc.configDir) throw new Error(`${provider}/${id} has no configDir to log into`);
-  // codex/claude REQUIRE the config dir to exist before login (else "CODEX_HOME ... does not exist").
-  // normalize() also fixes the mixed C:\Users\x/.codex-1 slashes that some CLIs reject on Windows.
-  const dir = normalize(expandHome(acc.configDir));
-  try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
-  const env = { ...process.env, [spec.envKey]: dir };
-  const cmdline = `${spec.envKey}=${acc.configDir} ${spec.cmd} ${spec.args.join(" ")}`;
+  const env = { ...process.env };
+  let cmdline = `${spec.cmd} ${spec.args.join(" ")}`;
+  let inner = cmdline;
+  if (!spec.keyring) {
+    // login-dir: CODEX_HOME/CLAUDE_CONFIG_DIR must EXIST before login; normalize() fixes mixed slashes
+    if (!acc.configDir) throw new Error(`${provider}/${id} has no configDir to log into`);
+    const dir = normalize(expandHome(acc.configDir));
+    try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+    env[spec.envKey] = dir;
+    cmdline = `${spec.envKey}=${acc.configDir} ${cmdline}`;
+    inner = `set "${spec.envKey}=${dir}" && ${spec.cmd} ${spec.args.join(" ")}`;
+  }
   let started = false, error = null;
   try {
     let child;
     if (process.platform === "win32") {
-      // The OAuth CLI needs a real console to print the device URL, open the browser, and stay alive
-      // for the callback. A detached stdio:"ignore" spawn shows nothing and often never opens the
-      // browser — so open a VISIBLE terminal window that runs the login (dir env set inside it).
-      const inner = `set "${spec.envKey}=${dir}" && ${spec.cmd} ${spec.args.join(" ")}`;
+      // open a VISIBLE terminal so the OAuth CLI can print the device URL, open the browser, and
+      // stay alive for the callback (a detached stdio:"ignore" spawn shows nothing / never opens it).
       child = spawnFn("cmd", ["/c", "start", `${provider} login`, "cmd", "/k", inner], {
         cwd: root, env, detached: true, stdio: "ignore",
       });
     } else {
-      // macOS/Linux: open a terminal if available, else spawn directly (still inherits the dir env)
       child = spawnFn(spec.cmd, spec.args, { cwd: root, env, shell: true, detached: true, stdio: "ignore" });
     }
-    child.on?.("error", () => {}); // swallow async spawn errors; surfaced via started flag below
+    child.on?.("error", () => {});
     child.unref?.();
     started = true;
   } catch (e) { error = e.message; }
   return {
-    ok: started, provider, id, interactive: true, configDir: acc.configDir, command: cmdline, error,
+    ok: started, provider, id, interactive: true, keyring: !!spec.keyring, command: cmdline, error,
     hint: started
       ? `เปิดหน้าต่าง terminal ให้ login ${provider}/${id} แล้ว — ทำ OAuth ในนั้น (browser จะเด้ง). ถ้าไม่เด้ง รันเอง: ${cmdline}`
       : `เปิด login ไม่ได้ — รันในเทอร์มินัลเอง: ${cmdline}`,

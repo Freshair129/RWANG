@@ -559,8 +559,9 @@ function accCard(p,a){
     : (a.kind==="login" ? '<span style="color:var(--warn)">○ not logged in</span>' : '<span style="color:var(--mut)">no token</span>');
   const stTxt = cool ? `<span style="color:var(--warn)">⏳ cooldown ${Math.ceil(a.cooldownMs/60000)}m</span>` : idTxt;
   let acts = "";
-  if(a.kind==="login"){
-    acts = `<button class="btn" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${a.configured?'↻ re-login':'🔓 login'}</button>`;
+  if(a.canLogin){
+    const lbl = a.kind==="login" ? (a.authed?'↻ re-login':'🔓 login') : (a.authed?'↻ re-login (keyring)':'🔓 login (keyring)');
+    acts = `<button class="btn" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${lbl}</button>`;
   }
   if(!a.live) acts += `<button class="btn" onclick="acctPost('manage',{action:'reset-cooldown',provider:'${p.provider}',id:'${a.id}'})">clear cooldown</button>`;
   if(a.uses) acts += `<button class="btn" onclick="acctPost('manage',{action:'reset-usage',provider:'${p.provider}',id:'${a.id}'})">reset usage</button>`;
