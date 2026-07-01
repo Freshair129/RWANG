@@ -138,6 +138,33 @@
   .legend{ margin-top:18px; color:var(--mut); font-size:11.5px; display:flex; gap:14px; flex-wrap:wrap; }
   .hidden{ display:none !important; }
 
+  /* Account Pool */
+  .pool2{ display:flex; flex-direction:column; gap:14px; }
+  .pg{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
+  .pg.off{ opacity:.6; }
+  .pgh{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .pgh .nm{ font-weight:700; font-size:15px; letter-spacing:.3px; text-transform:capitalize; }
+  .pgh .kindtag{ font-size:10.5px; color:var(--mut); border:1px solid var(--line); border-radius:6px; padding:2px 7px; }
+  .pgh .spacer{ flex:1; }
+  .acctgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(255px,1fr)); gap:10px; }
+  .acc{ background:var(--panel-2); border:1px solid var(--line); border-radius:11px; padding:11px 13px; }
+  .acc.cool{ border-color:rgba(255,207,107,.4); }
+  .acc.unconf{ border-style:dashed; }
+  .acch{ display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+  .acch .aid{ font-weight:600; }
+  .acch .grow{ flex:1; }
+  .sdot{ width:8px;height:8px;border-radius:50%; flex:none; background:var(--ok); box-shadow:0 0 7px var(--ok); }
+  .sdot.cool{ background:var(--warn); box-shadow:0 0 7px var(--warn); animation:blink 1.2s infinite; }
+  .sdot.unconf{ background:var(--mut); box-shadow:none; }
+  .accu{ color:var(--mut); font-size:11px; display:flex; gap:9px; flex-wrap:wrap; margin-bottom:8px; }
+  .accu b{ color:var(--txt); }
+  .acca{ display:flex; gap:6px; flex-wrap:wrap; }
+  .acca .btn{ padding:4px 9px; font-size:11.5px; }
+  .keyrow{ display:flex; gap:6px; margin-top:8px; }
+  .keyrow input{ flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:5px 9px; font-size:12px; }
+  .warnbox{ background:rgba(255,207,107,.07); border:1px solid rgba(255,207,107,.3); border-radius:11px;
+    padding:10px 14px; color:var(--warn); font-size:12px; line-height:1.5; margin-bottom:4px; }
+
   /* auth + usage */
   .metabar{ display:flex; gap:12px; flex-wrap:wrap; align-items:stretch; margin:0 0 14px; }
   .authbox{ background:var(--panel); border:1px solid var(--line); border-radius:13px;
@@ -214,6 +241,7 @@
     <div class="tab active" data-v="list">📋 List</div>
     <div class="tab" data-v="waves">🕸 Waves / DAG</div>
     <div class="tab" data-v="room">🛰 Agent Room <span class="n" id="roomn"></span></div>
+    <div class="tab" data-v="pool">🔑 Account Pool <span class="n" id="acctn"></span></div>
   </div>
 
   <div class="filters" id="filters">
@@ -230,6 +258,7 @@
   <div class="grid" id="grid"></div>
   <div class="dagwrap hidden" id="dag"></div>
   <div class="room hidden" id="room"></div>
+  <div class="pool2 hidden" id="pool"></div>
 
   <div class="legend">
     <span>G-Orchestra = multi-agent orchestrator ที่อ่าน backlog/config/state และสั่ง agent ผ่าน engine.mjs</span>
@@ -270,6 +299,8 @@ function setView(v){
   $("#grid").classList.toggle("hidden", v!=="list");
   $("#dag").classList.toggle("hidden", v!=="waves");
   $("#room").classList.toggle("hidden", v!=="room");
+  $("#pool").classList.toggle("hidden", v!=="pool");
+  if(v==="pool") loadAcct();
   render();
 }
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>setView(t.dataset.v));
@@ -288,6 +319,7 @@ function render(){
   if($("#fphase").children.length<=1) fillSelect();
   if(VIEW==="list") renderList();
   else if(VIEW==="waves") renderWaves();
+  else if(VIEW==="pool") renderAcctPool();
   else renderRoom();
 }
 function fillSelect(){
@@ -473,11 +505,69 @@ $("#refresh").onclick=load;
 $("#reset").onclick=()=>{ if(confirm("ล้าง state กลับ todo ทั้งหมด?")){ Object.keys(streams).forEach(k=>delete streams[k]); roomSig=""; api("reset",{}); } };
 ["q","fphase","fstatus","fmodel"].forEach(id=>$("#"+id).addEventListener("input",renderList));
 
-// poll: state ทุก 1.5s ; log streaming เร็วกว่า (900ms) เมื่ออยู่ room หรือเปิด modal ; ollama ทุก 10s
+/* ---------- ACCOUNT POOL ---------- */
+let ACCT=[];
+async function loadAcct(){ try{ ACCT = await (await fetch("/api/accounts")).json(); }catch{ ACCT=[]; } updateAcctN(); if(VIEW==="pool") renderAcctPool(); }
+function updateAcctN(){ const n=ACCT.reduce((s,p)=>s+p.accounts.length,0); const cool=ACCT.reduce((s,p)=>s+p.accounts.filter(a=>!a.live).length,0); $("#acctn").textContent=n?`(${n}${cool?` · ${cool}⏳`:''})`:""; }
+async function acctPost(path, body){
+  const r = await fetch("/api/accounts/"+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const j = await r.json();
+  if(j.ok===false) toast(j.error||"error", true); else toast(j.hint || (path+" ok"));
+  loadAcct(); return j;
+}
+function renderAcctPool(){
+  if(!ACCT.length){ $("#pool").innerHTML=`<div class="empty">ยังไม่มี provider ที่ลงทะเบียน account<br><span style="font-size:12px">เพิ่มใน <b>config.json → providers.&lt;name&gt;.accounts[]</b></span></div>`; return; }
+  const warn = `<div class="warnbox">⚠ การหมุนหลาย subscription เพื่อรวมโควต้าอาจผิด ToS ของผู้ให้บริการ (OpenAI/Google) — เป็นบัญชีของคุณเอง คุณตัดสินใจ · secret เก็บใน <b>accounts.local.json</b> (ไม่เข้า git) · หน้านี้แก้ไขได้จาก localhost เท่านั้น</div>`;
+  $("#pool").innerHTML = warn + ACCT.map(pgHTML).join("");
+}
+function pgHTML(p){
+  const rots=["round-robin","least-used","failover"];
+  const kind = p.accounts[0]?.kind==="login" ? "login-dir · OAuth" : "key · token";
+  const rotSel = `<select class="btn" onchange="acctPost('manage',{action:'rotation',provider:'${p.provider}',rotation:this.value})">${rots.map(r=>`<option ${p.rotation===r?'selected':''}>${r}</option>`).join("")}</select>`;
+  const en = p.enabled
+    ? `<button class="btn x" onclick="acctPost('manage',{action:'disable',provider:'${p.provider}'})">disable</button>`
+    : `<button class="btn go" onclick="acctPost('manage',{action:'enable',provider:'${p.provider}'})">enable</button>`;
+  const cool=p.accounts.filter(a=>!a.live).length, conf=p.accounts.filter(a=>a.configured).length;
+  return `<div class="pg ${p.enabled?'':'off'}">
+    <div class="pgh"><span class="nm">${p.provider}</span>
+      <span class="kindtag">${kind}</span>
+      <span class="kindtag">${conf}/${p.accounts.length} configured${cool?` · ${cool} cooling`:''}</span>
+      <span class="spacer"></span>
+      <span class="hint">rotation</span>${rotSel}${en}</div>
+    <div class="acctgrid">${p.accounts.map(a=>accCard(p,a)).join("")}</div></div>`;
+}
+function accCard(p,a){
+  const cls = a.live?(a.configured?"":"unconf"):"cool";
+  const dot = a.live?(a.configured?"":"unconf"):"cool";
+  const stTxt = !a.configured ? '<span style="color:var(--mut)">not configured</span>'
+    : a.live ? '<span style="color:var(--ok)">● live</span>'
+    : `<span style="color:var(--warn)">⏳ cooldown ${Math.ceil(a.cooldownMs/60000)}m</span>`;
+  let acts = "";
+  if(a.kind==="login"){
+    acts = `<button class="btn" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${a.configured?'↻ re-login':'🔓 login'}</button>`;
+  }
+  if(!a.live) acts += `<button class="btn" onclick="acctPost('manage',{action:'reset-cooldown',provider:'${p.provider}',id:'${a.id}'})">clear cooldown</button>`;
+  if(a.uses) acts += `<button class="btn" onclick="acctPost('manage',{action:'reset-usage',provider:'${p.provider}',id:'${a.id}'})">reset usage</button>`;
+  const keyrow = a.kind==="key"
+    ? `<div class="keyrow"><input type="password" id="k-${p.provider}-${a.id}" placeholder="${a.configured?'••• update token':'paste token'}" />
+        <button class="btn go" onclick="saveKey('${p.provider}','${a.id}')">save</button></div>` : "";
+  return `<div class="acc ${cls}">
+    <div class="acch"><span class="sdot ${dot}"></span><span class="aid">${a.id}</span><span class="grow"></span>${stTxt}</div>
+    <div class="accu"><span>uses <b>${a.uses}</b></span><span>tok <b>${fmtTok(a.tokens)}</b></span><span>$<b>${(a.cost||0).toFixed(4)}</b></span></div>
+    <div class="acca">${acts||'<span class="hint">—</span>'}</div>${keyrow}</div>`;
+}
+async function saveKey(provider,id){
+  const el=$(`#k-${provider}-${id}`); const apiKey=el.value.trim();
+  if(!apiKey){ toast("ใส่ token ก่อน",true); return; }
+  await acctPost("key",{provider,id,apiKey}); el.value="";
+}
+
+// poll: state ทุก 1.5s ; log streaming เร็วกว่า (900ms) เมื่ออยู่ room หรือเปิด modal ; ollama ทุก 10s ; accounts ทุก 4s เมื่ออยู่ pool
 setInterval(()=>{ if($("#auto").checked) load(); },1500);
 setInterval(()=>{ if(VIEW==="room") renderRoom(); if(modalId) pump(modalId); },900);
 setInterval(refreshOllama, 10000);
-load(); refreshOllama();
+setInterval(()=>{ if(VIEW==="pool" && $("#auto").checked) loadAcct(); }, 4000);
+load(); refreshOllama(); loadAcct();
 </script>
 </body>
 </html>

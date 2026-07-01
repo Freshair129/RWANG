@@ -10,6 +10,24 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import * as E from "./engine.mjs";
 import { writeNode, writeEdge, queryNodes } from "./store/knowledge.mjs";
+import { accountsStatus, DEFAULT_STATE_PATH } from "./accounts.mjs";
+import { resetAccountRegistry } from "./providers.mjs";
+import {
+  setAccountKey, resetCooldown, resetUsage,
+  setProviderEnabled, setRotation, startLogin,
+} from "./accounts-admin.mjs";
+
+// Account-pool mutations touch secrets on disk — allow them from localhost only.
+function isLocal(req) {
+  const a = req.socket?.remoteAddress || "";
+  return a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1";
+}
+// Keep engine's in-memory config in sync with an on-disk change so /api/accounts + dispatch reflect it now.
+function syncProvider(provider, patch) {
+  const p = E.CONFIG?.providers?.[provider];
+  if (p) Object.assign(p, patch);
+  resetAccountRegistry();
+}
 
 const PORT = Number((process.argv.includes("--port") ? process.argv[process.argv.indexOf("--port") + 1] : 0)) || 4577;
 const UI = join(E.PATHS.__dir, "public", "index.html");
@@ -31,6 +49,34 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, E.snapshot());
     if (req.method === "GET" && url.pathname === "/api/ollama") return send(res, 200, await E.ollamaInfo());
     if (req.method === "GET" && url.pathname === "/api/providers") return send(res, 200, await E.providersInfo());
+    if (req.method === "GET" && url.pathname === "/api/accounts") return send(res, 200, accountsStatus(E.CONFIG, DEFAULT_STATE_PATH));
+    // ── Account Pool write-side (localhost only): login / paste-key / manage ──
+    if (req.method === "POST" && url.pathname.startsWith("/api/accounts/")) {
+      if (!isLocal(req)) return send(res, 403, { ok: false, error: "account admin is localhost-only" });
+      const body = await readBody(req);
+      try {
+        if (url.pathname === "/api/accounts/key") {
+          const r = setAccountKey(body); resetAccountRegistry(); return send(res, 200, r);
+        }
+        if (url.pathname === "/api/accounts/login") {
+          return send(res, 200, startLogin(body, { config: E.CONFIG }));
+        }
+        if (url.pathname === "/api/accounts/manage") {
+          const { action, provider, id, rotation } = body;
+          let r;
+          switch (action) {
+            case "enable":  r = setProviderEnabled({ provider, enabled: true }); syncProvider(provider, { enabled: true }); break;
+            case "disable": r = setProviderEnabled({ provider, enabled: false }); syncProvider(provider, { enabled: false }); break;
+            case "rotation": r = setRotation({ provider, rotation }); syncProvider(provider, { rotation }); break;
+            case "reset-cooldown": r = resetCooldown({ provider, id }); break;
+            case "reset-usage": r = resetUsage({ provider, id }); break;
+            default: return send(res, 400, { ok: false, error: "unknown manage action: " + action });
+          }
+          return send(res, 200, r);
+        }
+        return send(res, 404, { ok: false, error: "not found" });
+      } catch (e) { return send(res, 400, { ok: false, error: e.message }); }
+    }
     if (req.method === "GET" && url.pathname === "/api/knowledge") return send(res, 200, E.knowledgeOutcomes());
     if (req.method === "GET" && url.pathname === "/api/personas") {
       try { const p = JSON.parse(readFileSync(new URL("./personas.json", import.meta.url), "utf8")); return send(res, 200, p.personas || []); }

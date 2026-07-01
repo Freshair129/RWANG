@@ -1,0 +1,43 @@
+{
+  "_README": [
+    "Copy this to accounts.local.json (gitignored) and fill in secrets — OR paste them in the",
+    "Account Pool UI (:4577 → 🔑 Account Pool tab), which writes this same file for you.",
+    "It is merged BY id onto config.json -> providers[*].accounts[*] at load time.",
+    "Two account kinds:",
+    "  (1) login account   -> { id, configDir }       a pre-logged-in CLI config dir; NO secret here.",
+    "                          The engine sets env[accountEnv]=configDir per dispatch. Log in ONCE per",
+    "                          dir; the CLI keeps a refresh token that auto-renews — that is what makes",
+    "                          'login once, lasts long' work (no proxy/VM needed).",
+    "  (2) apiKey account  -> { id, envKey, apiKey }   the key is set as env[envKey] before spawn.",
+    "Never commit accounts.local.json."
+  ],
+  "codex": {
+    "_setup": "3 ChatGPT-plan seats as login dirs. Run each once: `CODEX_HOME=~/.codex-1 codex login` (then -2, -3), or click 'login' in the Account Pool UI. configDir lives in config.json; nothing secret needed here.",
+    "accounts": [
+      { "id": "codex-1" },
+      { "id": "codex-2" },
+      { "id": "codex-3" }
+    ]
+  },
+  "claude": {
+    "_setup": "1 seat. Default dir ~/.claude is already your logged-in Claude CLI — no action needed unless you want an isolated dir.",
+    "accounts": [
+      { "id": "claude-1" }
+    ]
+  },
+  "openrouter": {
+    "accounts": [
+      { "id": "or-1", "envKey": "OPENROUTER_API_KEY", "apiKey": "sk-or-REPLACE_ME" }
+    ]
+  },
+  "antigravity": {
+    "_setup": "agy stores its interactive login in the OS keyring (Windows Credential Manager) = ONE slot per OS user, so config-dir swap does NOT give 5 concurrent seats. The only per-account path on one box is ANTIGRAVITY_TOKEN (the CI/non-interactive token). Paste one token per seat below. OPEN RISK: verify you can obtain 5 tokens for subscription accounts; if not, only one agy seat is usable at a time.",
+    "accounts": [
+      { "id": "ag-1", "envKey": "ANTIGRAVITY_TOKEN", "apiKey": "REPLACE_agy_token_1" },
+      { "id": "ag-2", "envKey": "ANTIGRAVITY_TOKEN", "apiKey": "REPLACE_agy_token_2" },
+      { "id": "ag-3", "envKey": "ANTIGRAVITY_TOKEN", "apiKey": "REPLACE_agy_token_3" },
+      { "id": "ag-4", "envKey": "ANTIGRAVITY_TOKEN", "apiKey": "REPLACE_agy_token_4" },
+      { "id": "ag-5", "envKey": "ANTIGRAVITY_TOKEN", "apiKey": "REPLACE_agy_token_5" }
+    ]
+  }
+}
