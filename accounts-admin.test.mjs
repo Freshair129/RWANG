@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   setAccountKey, resetCooldown, resetUsage,
-  setProviderEnabled, setRotation, startLogin,
+  setProviderEnabled, setRotation, setUsageLimit, startLogin,
 } from "./accounts-admin.mjs";
 
 function tmp() { return mkdtempSync(join(tmpdir(), "acct-adm-")); }
@@ -54,6 +54,18 @@ test("resetCooldown clears cooldown; resetUsage zeroes counters", () => {
   const r2 = resetUsage({ provider: "codex", id: "codex-1" }, { statePath: sp });
   assert.equal(r2.account.uses, 0);
   assert.equal(r2.account.tokens, 0);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("setUsageLimit writes/clears the 5h/7d caps in config.json", () => {
+  const d = tmp(); const cfgPath = join(d, "config.json");
+  writeFileSync(cfgPath, JSON.stringify(CFG));
+  let r = setUsageLimit({ provider: "codex", limit5h: 150, limit7d: 1000 }, { configPath: cfgPath });
+  assert.equal(r.limit5h, 150); assert.equal(r.limit7d, 1000);
+  assert.equal(JSON.parse(readFileSync(cfgPath, "utf8")).providers.codex.usage.limit5h, 150);
+  // clearing 5h (empty) removes just that key; 0/negative treated as clear
+  r = setUsageLimit({ provider: "codex", limit5h: "", limit7d: 500 }, { configPath: cfgPath });
+  assert.equal(r.limit5h, null); assert.equal(r.limit7d, 500);
   rmSync(d, { recursive: true, force: true });
 });
 
