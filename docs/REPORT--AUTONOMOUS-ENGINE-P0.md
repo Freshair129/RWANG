@@ -69,9 +69,18 @@ so the loop is unit-testable and decoupled from `engine.mjs`.
 
 ## What's left (thin follow-ups, not blocking)
 
-1. **Engine CLI wiring** — bind `autonomas()`'s `dispatchWave` to the engine's real wave dispatch
-   and expose `node orchestrator.mjs auto-loop <goalId>` (the existing `auto-wave` command is the
-   seam). Currently `dispatchWave`/`store` are injected; tests use mocks.
+1. ✅ **Engine CLI wiring — DONE.** `autonomas()` now has an async twin (`autonomasAsync` +
+   `runAutoLoopAsync`, same governed semantics — the sync API and its 9/9 tests are untouched).
+   `gks/engine-dispatch.mjs` binds the injected `dispatchWave` to the engine's real
+   worker + Verify Gate (`engine.executeWithReview`): each leaf is claimed and dispatched, and its
+   final status is mapped to the gate's `{issues[]}` review shape (done→pass, needs-rework→critical,
+   reviewing→major). `engineCostRemaining()` ties the loop's cost guard to the session cap, so an
+   autonomous run stops on cost-cap exactly like `runPool`. Exposed as
+   `node orchestrator.mjs auto-loop <goalId> [--target N] [--max-rounds N] [--executor T] [--execute]`
+   — dry-run prints the decomposition + tiers; `--execute` runs the governed loop (checkpoint per
+   round → crash-resume). Tests: `gks/engine-dispatch.test.mjs` (5), `gks/autoloop-async.test.mjs`
+   (6). Note: reviewer issue *text* lands in the async knowledge store, so the binding derives the
+   verdict from the final dispatch status (the one decision the gate needs), not from stored issues.
 2. **goldset growth** — the shipped `goldset.data.json` is a 6-entry seed; grow it before flipping
    `autoSpendAllowed` on for real auto-spend.
 3. **refine hook** — `autonomas` ships a pass-through `refine`; wire it to the RCA/anti-error-loop

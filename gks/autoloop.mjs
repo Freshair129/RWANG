@@ -9,6 +9,16 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+// Shared post-test decision (target / plateau / continue) — used by BOTH the sync and async
+// loops so the governed stop-semantics can never diverge between them.
+function _postTest(score, verdictOk, target, best, plateau, plateauRounds) {
+  if (score >= target && verdictOk) return { stop: "target-met", score, best, plateau };
+  let nb = best, np = plateau;
+  if (score > best) { nb = score; np = 0; } else { np++; }
+  if (np >= plateauRounds) return { stop: "plateau", score: nb, best: nb, plateau: np };
+  return { stop: null, best: nb, plateau: np };
+}
+
 export function runAutoLoop(goal, hooks = {}, opts = {}) {
   const { plan, build, test, benchmark, judge, refine } = hooks;
   const {
@@ -43,12 +53,57 @@ export function runAutoLoop(goal, hooks = {}, opts = {}) {
     history.push(entry);
     onRound(entry, { round, best, plateau, spec, history });
 
-    if (score >= target && verdict.ok) return finish("target-met", round, score, history);
-
-    if (score > best) { best = score; plateau = 0; } else { plateau++; }
-    if (plateau >= plateauRounds) return finish("plateau", round, best, history);
+    const d = _postTest(score, verdict.ok, target, best, plateau, plateauRounds);
+    best = d.best; plateau = d.plateau;
+    if (d.stop) return finish(d.stop, round, d.score, history);
 
     spec = refine ? refine(spec, { score, verdict, round }) : spec;
+  }
+  return finish("round-cap", maxRounds, best, history);
+}
+
+// ── async twin: identical governed semantics, but AWAITs each hook so the build hook can bind
+// the engine's real (async) wave dispatch. The sync runAutoLoop above is unchanged (its callers +
+// tests stay sync). Sync hooks work here too — awaiting a non-promise is a no-op.
+export async function runAutoLoopAsync(goal, hooks = {}, opts = {}) {
+  const { plan, build, test, benchmark, judge, refine } = hooks;
+  const {
+    target = 1.0, maxRounds = 10, plateauRounds = 2,
+    costRemaining = () => Infinity, onRound = () => {}, resume = null,
+  } = opts;
+
+  const history = resume?.history ? [...resume.history] : [];
+  let spec = resume?.spec ?? goal;
+  let best = resume?.best ?? -Infinity;
+  let plateau = resume?.plateau ?? 0;
+  const startRound = resume?.nextRound ?? 1;
+
+  for (let round = startRound; round <= maxRounds; round++) {
+    if ((await costRemaining()) <= 0) return finish("cost-cap", round - 1, best, history);
+
+    const planned = plan ? await plan(spec, round) : spec;
+    const built = build ? await build(planned, round) : planned;
+
+    const t = test ? await test(built, round) : { ok: true };
+    if (!t.ok) {
+      const entry = { round, phase: "test", ok: false, score: 0 };
+      history.push(entry);
+      spec = refine ? await refine(spec, { test: t, round }) : spec;
+      await onRound(entry, { round, best, plateau, spec, history });
+      continue;
+    }
+
+    const score = benchmark ? await benchmark(built, round) : 1;
+    const verdict = judge ? await judge(built, round) : { ok: true };
+    const entry = { round, ok: true, score, judge: verdict.ok };
+    history.push(entry);
+    await onRound(entry, { round, best, plateau, spec, history });
+
+    const d = _postTest(score, verdict.ok, target, best, plateau, plateauRounds);
+    best = d.best; plateau = d.plateau;
+    if (d.stop) return finish(d.stop, round, d.score, history);
+
+    spec = refine ? await refine(spec, { score, verdict, round }) : spec;
   }
   return finish("round-cap", maxRounds, best, history);
 }
@@ -89,7 +144,9 @@ function isCritical(review) {
 //   executorCapability capability of the build executor (drives adaptive-decompose depth)
 //   runDir            where to write the checkpoint (enables crash-resume)
 //   gateCtx           { reviewEnabled, atCap, offline, governance, workerTier, ... } for the gate
-export function autonomas(goal, deps = {}, opts = {}) {
+// Shared composer: builds the hooks + onRound + resume from the real components. The build hook
+// just calls dispatchWave — sync mock or async engine dispatch both fit (the async runner awaits).
+function _composeAutonomas(goal, deps = {}, opts = {}) {
   const {
     assignTier, decompose, classifyVerdict, scoreGoldset, dispatchWave,
     store = null, labels = [], executorCapability = "frontier", runDir = null, gateCtx = {},
@@ -107,7 +164,11 @@ export function autonomas(goal, deps = {}, opts = {}) {
       const results = dispatchWave
         ? dispatchWave(planned.leaves, round)
         : planned.leaves.map((l) => ({ leaf: l, review: { issues: [] }, ok: true }));
-      return { ...planned, results };
+      // dispatchWave may be sync (mock) or async (real engine dispatch). Resolve before wrapping so
+      // the sync loop gets a plain object and the async loop's `await build()` gets resolved results.
+      return results && typeof results.then === "function"
+        ? results.then((r) => ({ ...planned, results: r }))
+        : { ...planned, results };
     },
     test(planned) {
       const results = planned.results || [];
@@ -147,5 +208,18 @@ export function autonomas(goal, deps = {}, opts = {}) {
   };
 
   const resume = runDir ? loadCheckpoint(runDir) : null;
-  return runAutoLoop(goal, hooks, { ...opts, onRound, resume });
+  return { hooks, loopOpts: { ...opts, onRound, resume } };
+}
+
+// Sync composer entrypoint (mocked dispatch) — unchanged public behavior.
+export function autonomas(goal, deps = {}, opts = {}) {
+  const { hooks, loopOpts } = _composeAutonomas(goal, deps, opts);
+  return runAutoLoop(goal, hooks, loopOpts);
+}
+
+// Async composer entrypoint — same wiring, but drives the async runner so `dispatchWave` can be the
+// engine's real (async) wave dispatch. Use this from the CLI (`node orchestrator.mjs auto-loop`).
+export async function autonomasAsync(goal, deps = {}, opts = {}) {
+  const { hooks, loopOpts } = _composeAutonomas(goal, deps, opts);
+  return runAutoLoopAsync(goal, hooks, loopOpts);
 }
