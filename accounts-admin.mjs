@@ -105,6 +105,19 @@ export function setRotation({ provider, rotation } = {}, { configPath = DEFAULT_
   return { ok: true, provider, rotation };
 }
 
+// set the 5h/7d usage caps (uses count) that draw the per-account bar; null/absent clears one
+export function setUsageLimit({ provider, limit5h, limit7d } = {}, { configPath = DEFAULT_CONFIG_PATH } = {}) {
+  const config = readJson(configPath);
+  if (!config.providers?.[provider]) throw new Error(`unknown provider: ${provider}`);
+  const norm = (v) => (v === null || v === undefined || v === "" || !(Number(v) > 0) ? null : Number(v));
+  const usage = { ...(config.providers[provider].usage || {}) };
+  if (limit5h !== undefined) { const n = norm(limit5h); if (n === null) delete usage.limit5h; else usage.limit5h = n; }
+  if (limit7d !== undefined) { const n = norm(limit7d); if (n === null) delete usage.limit7d; else usage.limit7d = n; }
+  if (Object.keys(usage).length) config.providers[provider].usage = usage; else delete config.providers[provider].usage;
+  writeJson(configPath, config, { bom: hasBom(configPath) });
+  return { ok: true, provider, limit5h: usage.limit5h ?? null, limit7d: usage.limit7d ?? null };
+}
+
 // ── startLogin: spawn the interactive CLI OAuth login ──────────────────────────────────────────
 // Two shapes:
 //   login-dir (codex/claude): keep a refresh token per config dir (CODEX_HOME / CLAUDE_CONFIG_DIR).
