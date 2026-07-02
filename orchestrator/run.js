@@ -44,9 +44,7 @@
 export const meta = {
   name: "rwang-autonomous-runner",
   description:
-    "Spec-driven, tier-routed VERIFY->AUTHOR->REVIEW->ASSEMBLE runner with a verify " +
-    "gate, escalation ladder (T0->T1->T1.5->T2->T3), two-way cost ledger, and " +
-    "autonomy gates (supervised|autonomous|unattended). Drives a target repo on a branch.",
+    "Spec-driven, tier-routed VERIFY->AUTHOR->REVIEW->ASSEMBLE runner with a verify gate, escalation ladder (T0->T1->T1.5->T2->T3), two-way cost ledger, and autonomy gates (supervised|autonomous|unattended). Drives a target repo on a branch.",
   phases: ["Route", "Execute", "Review"],
 };
 

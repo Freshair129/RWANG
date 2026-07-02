@@ -1,0 +1,5 @@
+# Executed/loaded by tools that reject CR — pin to LF so a Windows checkout does
+# not inject \r. The Workflow tool rejects run.js if it carries carriage returns.
+*.js  text eol=lf
+*.py  text eol=lf
+*.sh  text eol=lf

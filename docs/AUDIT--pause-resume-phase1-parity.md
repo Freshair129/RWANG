@@ -177,3 +177,39 @@ overclaim of full end-to-end parity is made.
 passed-status that run.js's idempotent Execute-resume depends on are proven correct
 and reproducible (20/20 assertions); full LLM end-to-end monolith-vs-resume
 equivalence remains a required human smoke test — hence `human_review`.
+
+---
+
+## 7. End-to-end smoke attempt (real launch) — findings
+
+The human-smoke mile from §5 was then attempted for real: launch the actual
+`run.js` **via the Workflow tool** against a throwaway scratch target repo (a
+git repo on branch `rwang/e2e`) with a trivial one-task spec (create `hello.txt`,
+verify `test -f hello.txt`, T2). The launch surfaced that **`run.js` is not
+launchable as authored** — three defects in sequence, each blocking the next:
+
+1. **`meta.description` was not a pure literal.** It used string `+`
+   concatenation; the Workflow loader requires `meta` to be a pure literal.
+   → *Fixed*: collapsed to a single string literal.
+2. **CRLF line endings.** The file carried `\r` bytes (Windows checkout); the
+   launch approval rejected it as *"script contains control characters"*.
+   → *Fixed*: `.gitattributes` pins `*.js`/`*.py`/`*.sh` to `eol=lf` + working-copy
+   conversion.
+3. **Structural contract mismatch (open).** `run.js` wraps its orchestration in
+   `export default async function run() { … }`, but the Workflow runtime executes
+   a **top-level body** (its own examples: `export const meta = {…}` followed by
+   top-level statements, with top-level `await` and `return`). It rejects the
+   second `export` with `SyntaxError: Unexpected keyword 'export'`. Fixing this
+   means restructuring the dispatcher to a top-level body — and note that the
+   **`node --check` verify used by PR-T2/PR-T3 is invalid for that contract**,
+   because a top-level-body workflow uses top-level `return`/`await` that `node`
+   rejects as a plain module. So the runner and its verify strategy need to move
+   together.
+
+**Consequence.** The deterministic substrate (§1–§6, 20/20) stands, but the real
+LLM end-to-end run **did not execute** — `run.js` has never been launchable via
+the Workflow tool. This is precisely the class of defect the human smoke exists
+to catch. Closing PR-T5 green requires a follow-up ("Phase 1.5"): restructure
+`run.js` to the Workflow top-level-body contract and replace `node --check` with
+a launch-based check, then re-run this smoke. Until then PR-T5 stays **open on
+the end-to-end mile** (substrate proven; runner not yet launchable).
