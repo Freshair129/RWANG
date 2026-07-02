@@ -127,11 +127,11 @@ tasks:
 
   # ---- Phase 3: unattended (depends on Phase-1 foundation) --------------------
   - id: PR-T7
-    description: "Unattended commit phase — BRANCH-ONLY auto-commit + awaiting_merge. After review passes AND iff autonomy==unattended, a `commit` phase commits verified work to the run branch in the target repo, then sets status awaiting_merge; it NEVER push/PR/merge. Guard the phase hard on the autonomy level. Update AUTONOMY.md's status note for unattended. Implements FR-9, SI-1/4. SENSITIVE: authors an auto-write capability — must clear adversarial review."
+    description: "Unattended commit phase — BRANCH-ONLY auto-commit + awaiting_merge. After review passes AND iff autonomy==unattended, a `commit` phase commits verified work to the CURRENT feature branch in the target repo (aborting if on the default branch), then sets status awaiting_merge; it NEVER push/PR/merge. Guard the phase hard on the autonomy level. Update AUTONOMY.md's status note for unattended. Implements FR-9, SI-1/4. SENSITIVE: authors an auto-write capability — must clear adversarial review. NOTE: verify greps the unattended guard + node syntax, NOT `! grep git push|merge` — a naive push/merge grep FALSELY matches prohibition comments (e.g. executePrompt's own '(git push, opening a PR, merge, ...)' guard text); the true 'no push/merge' assurance is the human_review sign-off."
     requirement_ref: FR-9
     tier_hint: T3
     executor_model: "claude-opus-4-8"
-    verify_command: "bash -c 'set -e; grep -q \"awaiting_merge\" orchestrator/run.js; grep -Eiq \"unattended\" orchestrator/run.js; ! grep -Eq \"git[^\\n]*push|git[^\\n]*merge\" orchestrator/run.js'"
+    verify_command: "bash -c 'set -e; node --check orchestrator/run.js; grep -q \"awaiting_merge\" orchestrator/run.js; grep -Eq \"autonomy !== .unattended.\" orchestrator/run.js'"
     depends_on: [PR-T2, PR-T6]
     review_gate: true
     human_review: true   # introduces an autonomous external write -> a human must sign off

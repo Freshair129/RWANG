@@ -75,6 +75,7 @@ function nextRung(tier) {
 const ROUTE_SCHEMA = {
   type: "object",
   properties: {
+    governance_lint_exit: { type: "number" }, // exit code of governance_lint.py (0 = matrix proven)
     epic_dod: { type: "string" },
     tasks: {
       type: "array",
@@ -90,11 +91,12 @@ const ROUTE_SCHEMA = {
           review_gate: { type: "boolean" },
           human_review: { type: "boolean" },   // true => surfaces, never auto-run
         },
-        required: ["id", "description", "tier", "executor_model", "verify_command", "depends_on"],
+        required: ["id", "description", "tier", "executor_model", "verify_command", "depends_on",
+                   "review_gate", "human_review"],
       },
     },
   },
-  required: ["epic_dod", "tasks"],
+  required: ["governance_lint_exit", "epic_dod", "tasks"],
 };
 
 // JSON schema each Execute agent returns after attempting + verifying a task.
@@ -287,6 +289,7 @@ async function runTaskWithEscalation(task, runDir) {
 const REHYDRATE_SCHEMA = {
   type: "object",
   properties: {
+    governance_lint_exit: { type: "number" }, // lint re-runs at Execute entry (resume path)
     epic_dod: { type: "string" },
     tasks: {
       type: "array",
@@ -304,11 +307,11 @@ const REHYDRATE_SCHEMA = {
           status: { type: "string" },   // pending|running|passed|escalated|failed|blocked
         },
         required: ["id", "description", "tier", "executor_model", "verify_command",
-                   "depends_on", "status"],
+                   "depends_on", "review_gate", "human_review", "status"],
       },
     },
   },
-  required: ["tasks"],
+  required: ["governance_lint_exit", "tasks"],
 };
 
 // Topologically batch tasks into dependency "waves": independent tasks in a wave
@@ -361,6 +364,14 @@ async function phaseRoute() {
     [
       `RWANG ROUTE — you are the routing ROLE (deterministic, no model work).`,
       ``,
+      `0) GOVERNANCE LINT — hard gate before anything else. From G:/Rwang run:`,
+      `     python orchestrator/governance/governance_lint.py --stamp "${runDir}"`,
+      `   and record its exit code as governance_lint_exit. (--stamp also writes`,
+      `   ${runDir}/governance_lint.json — the durable report later phases check.)`,
+      `   If the exit code is NON-ZERO: STOP HERE — skip steps 1-6 entirely`,
+      `   (no route.py, no progress init) and return`,
+      `   {"governance_lint_exit": <code>, "epic_dod": "", "tasks": []}.`,
+      ``,
       `1) Read the spec at: ${specPath}`,
       `2) From G:/Rwang, run the deterministic tier router and capture its JSON:`,
       `     python orchestrator/route.py ${specPath} --json`,
@@ -389,6 +400,17 @@ async function phaseRoute() {
     { label: "route", phase: "Route", model: "sonnet", schema: ROUTE_SCHEMA }
   );
 
+  // GOVERNANCE GATE (G6/GP1): the decision is made HERE in code, not in the prompt.
+  // A broken Governance Matrix (missing guard / failing guard_test) means no run starts.
+  if (!routed || routed.governance_lint_exit !== 0) {
+    const code = routed ? routed.governance_lint_exit : "?";
+    log(`[governance] lint exit=${code} — refusing to start (fix orchestrator/governance/ first).`);
+    throw new Error(
+      `RWANG: governance_lint failed (exit ${code}) — no new run starts while the ` +
+      `Governance Matrix is broken. Run: python orchestrator/governance/governance_lint.py`
+    );
+  }
+
   const n = (routed && routed.tasks && routed.tasks.length) || 0;
   log(`Routed ${n} task(s). epic_dod="${(routed && routed.epic_dod) || ""}"`);
   return routed || { epic_dod: "", tasks: [] };
@@ -409,6 +431,10 @@ async function phaseExecute(routed) {
     const re = await agent(
       [
         `RWANG EXECUTE REHYDRATE — reconstruct run state from DISK only (no memory).`,
+        `0) GOVERNANCE LINT re-check (the matrix may have broken since Route). From`,
+        `   G:/Rwang run:  python orchestrator/governance/governance_lint.py --stamp "${runDir}"`,
+        `   and record its exit code as governance_lint_exit. If NON-ZERO: STOP —`,
+        `   return {"governance_lint_exit": <code>, "epic_dod": "", "tasks": []}.`,
         `From G:/Rwang, read ${runDir}/tasks.json (the durable routed task list) and`,
         `${runDir}/progress.json (for each task's current status and the epic_dod).`,
         `Return epic_dod and tasks[] joining the two: each task {id, description, tier,`,
@@ -418,6 +444,15 @@ async function phaseExecute(routed) {
       ].join("\n"),
       { label: "rehydrate", phase: "Execute", model: "sonnet", schema: REHYDRATE_SCHEMA }
     );
+    // GOVERNANCE GATE at Execute entry too (M3): resume/standalone must not bypass G6.
+    if (!re || re.governance_lint_exit !== 0) {
+      const code = re ? re.governance_lint_exit : "?";
+      log(`[governance] lint exit=${code} at Execute entry — refusing to continue.`);
+      throw new Error(
+        `RWANG: governance_lint failed (exit ${code}) at Execute rehydrate — ` +
+        `fix orchestrator/governance/ before resuming this run.`
+      );
+    }
     tasks = (re && re.tasks) || [];
     epic_dod = (re && re.epic_dod) || "";
   }
@@ -502,32 +537,46 @@ async function phaseReview(epic_dod, runBlocked, blockedTask) {
   return reviewSummary;
 }
 
-// PHASE: Commit (unattended ONLY). Commits verified work to the RUN BRANCH ONLY,
-// then sets awaiting_merge. INVARIANT 1/4: never push/PR/merge, never the default
-// branch. NOTE: the actual `git commit` authoring is gated behind human_review
-// (spec PR-T7) — until that lands this phase records the awaiting_merge boundary
-// and surfaces the pending commit rather than performing an unattended write.
+// PHASE: Commit (unattended ONLY). Commits verified work to the CURRENT feature
+// branch of the target repo (never the default branch), then sets awaiting_merge.
+// INVARIANT 1/4: branch-only — never push / open a PR / merge / deploy; the human
+// always owns the merge. The commit agent aborts if it is on the default branch.
 async function phaseCommit() {
   phase("Review");
   const runDir = args.runDir, targetRepo = args.targetRepo;
   const autonomy = args.autonomy || "autonomous";
+  // Hard guard: the commit phase is reachable ONLY in unattended mode.
   if (autonomy !== "unattended") {
     log(`[commit] skipped — commit phase is reachable only in unattended mode.`);
     return { status: "skipped", reason: "not-unattended" };
   }
-  await agent(
+  const res = await agent(
     [
-      `RWANG UNATTENDED COMMIT BOUNDARY (branch-only).`,
-      `TARGET REPO: ${targetRepo}`,
-      `// GATE (invariant 1/4): do NOT push, open a PR, merge, or switch to the default`,
-      `// branch. The unattended auto-commit itself is gated behind human_review (PR-T7) and`,
-      `// is NOT yet wired — so DO NOT git commit here. Instead, record the boundary:`,
-      `  python orchestrator/progress.py ${runDir} finish --status awaiting_merge`,
-      `Return a one-line confirmation that the run is awaiting a human commit/merge.`,
+      `RWANG UNATTENDED COMMIT (branch-only). Commit the verified work to the CURRENT`,
+      `feature branch of the target repo, then record awaiting_merge.`,
+      `TARGET REPO (do the git work here): ${targetRepo}`,
+      ``,
+      `// GATE (invariants 1 & 4): this is a BRANCH-ONLY local commit. You MUST NOT push,`,
+      `// open a PR, merge, or deploy, and MUST NOT commit on the repository's default`,
+      `// branch. The human always owns the merge.`,
+      ``,
+      `Steps (run git inside ${targetRepo}):`,
+      `1) Read the current branch and the default branch. If the current branch IS the`,
+      `   default branch (e.g. main/master), STOP: do NOT commit. Set needs_external_write`,
+      `   in your summary and return — the run stays blocked for a human. Otherwise continue.`,
+      `2) Stage and commit ONLY on this feature branch — no push, no merge, no PR:`,
+      `     git add -A`,
+      `     git commit -m "rwang(unattended): verified work for run ${runDir}"`,
+      `   (If there is nothing to commit, say so; that is fine — treat it as a no-op.)`,
+      `3) From G:/Rwang, record the boundary so a human can merge:`,
+      `     python orchestrator/progress.py ${runDir} finish --status awaiting_merge`,
+      ``,
+      `Return a one-line confirmation: the branch name, the short commit sha (or "no-op"),`,
+      `and that the run is awaiting a human merge.`,
     ].join("\n"),
-    { label: "commit-boundary", phase: "Review" }
+    { label: "unattended-commit", phase: "Review" }
   );
-  return { status: "awaiting_merge" };
+  return { status: "awaiting_merge", detail: typeof res === "string" ? res : "" };
 }
 
 // ---------------------------------------------------------------------------
