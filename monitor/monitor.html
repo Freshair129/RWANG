@@ -612,24 +612,49 @@
 
   // map run/task/phase status -> badge css class
   function badgeClass(status) {
+    if (typeof status === "string" && status.indexOf("phase_done:") === 0) return "b-grey";
     switch (status) {
-      case "running":   return "b-blue";
+      case "running":           return "b-blue";
       case "passed":
-      case "done":      return "b-green";
-      case "escalated": return "b-amber";
-      case "blocked":   return "b-amber";
-      case "failed":    return "b-red";
-      case "pending":   return "b-grey";
-      default:          return "b-grey";
+      case "done":              return "b-green";
+      case "escalated":         return "b-amber";
+      case "blocked":           return "b-amber";
+      case "awaiting_approval":
+      case "awaiting_merge":    return "b-amber";
+      case "needs_work":        return "b-red";
+      case "failed":            return "b-red";
+      case "pending":           return "b-grey";
+      default:                  return "b-grey";
     }
   }
   function runStatusClass(status) {
+    if (typeof status === "string" && status.indexOf("phase_done:") === 0) return "b-grey";
     switch (status) {
-      case "running": return "b-blue";
-      case "done":    return "b-green";
-      case "blocked": return "b-amber";
-      case "failed":  return "b-red";
-      default:        return "b-grey";
+      case "running":           return "b-blue";
+      case "done":              return "b-green";
+      case "blocked":           return "b-amber";
+      case "awaiting_approval":
+      case "awaiting_merge":    return "b-amber";
+      case "needs_work":        return "b-red";
+      case "failed":            return "b-red";
+      default:                  return "b-grey";
+    }
+  }
+
+  // map run status -> human, sentence-case display label
+  function statusLabel(status) {
+    if (typeof status === "string" && status.indexOf("phase_done:") === 0) {
+      return "Phase done: " + status.slice("phase_done:".length);
+    }
+    switch (status) {
+      case "running":           return "Running";
+      case "done":              return "Done";
+      case "blocked":           return "Blocked";
+      case "failed":            return "Failed";
+      case "awaiting_approval": return "Awaiting approval";
+      case "awaiting_merge":    return "Awaiting merge";
+      case "needs_work":        return "Needs work";
+      default:                  return status ? String(status) : "Unknown";
     }
   }
 
@@ -680,7 +705,7 @@
 
     var st = data.status || "unknown";
     var stEl = $("hStatus");
-    stEl.textContent = st.toUpperCase();
+    stEl.textContent = statusLabel(st);
     stEl.className = "badge lg " + runStatusClass(st);
 
     var auEl = $("hAutonomy");

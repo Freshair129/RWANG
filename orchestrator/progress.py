@@ -13,7 +13,8 @@ allowed here. Timestamps: pass --ts <iso> to pin one, else datetime.now() is use
 progress.json shape (agrees verbatim with run.js and monitor.html):
   {
     "runId": str, "spec": str, "target_repo": str, "autonomy": str,
-    "status": "running|blocked|done|failed",
+    "status": "running|blocked|done|failed|phase_done:<p>|awaiting_approval|awaiting_merge|needs_work",
+    "awaiting": {"phase": str},   # present only while status == awaiting_approval
     "started_at": iso, "updated_at": iso, "epic_dod": str,
     "phases": [ {"name": str, "status": "pending|running|passed|failed"} ],
     "tasks":  [ {
@@ -33,9 +34,16 @@ ndjson event line:
    "status": str, "tier": str, "model": str, "cost_usd": num, "detail": str}
 
 SUBCOMMANDS
-  init   <runDir> --spec --target --autonomy --epic "..." --tasks <tasks.json>
-  event  <runDir> --task --status --tier --model --cost --note [--local-tokens] [--billed-tokens] [--verify-exit]
-  finish <runDir> --status done|blocked|failed
+  init       <runDir> --spec --target --autonomy --epic "..." --tasks <tasks.json>
+  event      <runDir> --task --status --tier --model --cost --note [--local-tokens] [--billed-tokens] [--verify-exit]
+  phase-done <runDir> --phase <route|execute|review|commit>       # status -> phase_done:<p>
+  gate       <runDir> --phase <p> --await                         # status -> awaiting_approval (supervised pause)
+  approve    <runDir> --phase <p> [--by <who>]                    # record approval -> status running
+  finish     <runDir> --status done|blocked|failed
+
+The phase-done/gate/approve trio is the pause/resume interlock: a phase runner
+sets phase_done:<p>; a supervised driver gates the boundary (awaiting_approval)
+and only advances once `approve` has appended runs/<runDir>/approvals.ndjson.
 
 All three accept an optional --ts <iso>. Concurrency-safe: progress.json is updated
 read-modify-write under a lockfile with retry; progress.ndjson is opened append-mode
@@ -218,7 +226,13 @@ def _recompute_run_status(snap):
     blocked if any task is blocked; running otherwise (done/failed are set only by
     the explicit `finish` subcommand).
     """
-    if snap.get("status") in ("done", "failed"):
+    st = snap.get("status")
+    if st in ("done", "failed"):
+        return
+    # Boundary/pause states are set intentionally by phase-done/gate/finish; a
+    # stray task `event` must not clobber them back to running/blocked.
+    if st in ("awaiting_approval", "awaiting_merge", "needs_work") or (
+            isinstance(st, str) and st.startswith("phase_done")):
         return
     statuses = [t.get("status", "pending") for t in snap.get("tasks", [])]
     if any(s == "blocked" for s in statuses):
@@ -415,8 +429,9 @@ def cmd_finish(a):
     json_path, ndjson_path = _paths(run_dir)
     ts = now_iso(a.ts)
     status = (a.status or "").lower()
-    if status not in ("done", "blocked", "failed"):
-        sys.stderr.write("progress.py finish: --status must be done|blocked|failed.\n")
+    if status not in ("done", "blocked", "failed", "awaiting_merge", "needs_work"):
+        sys.stderr.write(
+            "progress.py finish: --status must be done|blocked|failed|awaiting_merge|needs_work.\n")
         sys.exit(2)
 
     _append_ndjson(ndjson_path, {
@@ -428,10 +443,11 @@ def cmd_finish(a):
         snap = _read_snapshot(json_path)
         snap["status"] = status
         snap["updated_at"] = ts
-        # Settle the Review phase: passed iff the run is done, else failed.
+        # Settle the Review phase: passed iff the run reached a clean terminal
+        # (done, or awaiting_merge = committed-to-branch clean), else failed.
         for ph in snap.get("phases", []):
             if ph.get("name") == "Review":
-                ph["status"] = "passed" if status == "done" else "failed"
+                ph["status"] = "passed" if status in ("done", "awaiting_merge") else "failed"
         snap.setdefault("events", []).append({
             "ts": ts, "task": "<run>", "event": "note",
             "detail": "run finished: %s" % status,
@@ -440,6 +456,110 @@ def cmd_finish(a):
 
     print("finish runId=%s status=%s" %
           (snap.get("runId", os.path.basename(os.path.normpath(run_dir))), status))
+
+
+# --------------------------------------------------------------------------- #
+# subcommand: phase-done  (a phase runner marks its phase complete)            #
+# --------------------------------------------------------------------------- #
+def cmd_phase_done(a):
+    run_dir = a.run_dir
+    json_path, ndjson_path = _paths(run_dir)
+    ts = now_iso(a.ts)
+    phase = a.phase
+    new_status = "phase_done:%s" % phase
+
+    _append_ndjson(ndjson_path, {
+        "ts": ts, "task": "<run>", "event": "phase_done", "status": new_status,
+        "tier": "", "model": "", "cost_usd": 0.0, "detail": "phase %s complete" % phase,
+    })
+
+    with _Lock(json_path):
+        snap = _read_snapshot(json_path)
+        snap["status"] = new_status
+        snap["updated_at"] = ts
+        # Light up that phase in the phases[] roll-up (case-insensitive match).
+        for ph in snap.get("phases", []):
+            if str(ph.get("name", "")).lower() == phase.lower():
+                ph["status"] = "passed"
+        snap.setdefault("events", []).append({
+            "ts": ts, "task": "<run>", "event": "phase_done",
+            "detail": "phase %s complete" % phase,
+        })
+        _write_snapshot_atomic(json_path, snap)
+
+    print("phase-done runId=%s phase=%s status=%s" %
+          (snap.get("runId", ""), phase, new_status))
+
+
+# --------------------------------------------------------------------------- #
+# subcommand: gate  (supervised pause — awaiting human approval to proceed)    #
+# --------------------------------------------------------------------------- #
+def cmd_gate(a):
+    run_dir = a.run_dir
+    json_path, ndjson_path = _paths(run_dir)
+    ts = now_iso(a.ts)
+    phase = a.phase
+    if not a.await_:
+        sys.stderr.write("progress.py gate: only --await is supported.\n")
+        sys.exit(2)
+
+    _append_ndjson(ndjson_path, {
+        "ts": ts, "task": "<run>", "event": "gate", "status": "awaiting_approval",
+        "tier": "", "model": "", "cost_usd": 0.0,
+        "detail": "awaiting approval to start %s" % phase,
+    })
+
+    with _Lock(json_path):
+        snap = _read_snapshot(json_path)
+        snap["status"] = "awaiting_approval"
+        snap["awaiting"] = {"phase": phase}
+        snap["updated_at"] = ts
+        snap.setdefault("events", []).append({
+            "ts": ts, "task": "<run>", "event": "gate",
+            "detail": "awaiting approval to start %s" % phase,
+        })
+        _write_snapshot_atomic(json_path, snap)
+
+    print("gate runId=%s awaiting_approval phase=%s" % (snap.get("runId", ""), phase))
+
+
+# --------------------------------------------------------------------------- #
+# subcommand: approve  (record a human approval; clears the pause)             #
+# --------------------------------------------------------------------------- #
+def cmd_approve(a):
+    run_dir = a.run_dir
+    json_path, ndjson_path = _paths(run_dir)
+    ts = now_iso(a.ts)
+    phase = a.phase
+    by = a.by or "human"
+    approvals_path = os.path.join(run_dir, "approvals.ndjson")
+
+    # Append-only approval audit (mirrors the progress.ndjson pattern).
+    with open(approvals_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "ts": ts, "phase": phase, "by": by, "decision": "approved",
+        }, ensure_ascii=False) + "\n")
+        f.flush()
+
+    _append_ndjson(ndjson_path, {
+        "ts": ts, "task": "<run>", "event": "approve", "status": "running",
+        "tier": "", "model": "", "cost_usd": 0.0,
+        "detail": "approved to start %s by %s" % (phase, by),
+    })
+
+    with _Lock(json_path):
+        snap = _read_snapshot(json_path)
+        snap["status"] = "running"
+        snap.pop("awaiting", None)
+        snap["updated_at"] = ts
+        snap.setdefault("events", []).append({
+            "ts": ts, "task": "<run>", "event": "approve",
+            "detail": "approved to start %s by %s" % (phase, by),
+        })
+        _write_snapshot_atomic(json_path, snap)
+
+    print("approve runId=%s phase=%s by=%s -> running" %
+          (snap.get("runId", ""), phase, by))
 
 
 # --------------------------------------------------------------------------- #
@@ -481,14 +601,35 @@ def build_parser():
 
     pf = sub.add_parser("finish", help="flip the terminal run status")
     pf.add_argument("run_dir")
-    pf.add_argument("--status", required=True, help="done|blocked|failed")
+    pf.add_argument("--status", required=True, help="done|blocked|failed|awaiting_merge|needs_work")
     pf.add_argument("--ts", default=None, help="optional ISO-8601 timestamp (else now)")
     pf.set_defaults(func=cmd_finish)
+
+    pd = sub.add_parser("phase-done", help="mark a phase complete (status -> phase_done:<p>)")
+    pd.add_argument("run_dir")
+    pd.add_argument("--phase", required=True, help="route|execute|review|commit")
+    pd.add_argument("--ts", default=None, help="optional ISO-8601 timestamp (else now)")
+    pd.set_defaults(func=cmd_phase_done)
+
+    pg = sub.add_parser("gate", help="supervised pause at a boundary (status -> awaiting_approval)")
+    pg.add_argument("run_dir")
+    pg.add_argument("--phase", required=True, help="the phase whose start is being gated")
+    pg.add_argument("--await", dest="await_", action="store_true",
+                    help="set awaiting_approval (required)")
+    pg.add_argument("--ts", default=None, help="optional ISO-8601 timestamp (else now)")
+    pg.set_defaults(func=cmd_gate)
+
+    pa = sub.add_parser("approve", help="record a human approval, clear the pause (-> running)")
+    pa.add_argument("run_dir")
+    pa.add_argument("--phase", required=True, help="the phase being approved to start")
+    pa.add_argument("--by", default="human", help="who approved (audit)")
+    pa.add_argument("--ts", default=None, help="optional ISO-8601 timestamp (else now)")
+    pa.set_defaults(func=cmd_approve)
 
     return p
 
 
-_SUBCMDS = {"init", "event", "finish"}
+_SUBCMDS = {"init", "event", "finish", "phase-done", "gate", "approve"}
 
 
 def _normalize_order(argv):

@@ -282,23 +282,80 @@ async function runTaskWithEscalation(task, runDir) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// MAIN — the autonomous loop.
-// ---------------------------------------------------------------------------
-export default async function run() {
-  const specPath = args.specPath;
-  const targetRepo = args.targetRepo;
-  const autonomy = args.autonomy || "autonomous"; // supervised|autonomous|unattended
-  const runDir = args.runDir;
+// JSON schema the Execute-rehydrate agent returns when a phase is launched
+// standalone (no in-memory routed list) — reconstructs state from disk.
+const REHYDRATE_SCHEMA = {
+  type: "object",
+  properties: {
+    epic_dod: { type: "string" },
+    tasks: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          description: { type: "string" },
+          tier: { type: "string" },
+          executor_model: { type: "string" },
+          verify_command: { type: "string" },
+          depends_on: { type: "array", items: { type: "string" } },
+          review_gate: { type: "boolean" },
+          human_review: { type: "boolean" },
+          status: { type: "string" },   // pending|running|passed|escalated|failed|blocked
+        },
+        required: ["id", "description", "tier", "executor_model", "verify_command",
+                   "depends_on", "status"],
+      },
+    },
+  },
+  required: ["tasks"],
+};
 
-  log(`Rwang run starting. spec=${specPath} target=${targetRepo} autonomy=${autonomy} runDir=${runDir}`);
+// Topologically batch tasks into dependency "waves": independent tasks in a wave
+// run in parallel; a later wave waits on earlier ones. Extracted so both the
+// autonomous chain and a standalone Execute phase build waves identically.
+function buildWaves(tasks) {
+  const byId = {};
+  for (const t of tasks) byId[t.id] = t;
+  const done = {};
+  const waves = [];
+  let remaining = tasks.slice();
+  let guard = 0;
+  while (remaining.length > 0 && guard < tasks.length + 2) {
+    guard += 1;
+    const ready = remaining.filter((t) =>
+      (t.depends_on || []).every((d) => done[d] === true || byId[d] === undefined)
+    );
+    if (ready.length === 0) {
+      // Dependency cycle or a dep on an unknown id: run the rest as a final wave.
+      log(`[warn] dependency stall — ${remaining.length} task(s) have unmet deps; ` +
+        `running them as a final wave to avoid a livelock.`);
+      waves.push(remaining);
+      for (const t of remaining) done[t.id] = true;
+      remaining = [];
+      break;
+    }
+    waves.push(ready);
+    for (const t of ready) done[t.id] = true;
+    const readyIds = new Set(ready.map((t) => t.id));
+    remaining = remaining.filter((t) => !readyIds.has(t.id));
+  }
+  return waves;
+}
 
-  // =========================================================================
-  // PHASE 1 — Route. One agent reads the spec, runs the deterministic router,
-  // and initializes the shared progress files. The router is a ROLE (zero-VRAM,
-  // rules-first) — it never sends work to a model.
-  // =========================================================================
+// ---------------------------------------------------------------------------
+// PHASE FUNCTIONS. Each rehydrates from disk, does ONE phase, writes its
+// terminal status via progress.py, and returns. State lives ONLY on disk
+// (progress.json + tasks.json) so a phase can run standalone or be chained.
+// ---------------------------------------------------------------------------
+
+// PHASE: Route. Runs the deterministic router, writes durable tasks.json, inits
+// the progress files, then marks phase_done:route. The router is a ROLE — it
+// never sends work to a model.
+async function phaseRoute() {
   phase("Route");
+  const specPath = args.specPath, targetRepo = args.targetRepo, runDir = args.runDir;
+  const autonomy = args.autonomy || "autonomous";
 
   const routed = await agent(
     [
@@ -317,13 +374,14 @@ export default async function run() {
       `   executor_model) with the spec fields. Any task whose work is an external write`,
       `   (push/PR/merge/deploy) OR is explicitly human-gated -> set human_review=true.`,
       ``,
-      `5) Initialize the shared progress files. From G:/Rwang, write the tasks JSON to`,
-      `   ${runDir}/tasks.json (status omitted; progress.py sets all to pending), then run:`,
+      `5) Initialize the shared progress files. From G:/Rwang, write the DURABLE tasks JSON`,
+      `   to ${runDir}/tasks.json (status omitted; progress.py sets all to pending) — this`,
+      `   file is the source-of-truth a standalone Execute phase rehydrates from — then run:`,
       `     python orchestrator/progress.py ${runDir} init --spec "${specPath}" \\`,
       `       --target "${targetRepo}" --autonomy "${autonomy}" \\`,
       `       --epic "<epic_dod>" --tasks ${runDir}/tasks.json`,
-      `   This creates ${runDir}/progress.json (status=running, all tasks pending, phases`,
-      `   Route/Execute/Review) and starts ${runDir}/progress.ndjson.`,
+      `6) Mark the phase complete. From G:/Rwang run:`,
+      `     python orchestrator/progress.py ${runDir} phase-done --phase route`,
       ``,
       `Return ONLY the JSON for the schema: epic_dod, and tasks[] with`,
       `{id, description, tier, executor_model, verify_command, depends_on, review_gate, human_review}.`,
@@ -331,53 +389,40 @@ export default async function run() {
     { label: "route", phase: "Route", model: "sonnet", schema: ROUTE_SCHEMA }
   );
 
-  const tasks = (routed && routed.tasks) || [];
-  log(`Routed ${tasks.length} task(s). epic_dod="${(routed && routed.epic_dod) || ""}"`);
+  const n = (routed && routed.tasks && routed.tasks.length) || 0;
+  log(`Routed ${n} task(s). epic_dod="${(routed && routed.epic_dod) || ""}"`);
+  return routed || { epic_dod: "", tasks: [] };
+}
 
-  // SUPERVISED autonomy: in a real supervised run the harness would pause for a
-  // human ack before each phase. We mark the boundary explicitly so the operator
-  // sees it in the log; autonomous/unattended drive straight through.
-  if (autonomy === "supervised") {
-    log(`[supervised] Route complete. (A supervisor would approve before Execute.)`);
-  }
-
-  // Build the dependency layers: independent tasks run in PARALLEL, dependents WAIT.
-  // We topologically batch tasks into "waves" by depends_on so pipeline()/parallel()
-  // can express "this wave's tasks are independent; the next wave depends on it".
-  const byId = {};
-  for (const t of tasks) byId[t.id] = t;
-  const done = {};
-  const waves = [];
-  let remaining = tasks.slice();
-  let guard = 0;
-  while (remaining.length > 0 && guard < tasks.length + 2) {
-    guard += 1;
-    const ready = remaining.filter((t) =>
-      (t.depends_on || []).every((d) => done[d] === true || byId[d] === undefined)
-    );
-    if (ready.length === 0) {
-      // Dependency cycle or a dep on an unknown id that never completes.
-      log(`[warn] dependency stall — ${remaining.length} task(s) have unmet deps; ` +
-        `running them as a final wave to avoid a livelock.`);
-      waves.push(remaining);
-      for (const t of remaining) done[t.id] = true;
-      remaining = [];
-      break;
-    }
-    waves.push(ready);
-    for (const t of ready) done[t.id] = true;
-    const readyIds = new Set(ready.map((t) => t.id));
-    remaining = remaining.filter((t) => !readyIds.has(t.id));
-  }
-
-  // =========================================================================
-  // PHASE 2 — Execute. Drive waves in order; within a wave, tasks run in
-  // parallel (deps already satisfied). The verify gate + escalation ladder live
-  // in runTaskWithEscalation. If any task goes terminal=blocked, we STOP the run
-  // (invariants 1/3): we do not start later waves.
-  // =========================================================================
+// PHASE: Execute. If `routed` is null (standalone/resume), rehydrate the task
+// list + per-task status from disk (FR-2). Tasks already `passed` are SKIPPED
+// (FR-4 idempotent resume). On the first blocked task, later waves do not start.
+async function phaseExecute(routed) {
   phase("Execute");
+  const runDir = args.runDir;
 
+  let tasks, epic_dod;
+  if (routed && routed.tasks) {
+    tasks = routed.tasks;
+    epic_dod = routed.epic_dod || "";
+  } else {
+    const re = await agent(
+      [
+        `RWANG EXECUTE REHYDRATE — reconstruct run state from DISK only (no memory).`,
+        `From G:/Rwang, read ${runDir}/tasks.json (the durable routed task list) and`,
+        `${runDir}/progress.json (for each task's current status and the epic_dod).`,
+        `Return epic_dod and tasks[] joining the two: each task {id, description, tier,`,
+        `executor_model, verify_command, depends_on, review_gate, human_review, status},`,
+        `where status is the progress.json task status (pending|running|passed|escalated|`,
+        `failed|blocked). Return ONLY the schema JSON.`,
+      ].join("\n"),
+      { label: "rehydrate", phase: "Execute", model: "sonnet", schema: REHYDRATE_SCHEMA }
+    );
+    tasks = (re && re.tasks) || [];
+    epic_dod = (re && re.epic_dod) || "";
+  }
+
+  const waves = buildWaves(tasks);
   let runBlocked = false;
   let blockedTask = null;
   const results = [];
@@ -385,18 +430,22 @@ export default async function run() {
   for (let w = 0; w < waves.length; w++) {
     if (runBlocked) break;
     const wave = waves[w];
-    log(`Execute wave ${w + 1}/${waves.length}: [${wave.map((t) => t.id).join(", ")}]`);
+    // FR-4: an already-passed task is not re-run — resume continues where it stopped.
+    const todo = wave.filter((t) => t.status !== "passed");
+    const skipped = wave.filter((t) => t.status === "passed");
+    for (const s of skipped) {
+      log(`[skip] task ${s.id} already passed — not re-running.`);
+      results.push({ id: s.id, terminal: "passed", skipped: true });
+    }
+    log(`Execute wave ${w + 1}/${waves.length}: run [${todo.map((t) => t.id).join(", ")}]` +
+      (skipped.length ? ` skip [${skipped.map((t) => t.id).join(", ")}]` : ""));
 
-    // parallel() over the independent tasks in this wave.
     const waveResults = await parallel(
-      wave.map((t) => () => runTaskWithEscalation(t, runDir))
+      todo.map((t) => () => runTaskWithEscalation(t, runDir))
     );
-
     for (const r of waveResults) {
       results.push(r);
       if (r.terminal === "blocked") {
-        // Invariant 1 (external write) / 3 (gate-exhaustion) / human_review all
-        // funnel here: surface and STOP the run. Never loop, never skip the gate.
         runBlocked = true;
         blockedTask = r;
         log(`[STOP] run blocked by task ${r.id} (reason=${r.reason}).`);
@@ -404,13 +453,25 @@ export default async function run() {
     }
   }
 
-  // =========================================================================
-  // PHASE 3 — Review. A T3 (opus) agent adversarially reviews the ASSEMBLED
-  // changes against the epic DoD — this is the final verify gate for output that
-  // crosses to the human. Even if we are blocked, we review what landed so the
-  // human gets a real assessment, not just a halt.
-  // =========================================================================
+  if (!runBlocked) {
+    await agent(
+      [
+        `Mark the Execute phase complete. From G:/Rwang run:`,
+        `  python orchestrator/progress.py ${runDir} phase-done --phase execute`,
+        `Return a one-line confirmation.`,
+      ].join("\n"),
+      { label: "phase-done:execute", phase: "Execute" }
+    );
+  }
+  return { tasks, epic_dod, results, runBlocked, blockedTask };
+}
+
+// PHASE: Review. A T3/opus agent adversarially reviews the assembled changes vs
+// the epic DoD. If epic_dod is falsy (standalone), it is read from progress.json.
+// Ends by marking phase_done:review (review-only — never commits/pushes).
+async function phaseReview(epic_dod, runBlocked, blockedTask) {
   phase("Review");
+  const runDir = args.runDir, targetRepo = args.targetRepo;
 
   const reviewSummary = await agent(
     [
@@ -418,7 +479,7 @@ export default async function run() {
       `target repo against the epic definition-of-done.`,
       ``,
       `TARGET REPO: ${targetRepo}`,
-      `EPIC DoD:    ${(routed && routed.epic_dod) || "(none captured)"}`,
+      `EPIC DoD:    ${epic_dod || `(read it from ${runDir}/progress.json .epic_dod)`}`,
       `RUN STATUS:  ${runBlocked ? "BLOCKED at task " + (blockedTask && blockedTask.id) : "all waves attempted"}`,
       ``,
       `Inspect the working tree (git diff/status in ${targetRepo}), re-run the most`,
@@ -427,44 +488,146 @@ export default async function run() {
       `human_review. Be skeptical of any cheap-tier output that crossed a phase boundary —`,
       `confirm its verify actually passed.`,
       ``,
-      `// GATE (invariant 1): do NOT commit/push/merge. Review only. In "unattended" mode a`,
-      `// human still merges — your job is to certify, not to ship.`,
+      `// GATE (invariant 1): do NOT commit/push/merge. Review only. In "unattended" mode the`,
+      `// commit-to-branch is a SEPARATE gated phase and a human still merges.`,
+      ``,
+      `Then, from G:/Rwang, run:`,
+      `  python orchestrator/progress.py ${runDir} phase-done --phase review`,
       ``,
       `Return a concise prose verdict: PASS or NEEDS-WORK, the strongest concern, and whether`,
       `the epic DoD is met.`,
     ].join("\n"),
     { label: "adversarial-review", phase: "Review", model: "opus", isolation: "default" }
   );
+  return reviewSummary;
+}
 
-  // Terminal status: blocked if any task halted us, else done.
-  const terminalStatus = runBlocked ? "blocked" : "done";
-
-  // Final agent writes the terminal progress.json status so the monitor settles.
+// PHASE: Commit (unattended ONLY). Commits verified work to the RUN BRANCH ONLY,
+// then sets awaiting_merge. INVARIANT 1/4: never push/PR/merge, never the default
+// branch. NOTE: the actual `git commit` authoring is gated behind human_review
+// (spec PR-T7) — until that lands this phase records the awaiting_merge boundary
+// and surfaces the pending commit rather than performing an unattended write.
+async function phaseCommit() {
+  phase("Review");
+  const runDir = args.runDir, targetRepo = args.targetRepo;
+  const autonomy = args.autonomy || "autonomous";
+  if (autonomy !== "unattended") {
+    log(`[commit] skipped — commit phase is reachable only in unattended mode.`);
+    return { status: "skipped", reason: "not-unattended" };
+  }
   await agent(
     [
-      `Finalize the Rwang run. From G:/Rwang run:`,
-      `  python orchestrator/progress.py ${runDir} finish --status ${terminalStatus}`,
-      `This flips ${runDir}/progress.json status to "${terminalStatus}" and stamps updated_at.`,
-      `Return a one-line confirmation of the final status.`,
+      `RWANG UNATTENDED COMMIT BOUNDARY (branch-only).`,
+      `TARGET REPO: ${targetRepo}`,
+      `// GATE (invariant 1/4): do NOT push, open a PR, merge, or switch to the default`,
+      `// branch. The unattended auto-commit itself is gated behind human_review (PR-T7) and`,
+      `// is NOT yet wired — so DO NOT git commit here. Instead, record the boundary:`,
+      `  python orchestrator/progress.py ${runDir} finish --status awaiting_merge`,
+      `Return a one-line confirmation that the run is awaiting a human commit/merge.`,
     ].join("\n"),
-    { label: "finalize", phase: "Review" }
+    { label: "commit-boundary", phase: "Review" }
   );
+  return { status: "awaiting_merge" };
+}
 
-  log(`Rwang run ${terminalStatus}. ${results.filter((r) => r.terminal === "passed").length}/` +
-    `${tasks.length} task(s) passed.`);
+// ---------------------------------------------------------------------------
+// MAIN — the dispatcher. With args.phase, run exactly ONE phase and return
+// (FR-1) — the external driver decides what runs next. With no phase, chain the
+// phases per autonomy level: supervised pauses after Route (it cannot block
+// in-body), autonomous/unattended drive straight through.
+// ---------------------------------------------------------------------------
+export default async function run() {
+  const autonomy = args.autonomy || "autonomous";
+  const runDir = args.runDir;
+  const requested = args.phase; // "route"|"execute"|"review"|"commit"|undefined
 
-  // Return value (Workflow result object).
+  log(`Rwang run. spec=${args.specPath} target=${args.targetRepo} ` +
+    `autonomy=${autonomy} runDir=${runDir} phase=${requested || "(all)"}`);
+
+  // ---- Single-phase invocation: do exactly one phase, then return. ----
+  if (requested) {
+    if (requested === "route") {
+      const routed = await phaseRoute();
+      return { runDir, phase: "route", status: "phase_done:route",
+        epic_dod: routed.epic_dod || "", tasks_total: (routed.tasks || []).length };
+    }
+    if (requested === "execute") {
+      const ex = await phaseExecute(null);
+      return { runDir, phase: "execute",
+        status: ex.runBlocked ? "blocked" : "phase_done:execute",
+        tasks_total: ex.tasks.length,
+        tasks_passed: ex.results.filter((r) => r.terminal === "passed").length,
+        blocked_task: ex.blockedTask ? { id: ex.blockedTask.id, reason: ex.blockedTask.reason } : null };
+    }
+    if (requested === "review") {
+      const review = await phaseReview("", false, null);
+      return { runDir, phase: "review", status: "phase_done:review",
+        review: typeof review === "string" ? review : (review && review.summary) || "" };
+    }
+    if (requested === "commit") {
+      const c = await phaseCommit();
+      return { runDir, phase: "commit", status: c.status };
+    }
+    throw new Error(`RWANG: unknown args.phase "${requested}" (route|execute|review|commit).`);
+  }
+
+  // ---- No phase given: chain per autonomy level. ----
+  const routed = await phaseRoute();
+
+  // SUPERVISED cannot pause mid-body, so it stops after Route with an approval
+  // gate; the session driver resumes by launching phase=execute after approval.
+  if (autonomy === "supervised") {
+    await agent(
+      [
+        `Set the supervised approval gate. From G:/Rwang run:`,
+        `  python orchestrator/progress.py ${runDir} gate --phase execute --await`,
+        `Return a one-line confirmation.`,
+      ].join("\n"),
+      { label: "gate:execute", phase: "Route" }
+    );
+    log(`[supervised] paused after Route — awaiting human approval to Execute.`);
+    return { runDir, spec: args.specPath, target_repo: args.targetRepo, autonomy,
+      status: "awaiting_approval", awaiting: { phase: "execute" },
+      epic_dod: routed.epic_dod || "",
+      note: "supervised pause — the session driver resumes via phase=execute after approval." };
+  }
+
+  // AUTONOMOUS / UNATTENDED: drive straight through.
+  const ex = await phaseExecute(routed);
+  const review = await phaseReview(ex.epic_dod, ex.runBlocked, ex.blockedTask);
+
+  let terminalStatus = ex.runBlocked ? "blocked" : "done";
+  if (!ex.runBlocked && autonomy === "unattended") {
+    await phaseCommit();                 // branch-only; sets awaiting_merge itself
+    terminalStatus = "awaiting_merge";
+  }
+
+  if (terminalStatus !== "awaiting_merge") {
+    await agent(
+      [
+        `Finalize the Rwang run. From G:/Rwang run:`,
+        `  python orchestrator/progress.py ${runDir} finish --status ${terminalStatus}`,
+        `This flips ${runDir}/progress.json status to "${terminalStatus}" and stamps updated_at.`,
+        `Return a one-line confirmation of the final status.`,
+      ].join("\n"),
+      { label: "finalize", phase: "Review" }
+    );
+  }
+
+  log(`Rwang run ${terminalStatus}. ${ex.results.filter((r) => r.terminal === "passed").length}/` +
+    `${ex.tasks.length} task(s) passed.`);
+
   return {
     runDir,
-    spec: specPath,
-    target_repo: targetRepo,
+    spec: args.specPath,
+    target_repo: args.targetRepo,
     autonomy,
     status: terminalStatus,
-    epic_dod: (routed && routed.epic_dod) || "",
-    tasks_total: tasks.length,
-    tasks_passed: results.filter((r) => r.terminal === "passed").length,
-    blocked_task: blockedTask ? { id: blockedTask.id, reason: blockedTask.reason } : null,
-    review: typeof reviewSummary === "string" ? reviewSummary : (reviewSummary && reviewSummary.summary) || "",
+    epic_dod: ex.epic_dod || "",
+    tasks_total: ex.tasks.length,
+    tasks_passed: ex.results.filter((r) => r.terminal === "passed").length,
+    blocked_task: ex.blockedTask ? { id: ex.blockedTask.id, reason: ex.blockedTask.reason } : null,
+    review: typeof review === "string" ? review : (review && review.summary) || "",
     note:
       "Claude pricing in the ledger is the 2026-06-04 snapshot (UNCERTAINTY FLAG); " +
       "re-verify rates before billing.",
