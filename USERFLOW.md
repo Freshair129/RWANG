@@ -21,15 +21,15 @@ Open Claude Code. **Both Rwang and the target repo must be reachable on disk** i
 
 A run is driven by a spec. Start from the template.
 
-> **You type:** `open the spec-template under specs/ and help me write specs/refine-quant.md for the GenesisBlock vector-quant refinement`
+> **You type:** `open specs/_TEMPLATE.yaml and help me write specs/refine-quant.yaml for the GenesisBlock vector-quant refinement`
 
-**Claude does:** copies `specs/spec-template` to your new spec, helps you fill in the **epic DoD**, the **task list** (each with a `verify_command` where possible), and `depends_on` ordering. Tasks **without** a machine-checkable `verify_command` get flagged so they floor at **T2+** (see the HARD RULE in AUTONOMY.md).
+**Claude does:** copies `specs/_TEMPLATE.yaml` to your new spec, helps you fill in the **epic DoD**, the **task list** (each with a `verify_command` where possible), and `depends_on` ordering. Tasks **without** a machine-checkable `verify_command` get flagged so they floor at **T2+** (see the HARD RULE in AUTONOMY.md).
 
 ---
 
 ## Step 3 — Tell Claude to run the spec
 
-> **You type:** `use Rwang to run specs/refine-quant.md against G:/GenesisBlock_Dev/GenesisBlock, autonomy=autonomous`
+> **You type:** `use Rwang to run specs/refine-quant.yaml against G:/GenesisBlock_Dev/GenesisBlock, autonomy=autonomous`
 
 **Claude does:**
 1. **Reads the spec** — derives the epic DoD, the phases (VERIFY → AUTHOR → REVIEW → ASSEMBLE), and the task graph.
@@ -37,9 +37,10 @@ A run is driven by a spec. Start from the template.
 3. **Launches the runner** via the **Workflow tool**:
    ```text
    scriptPath = orchestrator/run.js
-   args = { specPath: "specs/refine-quant.md",
+   args = { specPath: "specs/refine-quant.yaml",
             targetRepo: "G:/GenesisBlock_Dev/GenesisBlock",
-            autonomy: "autonomous" }
+            autonomy: "autonomous",
+            runDir:   "G:/Rwang/runs/<runId>" }
    ```
 4. Creates `runs/<runId>/` and begins writing `progress.ndjson` (one event per line) and `progress.json` (the snapshot).
 

@@ -103,4 +103,4 @@ Autonomy raises throughput by removing per-task prompts; the verify gate keeps i
 
 - **USERFLOW.md** — the concrete human flow and the shared progress schema.
 - **CLAUDE.md** — the deterministic-core rule, the `python`-not-`python3` gotcha, and the pricing uncertainty flag.
-- **.claude/skills/tiered-swarm/DESIGN-RATIONALE.md** — the two-axis model and FrugalGPT routing in depth.
+- **.claude/skills/tiered-swarm/references/DESIGN-RATIONALE.md** — the two-axis model and FrugalGPT routing in depth.

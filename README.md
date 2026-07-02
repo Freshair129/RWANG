@@ -19,7 +19,7 @@ One Rwang drives many targets. A target is just a path plus a spec.
 
 ## Architecture
 
-Rwang is the [`tiered-swarm` skill](.claude/skills/tiered-swarm/DESIGN-RATIONALE.md) — already proven as an in-session orchestration pattern — **ported into a standalone, autonomous repo** and wrapped with a runner and a monitor.
+Rwang is the [`tiered-swarm` skill](.claude/skills/tiered-swarm/references/DESIGN-RATIONALE.md) — already proven as an in-session orchestration pattern — **ported into a standalone, autonomous repo** and wrapped with a runner and a monitor.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -67,7 +67,7 @@ G:/Rwang/
 ├── CLAUDE.md                     ← operating instructions for a Claude Code session
 ├── USERFLOW.md                   ← the end-to-end human flow, step by step
 ├── AUTONOMY.md                   ← the three autonomy levels + safety invariants
-├── .claude/skills/tiered-swarm/  ← the ported skill (SKILL.md, DESIGN-RATIONALE.md, …)
+├── .claude/skills/tiered-swarm/  ← the ported skill (SKILL.md, references/DESIGN-RATIONALE.md, …)
 ├── orchestrator/                 ← the runner + the deterministic core
 │   ├── run.js                    ← autonomous runner (launched via Workflow tool)
 │   ├── route.py                  ← model-tier router (role-based)
@@ -77,7 +77,7 @@ G:/Rwang/
 │   └── ollama_route.sh           ← local-tier dispatch
 ├── monitor/
 │   └── monitor.html              ← reads runs/<runId>/progress.json live
-├── specs/                        ← specs you write; see spec-template
+├── specs/                        ← specs you write; see specs/_TEMPLATE.yaml
 └── runs/<runId>/                 ← per-run progress.ndjson + progress.json
 ```
 
@@ -87,8 +87,8 @@ G:/Rwang/
 
 ```text
 1. Open a Claude Code session where BOTH Rwang and the target repo are reachable on disk.
-2. Write or pick a spec under specs/  (start from the spec-template).
-3. Tell Claude:  "use Rwang to run specs/<your-spec>.md against G:/GenesisBlock_Dev/GenesisBlock, autonomy=autonomous"
+2. Write or pick a spec under specs/  (start from specs/_TEMPLATE.yaml).
+3. Tell Claude:  "use Rwang to run specs/<your-spec>.yaml against G:/GenesisBlock_Dev/GenesisBlock, autonomy=autonomous"
 4. Open monitor/monitor.html (or `python -m http.server` inside runs/) and watch progress.json.
 5. When the run halts at an external write (commit/PR), review and approve it yourself.
 ```
@@ -99,4 +99,4 @@ G:/Rwang/
 
 - **[USERFLOW.md](USERFLOW.md)** — the concrete, numbered flow a human follows through Claude Code.
 - **[AUTONOMY.md](AUTONOMY.md)** — the three autonomy levels and the non-negotiable safety invariants.
-- **[.claude/skills/tiered-swarm/DESIGN-RATIONALE.md](.claude/skills/tiered-swarm/DESIGN-RATIONALE.md)** — why the two-axis model, the verify gate, and FrugalGPT routing exist.
+- **[.claude/skills/tiered-swarm/references/DESIGN-RATIONALE.md](.claude/skills/tiered-swarm/references/DESIGN-RATIONALE.md)** — why the two-axis model, the verify gate, and FrugalGPT routing exist.
