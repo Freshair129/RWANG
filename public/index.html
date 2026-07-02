@@ -196,7 +196,10 @@
   .qrow .ql{ width:26px; flex:none; font-size:10px; font-weight:700; letter-spacing:.4px; color:var(--mut); }
   .qrow .qtrack{ flex:1; }
   .qrow .qn{ flex:none; min-width:104px; text-align:right; font-size:10.5px; color:var(--mut); font-variant-numeric:tabular-nums; }
-  .qrow .qn .rst{ color:var(--ice); } .qrow .qn .rst.hot{ color:var(--warn); }
+  .qrow .qn .rst{ color:var(--ice); } .qrow .qn .rst.hot{ color:var(--warn); } .qrow .qn .rst.done{ color:var(--mut); }
+  .qrow .qn .atc{ color:var(--mut); opacity:.75; } .qrow .qn .rst .cd{ font-variant-numeric:tabular-nums; }
+  .chip.pulse{ border-color:rgba(120,200,255,.35); color:var(--ice); }
+  .chip.pulse:hover{ background:rgba(120,200,255,.12); } .chip:disabled{ opacity:.6; cursor:default; }
 
   .cchips{ display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
   .chip{ font-size:11px; padding:4px 10px; border-radius:9px; border:1px solid var(--line); background:var(--panel-2); cursor:pointer; white-space:nowrap; color:var(--txt); }
@@ -574,7 +577,16 @@ async function acctPost(path, body){
   loadAcct(); return j;
 }
 const PEMOJI={claude:"🟣",codex:"🟢",openrouter:"🔀",antigravity:"🪐","openai-image":"🎨","openrouter-image":"🖼","local-image":"🧩",ollama:"🦙"};
-function fmtDur(ms){ const m=Math.round(ms/60000); if(m<=0) return ""; if(m<60) return m+"m"; return Math.floor(m/60)+"h "+String(m%60).padStart(2,"0")+"m"; }
+function fmtDur(ms){ // live countdown: seconds near the end, clean d/h/m higher up
+  if(!ms||ms<=0) return "";
+  const s=Math.round(ms/1000);
+  if(s<60) return s+"s";
+  const m=Math.floor(s/60);
+  if(m<60) return m+"m "+String(s%60).padStart(2,"0")+"s";
+  const h=Math.floor(m/60);
+  if(h<24) return h+"h "+String(m%60).padStart(2,"0")+"m";
+  return Math.floor(h/24)+"d "+String(h%24).padStart(2,"0")+"h";
+}
 function flipCard(cid){ const el=document.getElementById("card-"+cid); if(el) el.classList.toggle("flipped"); }
 function renderAcctPool(){
   // don't disrupt the user: skip auto re-render while a field is focused/typed OR a card is flipped open
@@ -637,10 +649,17 @@ function accCard(p,a){
     const barRow=(lbl,w,cap)=>{
       const pct=cap?Math.min(100,w.uses/cap*100):(w.uses?10:0);
       const c=cap?(pct>=100?"var(--bad)":pct>=80?"var(--warn)":"var(--ice)"):"var(--ice-dim)";
-      const rst=fmtDur(w.resetMs);
+      // countdown: convert the server's relative resetMs to an absolute epoch NOW, so a 1s ticker can
+      // count it down live and show the wall-clock time the window frees up.
+      let cd="";
+      if(w.resetMs>0){
+        const at=Date.now()+w.resetMs;
+        const clock=new Date(at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+        cd=` · <span class="rst ${pct>=80?'hot':''}" data-reset="${at}">⏳<span class="cd">${fmtDur(w.resetMs)}</span></span> <span class="atc">${clock}</span>`;
+      }
       return `<div class="qrow"><span class="ql">${lbl}</span>`+
         `<div class="qtrack"><i style="width:${pct}%;background:${c}"></i></div>`+
-        `<span class="qn">${w.uses}${cap?`/${cap}`:''} · ${fmtTok(w.tokens)}${rst?` · <span class="rst ${pct>=80?'hot':''}">⏳${rst}</span>`:''}</span></div>`;
+        `<span class="qn">${w.uses}${cap?`/${cap}`:''} · ${fmtTok(w.tokens)}${cd}</span></div>`;
     };
     stats=`<div class="cstats"><div class="stat"><div class="l">5H USES</div><div class="v">${w5.uses}<small>${p.limit5h?` / ${p.limit5h}`:''}</small></div></div><div class="stat"><div class="l">7D USES</div><div class="v">${w7.uses}<small>${p.limit7d?` / ${p.limit7d}`:''}</small></div></div></div>`;
     const lbl=noApi?`Rwang-tracked <span class="tip" title="ผู้ให้บริการไม่เปิด API quota ของแพลน (claude/codex/antigravity) — แถบนี้นับจากที่ Rwang ยิงเทียบ cap ที่คุณตั้งเอง ไม่ใช่ยอดจริงของแพลน">ⓘ</span>`:`Usage`;
@@ -651,6 +670,10 @@ function accCard(p,a){
   }
   let chips="";
   if(a.canLogin) chips+=`<button class="chip" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${a.authed?'↻ re-login':'🔓 login'}</button>`;
+  // pulse: only the rolling-window plans (claude/codex/antigravity) + when authed. Fires a tiny real
+  // dispatch to seed a usage event so the 5h/7d countdown starts. Excludes openrouter ($-metered card).
+  if(["claude","codex","antigravity"].includes(p.provider) && a.authed && !cool)
+    chips+=`<button class="chip pulse" title="ส่ง req จิ๋วผ่าน account นี้ (ใช้โทเคนจริงเล็กน้อย) เพื่อเริ่มนับ window 5h/7d" onclick="pulse('${p.provider}','${a.id}')">⚡ pulse</button>`;
   if(cool) chips+=`<button class="chip" onclick="acctPost('manage',{action:'reset-cooldown',provider:'${p.provider}',id:'${a.id}'})">clear cooldown</button>`;
   chips+=`<button class="chip cfg" onclick="flipCard('${cid}')">⚙ config</button>`;
   // ── back face ──
@@ -679,6 +702,28 @@ async function saveKey(provider,id){
   if(!apiKey){ toast("ใส่ token ก่อน",true); return; }
   await acctPost("key",{provider,id,apiKey}); el.value="";
 }
+// reactive pulse: fire a tiny real dispatch through one account to start its 5h/7d window/countdown.
+async function pulse(provider,id){
+  if(!confirm(`⚡ Pulse ${provider}/${id}\nส่ง req จิ๋วผ่าน account นี้ (ใช้โทเคนจริงเล็กน้อย) เพื่อ 'จุด' window 5h/7d ให้เริ่มนับถอยหลัง\n\nดำเนินการ?`)) return;
+  const btn=event&&event.target; if(btn){ btn.disabled=true; btn.textContent="⚡ pulsing…"; }
+  toast(`pulsing ${provider}/${id}…`);
+  try{
+    const r=await (await fetch("/api/accounts/pulse",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider,id})})).json();
+    if(r.ok){ const t=(r.usage&&((r.usage.inTok||0)+(r.usage.outTok||0)))||0; toast(`⚡ pulse ok · ${provider}/${id}${t?` · ${t} tok`:""}`); }
+    else toast("pulse: "+(r.error||"failed"),true);
+  }catch(e){ toast("pulse error: "+e.message,true); }
+  await loadAcct();
+}
+// tick every live countdown (spans carrying data-reset=<absolute epoch ms>) once a second.
+function tickCountdowns(){
+  const now=Date.now();
+  document.querySelectorAll('#pool [data-reset]').forEach(el=>{
+    const ms=Math.max(0,(Number(el.dataset.reset)||0)-now);
+    const cd=el.querySelector('.cd'); if(cd) cd.textContent=ms<=0?"พร้อม":fmtDur(ms);
+    if(ms<=0) el.classList.add('done');
+  });
+}
+setInterval(tickCountdowns,1000);
 
 // poll: state ทุก 1.5s ; log streaming เร็วกว่า (900ms) เมื่ออยู่ room หรือเปิด modal ; ollama ทุก 10s ; accounts ทุก 4s เมื่ออยู่ pool
 setInterval(()=>{ if($("#auto").checked) load(); },1500);

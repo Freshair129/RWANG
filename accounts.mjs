@@ -157,10 +157,13 @@ export function saveState(statePath, state) {
 //   applyAccount(sel.account, registry[name], childEnv)
 //   ... run ...
 //   sel.note({ cost, tokens, limited, resetMs })   // persists usage + cooldown + advances RR
-export function selectAccount(providerName, provider, statePath, { now = Date.now(), rotationOverride = null } = {}) {
+export function selectAccount(providerName, provider, statePath, { now = Date.now(), rotationOverride = null, forceId = null } = {}) {
   const state = loadState(statePath);
   const pstate = (state[providerName] = state[providerName] || { rrIndex: 0, accounts: {} });
-  const account = pickAccount(provider, pstate, { now, rotationOverride });
+  // forceId pins a specific account (e.g. a pulse targeting one card) — bypasses rotation & cooldown.
+  const account = forceId
+    ? (provider.accounts || []).find((a) => a.id === forceId) || null
+    : pickAccount(provider, pstate, { now, rotationOverride });
   return {
     account,
     note(outcome = {}) {

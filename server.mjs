@@ -11,7 +11,7 @@ import { join } from "node:path";
 import * as E from "./engine.mjs";
 import { writeNode, writeEdge, queryNodes } from "./store/knowledge.mjs";
 import { accountsStatus, fetchPlanQuotas, DEFAULT_STATE_PATH } from "./accounts.mjs";
-import { resetAccountRegistry } from "./providers.mjs";
+import { resetAccountRegistry, pulseAccount } from "./providers.mjs";
 import {
   setAccountKey, resetCooldown, resetUsage,
   setProviderEnabled, setRotation, setUsageLimit, startLogin, clearAccount,
@@ -69,6 +69,13 @@ const server = createServer(async (req, res) => {
         }
         if (url.pathname === "/api/accounts/login") {
           return send(res, 200, startLogin(body, { config: E.CONFIG }));
+        }
+        if (url.pathname === "/api/accounts/pulse") {
+          // reactive pulse: tiny real dispatch through one account → seeds a usage event → starts its window
+          const r = await pulseAccount(body.provider, body.id, E.CONFIG, E.PATHS);
+          return send(res, 200, r.ok === false
+            ? { ok: false, error: r.error || `exit ${r.code}` }
+            : { ok: true, provider: body.provider, id: body.id, usage: r.usage || {} });
         }
         if (url.pathname === "/api/accounts/manage") {
           const { action, provider, id, rotation } = body;

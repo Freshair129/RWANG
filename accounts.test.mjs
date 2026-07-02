@@ -1,7 +1,7 @@
 // accounts.test.mjs — multi-account registry + rotation acceptance.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -109,6 +109,23 @@ test("selectAccount end-to-end: rotates, persists, and cools down a limited acco
   const s2 = selectAccount("codex", reg.codex, sp, { now: 2000 });
   assert.equal(s2.account.id, "codex-b");
   s2.note({ tokens: 10, now: 2000 });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("selectAccount forceId pins one account (bypasses rotation + cooldown) and still records its event", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acct-pin-"));
+  const sp = join(dir, "state.json");
+  // codex-a is cooling down; a pulse pinned to it must STILL select it (to seed its window)
+  writeFileSync(sp, JSON.stringify({ codex: { rrIndex: 0, accounts: { "codex-a": { cooldownUntil: 9e15 } } } }));
+  const reg = loadAccounts(CFG);
+  const s = selectAccount("codex", reg.codex, sp, { forceId: "codex-b" });
+  assert.equal(s.account.id, "codex-b");                 // pinned, not rotation
+  s.note({ tokens: 3, now: 1000 });
+  const st = JSON.parse(readFileSync(sp, "utf8"));
+  assert.equal(st.codex.accounts["codex-b"].uses, 1);    // event recorded → window starts
+  assert.equal(st.codex.accounts["codex-b"].events.length, 1);
+  // unknown id → null account (caller returns a clear error)
+  assert.equal(selectAccount("codex", reg.codex, sp, { forceId: "nope" }).account, null);
   rmSync(dir, { recursive: true, force: true });
 });
 
