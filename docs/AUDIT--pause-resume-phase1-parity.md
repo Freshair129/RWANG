@@ -210,6 +210,40 @@ launchable as authored** — three defects in sequence, each blocking the next:
 LLM end-to-end run **did not execute** — `run.js` has never been launchable via
 the Workflow tool. This is precisely the class of defect the human smoke exists
 to catch. Closing PR-T5 green requires a follow-up ("Phase 1.5"): restructure
-`run.js` to the Workflow top-level-body contract and replace `node --check` with
-a launch-based check, then re-run this smoke. Until then PR-T5 stays **open on
-the end-to-end mile** (substrate proven; runner not yet launchable).
+`run.js` to the Workflow top-level-body contract and re-run this smoke.
+
+## 8. Resolution — end-to-end smoke is GREEN
+
+The Phase-1.5 follow-up was done in this session. Fixes applied to `run.js`:
+
+1. **`meta.description`** → single string literal (was `+`-concatenated).
+2. **CRLF** → `.gitattributes` pins `*.js`/`*.py`/`*.sh` to `eol=lf`.
+3. **Top-level body** → removed the `export default async function run() { … }`
+   wrapper; the orchestration is now top-level (Workflow contract). `node --check`
+   still passes — CommonJS allows top-level `return`, so the PR-T2/T3 verify holds.
+4. **args delivered as a JSON string** (root cause of the first "undefined" run):
+   the Workflow runtime handed `args` to the script as raw JSON *text*, so
+   `args.specPath` was undefined and `Object.keys(args)` returned character
+   indices. Fixed by normalizing once up front —
+   `const CFG = typeof args === "string" ? JSON.parse(args) : args` — and reading
+   `CFG` everywhere. A fail-fast guard now rejects missing args instead of routing
+   literal `undefined` paths.
+
+**Real runs (via the Workflow tool, against a throwaway git target on branch `rwang/e2e`):**
+
+- **Full autonomous run** (`wf_a8bb2f3a-d44`): `status: done`, `E-1` passed.
+  The T2 executor created `hello.txt` (`hello rwang\n`, byte-verified by the
+  review agent via `xxd`), `test -f hello.txt` → exit 0, phases Route/Execute/
+  Review all closed in `progress.json`. **Invariants held**: no commit/push/PR/
+  merge; the file is an untracked change on a feature branch (never the default).
+- **Standalone execute resume** (`wf_09070c26-795`): re-invoked with `phase:
+  "execute"` against the same `runDir`. It rehydrated the task list from disk,
+  saw `E-1` already `passed`, and **skipped it** — only 2 agents ran (rehydrate +
+  phase-done), no executor re-ran, `E-1.attempts` stayed 1, status
+  `phase_done:execute`. This is the idempotent resume proven end-to-end.
+
+**Verdict: PASS (end-to-end).** The real LLM runner launches, routes, executes +
+verifies, reviews, and resumes idempotently while holding every safety invariant.
+Combined with the substrate proof (§1–§6), **PR-T5 is satisfied**. Caveat: `run.js`
+is a Workflow script — the authoritative check is a real launch (done here), not
+module import.

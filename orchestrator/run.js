@@ -135,7 +135,7 @@ function executePrompt(task, tier, model, runDir, attemptNo, escalated) {
   return [
     `RWANG TASK EXECUTION — task "${task.id}" at tier ${tier}${escalated ? " (ESCALATED)" : ""}.`,
     ``,
-    `TARGET REPO (do ALL work here): ${args.targetRepo}`,
+    `TARGET REPO (do ALL work here): ${CFG.targetRepo}`,
     `RWANG DIR (scripts live here):   G:/Rwang`,
     `RUN DIR (progress files):        ${runDir}`,
     ``,
@@ -148,7 +148,7 @@ function executePrompt(task, tier, model, runDir, attemptNo, escalated) {
     `// its default branch. If you are on the default branch, create/checkout a run branch`,
     `// (e.g. rwang/<runId>) FIRST. Do not commit/push — that is an external write.`,
     ``,
-    `// GATE (invariant 2): after editing, RUN the verify_command in ${args.targetRepo} and`,
+    `// GATE (invariant 2): after editing, RUN the verify_command in ${CFG.targetRepo} and`,
     `// capture its real exit code. Report verify_exit = that integer (0 == pass). Do NOT`,
     `// claim pass without having actually run it. If there is no verify_command, you cannot`,
     `// self-certify cheaply — this task should already be floored to T2+; report verify_exit`,
@@ -355,8 +355,8 @@ function buildWaves(tasks) {
 // never sends work to a model.
 async function phaseRoute() {
   phase("Route");
-  const specPath = args.specPath, targetRepo = args.targetRepo, runDir = args.runDir;
-  const autonomy = args.autonomy || "autonomous";
+  const specPath = CFG.specPath, targetRepo = CFG.targetRepo, runDir = CFG.runDir;
+  const autonomy = CFG.autonomy || "autonomous";
 
   const routed = await agent(
     [
@@ -419,7 +419,7 @@ async function phaseRoute() {
 // (FR-4 idempotent resume). On the first blocked task, later waves do not start.
 async function phaseExecute(routed) {
   phase("Execute");
-  const runDir = args.runDir;
+  const runDir = CFG.runDir;
 
   let tasks, epic_dod;
   if (routed && routed.tasks) {
@@ -504,7 +504,7 @@ async function phaseExecute(routed) {
 // Ends by marking phase_done:review (review-only — never commits/pushes).
 async function phaseReview(epic_dod, runBlocked, blockedTask) {
   phase("Review");
-  const runDir = args.runDir, targetRepo = args.targetRepo;
+  const runDir = CFG.runDir, targetRepo = CFG.targetRepo;
 
   const reviewSummary = await agent(
     [
@@ -541,8 +541,8 @@ async function phaseReview(epic_dod, runBlocked, blockedTask) {
 // always owns the merge. The commit agent aborts if it is on the default branch.
 async function phaseCommit() {
   phase("Review");
-  const runDir = args.runDir, targetRepo = args.targetRepo;
-  const autonomy = args.autonomy || "autonomous";
+  const runDir = CFG.runDir, targetRepo = CFG.targetRepo;
+  const autonomy = CFG.autonomy || "autonomous";
   // Hard guard: the commit phase is reachable ONLY in unattended mode.
   if (autonomy !== "unattended") {
     log(`[commit] skipped — commit phase is reachable only in unattended mode.`);
@@ -583,12 +583,30 @@ async function phaseCommit() {
 // phases per autonomy level: supervised pauses after Route (it cannot block
 // in-body), autonomous/unattended drive straight through.
 // ---------------------------------------------------------------------------
-export default async function run() {
-  const autonomy = args.autonomy || "autonomous";
-  const runDir = args.runDir;
-  const requested = args.phase; // "route"|"execute"|"review"|"commit"|undefined
+// --- Top-level workflow body. The Workflow runtime wraps and runs this directly
+// (top-level await + return are supported); the phase functions above are plain
+// declarations. This file is a Workflow script, NOT a node ESM module — do not
+// wrap the body in `export default function` (the runtime rejects the 2nd export).
+// The Workflow runtime may deliver `args` as a JSON STRING rather than an object
+// (observed: args arrived as raw JSON text, so args.specPath was undefined and
+// Object.keys(args) returned character indices). Normalize once, up front —
+// everything below reads CFG, never the raw global `args`.
+const CFG = typeof args === "string" ? JSON.parse(args)
+          : (args && typeof args === "object" ? args : {});
 
-  log(`Rwang run. spec=${args.specPath} target=${args.targetRepo} ` +
+// Fail fast on missing args instead of routing literal "undefined" paths (which
+// spawns agents that write garbage to an `undefined/` dir). Cheap: no agents.
+if (!CFG.specPath || !CFG.targetRepo || !CFG.runDir) {
+  log(`[fatal] missing required args — got keys: ${JSON.stringify(Object.keys(CFG))}`);
+  return { status: "failed", reason: "missing-args",
+    received: { specPath: CFG.specPath, targetRepo: CFG.targetRepo, runDir: CFG.runDir, keys: Object.keys(CFG) } };
+}
+
+const autonomy = CFG.autonomy || "autonomous";
+const runDir = CFG.runDir;
+const requested = CFG.phase; // "route"|"execute"|"review"|"commit"|undefined
+
+  log(`Rwang run. spec=${CFG.specPath} target=${CFG.targetRepo} ` +
     `autonomy=${autonomy} runDir=${runDir} phase=${requested || "(all)"}`);
 
   // ---- Single-phase invocation: do exactly one phase, then return. ----
@@ -615,7 +633,7 @@ export default async function run() {
       const c = await phaseCommit();
       return { runDir, phase: "commit", status: c.status };
     }
-    throw new Error(`RWANG: unknown args.phase "${requested}" (route|execute|review|commit).`);
+    throw new Error(`RWANG: unknown CFG.phase "${requested}" (route|execute|review|commit).`);
   }
 
   // ---- No phase given: chain per autonomy level. ----
@@ -633,7 +651,7 @@ export default async function run() {
       { label: "gate:execute", phase: "Route" }
     );
     log(`[supervised] paused after Route — awaiting human approval to Execute.`);
-    return { runDir, spec: args.specPath, target_repo: args.targetRepo, autonomy,
+    return { runDir, spec: CFG.specPath, target_repo: CFG.targetRepo, autonomy,
       status: "awaiting_approval", awaiting: { phase: "execute" },
       epic_dod: routed.epic_dod || "",
       note: "supervised pause — the session driver resumes via phase=execute after approval." };
@@ -666,8 +684,8 @@ export default async function run() {
 
   return {
     runDir,
-    spec: args.specPath,
-    target_repo: args.targetRepo,
+    spec: CFG.specPath,
+    target_repo: CFG.targetRepo,
     autonomy,
     status: terminalStatus,
     epic_dod: ex.epic_dod || "",
@@ -679,4 +697,3 @@ export default async function run() {
       "Claude pricing in the ledger is the 2026-06-04 snapshot (UNCERTAINTY FLAG); " +
       "re-verify rates before billing.",
   };
-}
