@@ -1,12 +1,13 @@
 // accounts.test.mjs — multi-account registry + rotation acceptance.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   loadAccounts, applyAccount, pickAccount, advanceRR,
-  parseLimit, noteResult, selectAccount, accountsStatus,
+  parseLimit, noteResult, selectAccount, accountsStatus, fetchPlanQuotas, fetchClaudeUsage,
+  _resetPlanQuotaCache,
 } from "./accounts.mjs";
 
 const CFG = {
@@ -112,6 +113,23 @@ test("selectAccount end-to-end: rotates, persists, and cools down a limited acco
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("selectAccount forceId pins one account (bypasses rotation + cooldown) and still records its event", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acct-pin-"));
+  const sp = join(dir, "state.json");
+  // codex-a is cooling down; a pulse pinned to it must STILL select it (to seed its window)
+  writeFileSync(sp, JSON.stringify({ codex: { rrIndex: 0, accounts: { "codex-a": { cooldownUntil: 9e15 } } } }));
+  const reg = loadAccounts(CFG);
+  const s = selectAccount("codex", reg.codex, sp, { forceId: "codex-b" });
+  assert.equal(s.account.id, "codex-b");                 // pinned, not rotation
+  s.note({ tokens: 3, now: 1000 });
+  const st = JSON.parse(readFileSync(sp, "utf8"));
+  assert.equal(st.codex.accounts["codex-b"].uses, 1);    // event recorded → window starts
+  assert.equal(st.codex.accounts["codex-b"].events.length, 1);
+  // unknown id → null account (caller returns a clear error)
+  assert.equal(selectAccount("codex", reg.codex, sp, { forceId: "nope" }).account, null);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("accountsStatus reports per-account live/cooldown + usage (CLI + /api/accounts view)", () => {
   const dir = mkdtempSync(join(tmpdir(), "acct-st-"));
   const sp = join(dir, "state.json");
@@ -128,4 +146,83 @@ test("accountsStatus reports per-account live/cooldown + usage (CLI + /api/accou
   assert.equal(b.live, true);
   assert.equal(codex.rotation, "round-robin");
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("fetchPlanQuotas reads OpenRouter's real plan quota via /api/v1/key ($ usage/limit)", async () => {
+  const cfg = { providers: { openrouter: {
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    accounts: [{ id: "or-1", envKey: "OPENROUTER_API_KEY", apiKey: "sk-or-test" }],
+  } } };
+  let hitUrl = null, hitAuth = null;
+  const fetchImpl = async (url, opts) => {
+    hitUrl = url; hitAuth = opts.headers.Authorization;
+    return { ok: true, json: async () => ({ data: { usage: 3.5, limit: 10, limit_remaining: 6.5 } }) };
+  };
+  const q = await fetchPlanQuotas(cfg, { secretsPath: null, fetchImpl });
+  assert.match(hitUrl, /\/key$/);           // hits the key endpoint
+  assert.equal(hitAuth, "Bearer sk-or-test"); // with the account's token
+  const pq = q["openrouter/or-1"];
+  assert.equal(pq.source, "api");
+  assert.equal(pq.used, 3.5);
+  assert.equal(pq.limit, 10);
+  assert.equal(pq.remaining, 6.5);
+});
+
+test("fetchPlanQuotas: no key → no entry; provider with no quota API → not fetched", async () => {
+  const cfg = { providers: {
+    openrouter: { apiKeyEnv: "OPENROUTER_API_KEY", accounts: [{ id: "or-1", envKey: "OPENROUTER_API_KEY" }] },
+    claude: { accountEnv: "CLAUDE_CONFIG_DIR", accounts: [{ id: "claude-1", configDir: "~/.claude-1" }] },
+  } };
+  const prev = process.env.OPENROUTER_API_KEY; delete process.env.OPENROUTER_API_KEY;
+  let called = false;
+  const q = await fetchPlanQuotas(cfg, { secretsPath: null, fetchImpl: async () => { called = true; return { ok: true, json: async () => ({}) }; } });
+  if (prev !== undefined) process.env.OPENROUTER_API_KEY = prev;
+  assert.equal(called, false);              // no key → never fetched
+  assert.deepEqual(q, {});                  // claude has no quota API → absent
+});
+
+test("fetchClaudeUsage reads the real /api/oauth/usage window (what makes it match Claude Code)", async () => {
+  const d = mkdtempSync(join(tmpdir(), "cl-usage-"));
+  writeFileSync(join(d, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat-xyz" } }));
+  let url = null, auth = null, beta = null;
+  const fetchImpl = async (u, o) => {
+    url = u; auth = o.headers.Authorization; beta = o.headers["anthropic-beta"];
+    return { ok: true, json: async () => ({
+      five_hour: { utilization: 10, resets_at: "2026-07-02T09:59:59+00:00" },
+      seven_day: { utilization: 2, resets_at: "2026-07-08T21:59:59+00:00" },
+    }) };
+  };
+  const q = await fetchClaudeUsage(d, { fetchImpl });
+  assert.match(url, /oauth\/usage$/);
+  assert.equal(auth, "Bearer sk-ant-oat-xyz");   // token from the login dir, never surfaced elsewhere
+  assert.ok(beta);                               // oauth beta header present
+  assert.equal(q.kind, "window");
+  assert.equal(q.five.util, 10);
+  assert.equal(q.five.resetAt, "2026-07-02T09:59:59+00:00");
+  assert.equal(q.seven.util, 2);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("fetchClaudeUsage: no token file → null (card falls back to Rwang-tracked)", async () => {
+  const d = mkdtempSync(join(tmpdir(), "cl-none-"));
+  const q = await fetchClaudeUsage(d, { fetchImpl: async () => { throw new Error("must not fetch without a token"); } });
+  assert.equal(q, null);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("fetchPlanQuotas caches (avoids hammering the rate-limited usage endpoints; refetches past TTL)", async () => {
+  _resetPlanQuotaCache();
+  const cfg = { providers: { openrouter: { apiKeyEnv: "OPENROUTER_API_KEY",
+    accounts: [{ id: "or-1", envKey: "OPENROUTER_API_KEY", apiKey: "sk" }] } } };
+  let calls = 0; const orig = global.fetch;
+  global.fetch = async () => { calls++; return { ok: true, json: async () => ({ data: { usage: 1, limit: 5, limit_remaining: 4 } }) }; };
+  try {
+    const a = await fetchPlanQuotas(cfg, { secretsPath: null, now: 1_000_000 });          // network hit 1
+    const b = await fetchPlanQuotas(cfg, { secretsPath: null, now: 1_050_000 });          // within 90s TTL → cached
+    assert.equal(calls, 1);
+    assert.equal(a["openrouter/or-1"].used, 1);
+    assert.deepEqual(a, b);
+    await fetchPlanQuotas(cfg, { secretsPath: null, now: 1_200_000 });                     // past TTL → refetch
+    assert.equal(calls, 2);
+  } finally { global.fetch = orig; _resetPlanQuotaCache(); }
 });

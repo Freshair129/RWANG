@@ -10,8 +10,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import * as E from "./engine.mjs";
 import { writeNode, writeEdge, queryNodes } from "./store/knowledge.mjs";
-import { accountsStatus, DEFAULT_STATE_PATH } from "./accounts.mjs";
-import { resetAccountRegistry } from "./providers.mjs";
+import { accountsStatus, fetchPlanQuotas, DEFAULT_STATE_PATH } from "./accounts.mjs";
+import { resetAccountRegistry, pulseAccount } from "./providers.mjs";
 import {
   setAccountKey, resetCooldown, resetUsage,
   setProviderEnabled, setRotation, setUsageLimit, startLogin, clearAccount,
@@ -49,7 +49,16 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, E.snapshot());
     if (req.method === "GET" && url.pathname === "/api/ollama") return send(res, 200, await E.ollamaInfo());
     if (req.method === "GET" && url.pathname === "/api/providers") return send(res, 200, await E.providersInfo());
-    if (req.method === "GET" && url.pathname === "/api/accounts") return send(res, 200, accountsStatus(E.CONFIG, DEFAULT_STATE_PATH));
+    if (req.method === "GET" && url.pathname === "/api/accounts") {
+      const status = accountsStatus(E.CONFIG, DEFAULT_STATE_PATH);
+      // overlay the real subscribed-plan quota where the provider exposes one (OpenRouter today).
+      const quotas = await fetchPlanQuotas(E.CONFIG).catch(() => ({}));
+      for (const p of status) for (const a of p.accounts) {
+        const q = quotas[`${p.provider}/${a.id}`];
+        if (q) a.planQuota = q;
+      }
+      return send(res, 200, status);
+    }
     // ── Account Pool write-side (localhost only): login / paste-key / manage ──
     if (req.method === "POST" && url.pathname.startsWith("/api/accounts/")) {
       if (!isLocal(req)) return send(res, 403, { ok: false, error: "account admin is localhost-only" });
@@ -60,6 +69,13 @@ const server = createServer(async (req, res) => {
         }
         if (url.pathname === "/api/accounts/login") {
           return send(res, 200, startLogin(body, { config: E.CONFIG }));
+        }
+        if (url.pathname === "/api/accounts/pulse") {
+          // reactive pulse: tiny real dispatch through one account → seeds a usage event → starts its window
+          const r = await pulseAccount(body.provider, body.id, E.CONFIG, E.PATHS);
+          return send(res, 200, r.ok === false
+            ? { ok: false, error: r.error || `exit ${r.code}` }
+            : { ok: true, provider: body.provider, id: body.id, usage: r.usage || {} });
         }
         if (url.pathname === "/api/accounts/manage") {
           const { action, provider, id, rotation } = body;

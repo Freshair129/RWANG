@@ -239,10 +239,12 @@ export async function runProvider(providerName, task, model, worker, prompt, con
   if (provReg && provReg.accounts?.length) {
     const role = config.routing?.[task?.type];
     const rotationOverride = (role && config.roles?.[role]?.rotation) || null;
-    sel = selectAccount(providerName, provReg, ACCOUNTS_STATE, { rotationOverride });
+    // pinAccountId (a pulse) targets one account; otherwise rotate across the live set.
+    sel = selectAccount(providerName, provReg, ACCOUNTS_STATE, { rotationOverride, forceId: opts.pinAccountId || null });
     if (!sel.account) {
       return { ok: false, blocked: true, code: -2, provider: providerName, usage: {},
-        error: `all ${providerName} accounts are cooling down (quota) — downgrade or wait for reset` };
+        error: opts.pinAccountId ? `no such ${providerName} account: ${opts.pinAccountId}`
+          : `all ${providerName} accounts are cooling down (quota) — downgrade or wait for reset` };
     }
     opts = { ...opts, account: sel.account, provReg };
   }
@@ -258,6 +260,23 @@ export async function runProvider(providerName, task, model, worker, prompt, con
     sel.note({ cost: u.cost || 0, tokens: (u.inTok || 0) + (u.outTok || 0), limited: lim.limited, resetMs: lim.resetMs });
   }
   return result;
+}
+
+// ── reactive pulse: a tiny real dispatch through ONE account to seed a usage event, so its
+// 5h/7d window (and the countdown) starts NOW. Uses the cheapest model per provider; the recorded
+// event's timestamp is what starts the timer. Only the login/keyring plans have a rolling window —
+// openrouter is $-metered (its card reads the live API quota), so it's not pulsed here.
+const PULSE_MODEL = { claude: "haiku", codex: "default", antigravity: "default" };
+export async function pulseAccount(providerName, accountId, config, paths) {
+  if (!PULSE_MODEL[providerName]) return { ok: false, error: `pulse ไม่รองรับ provider: ${providerName}` };
+  const prov = config.providers?.[providerName];
+  if (!prov) return { ok: false, error: `unknown provider: ${providerName}` };
+  const model = prov.pulseModel || PULSE_MODEL[providerName];
+  const prompt = prov.pulsePrompt || "Reply with exactly: ok";
+  const task = { id: `pulse-${accountId}`, type: "pulse", title: "pulse" };
+  return runProvider(providerName, task, model, "pulse", prompt, config, paths, {
+    pinAccountId: accountId, permissionMode: "safe",
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -539,8 +558,9 @@ function runCodex(t, model, worker, prompt, config, paths, opts) {
     const logFile = join(paths.LOGS, `${t.id}.${worker}.log`);
     const prov = config.providers.codex;
     const ws = createWriteStream(logFile, { flags: "w" });
-    ws.write(`# ${t.id} · ${worker} · codex:${model} · started ${new Date().toISOString()}\n\n`);
-    const args = [...(prov.baseArgs || []), "--model", model, ...(prov.extraArgs || [])];
+    ws.write(`# ${t.id} · ${worker} · codex:${model || "(default)"} · started ${new Date().toISOString()}\n\n`);
+    // omit --model when unset/"default" so codex uses the account's own default model (used by pulse)
+    const args = [...(prov.baseArgs || []), ...(model && model !== "default" ? ["--model", model] : []), ...(prov.extraArgs || [])];
     const child = spawn(prov.command || "codex", args, {
       cwd: paths.ROOT, shell: true, env: childEnvFor("codex", config, opts.account, opts.provReg),
     });

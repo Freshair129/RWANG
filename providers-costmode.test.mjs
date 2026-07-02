@@ -53,3 +53,14 @@ test("free mode picks an OpenRouter :free model before the local fallback; local
   const local = resolveForRole("scout", CFG, false, { costMode: "local" });
   assert.equal(local.provider, "ollama"); // even the :free OR model is excluded offline
 });
+
+// ── reactive pulse guard (no spawn for unsupported providers) ──
+import { pulseAccount } from "./providers.mjs";
+test("pulseAccount rejects providers with no rolling window (openrouter/unknown) without dispatching", async () => {
+  const cfg = { providers: { openrouter: { accounts: [{ id: "or-1" }] } } };
+  const r1 = await pulseAccount("openrouter", "or-1", cfg, { LOGS: "/nope", ROOT: "/nope" });
+  assert.equal(r1.ok, false);
+  assert.match(r1.error, /ไม่รองรับ|not/i);
+  const r2 = await pulseAccount("bogus", "x", cfg, { LOGS: "/nope", ROOT: "/nope" });
+  assert.equal(r2.ok, false);
+});
