@@ -85,8 +85,12 @@ Workflow tool:
   args = { specPath: "specs/<x>.yaml",
            targetRepo: "G:/GenesisBlock_Dev/GenesisBlock",
            autonomy: "supervised" | "autonomous" | "unattended",
-           runDir:   "G:/Rwang/runs/<runId>" }
+           runDir:   "G:/Rwang/runs/<runId>",
+           phase:    "route" | "execute" | "review" | "commit"  // optional; omit to chain all
+         }
 ```
+
+Omit `phase` to chain phases per the autonomy level. Pass a single `phase` to run exactly one and return — this is how the supervised session driver pauses between boundaries (see AUTONOMY.md "The supervised driver contract").
 
 The runner reads the spec, then: runs `route.py` to assign tiers; has each Execute agent run the task's `verify_command` **directly** to verify; and records token/cost estimates via `progress.py`. It writes `runs/<runId>/progress.ndjson` (append-only) and `runs/<runId>/progress.json` (rolled-up snapshot the monitor reads), both conforming to the **shared progress schema** (USERFLOW.md and `progress.py`'s docstring — every file agrees on the exact shape).
 
@@ -110,7 +114,7 @@ The runner reads the spec, then: runs `route.py` to assign tiers; has each Execu
 
 When autonomy says "drive end-to-end," it means *up to* these invariants — they are the interlocks, not suggestions.
 
-**Implementation status:** the runner is a Workflow script that runs to completion, so it cannot pause mid-run. All three autonomy levels currently run with `autonomous` semantics — a human performs *every* external write, including the commit (the runner never `git commit`s, even in `unattended`). `supervised` (pause-per-phase) and `unattended` (auto-commit-to-branch) are the designed-but-not-yet-wired behaviors. This fails *safe*: the un-wired paths only ever err toward halting before a write. See AUTONOMY.md.
+**Implementation status:** `run.js` is split into disk-checkpointed phases (`route`/`execute`/`review`/`commit`) via `args.phase`, so runs pause *between* invocations. `supervised` is wired (single-phase invocation + `progress.py` `gate`/`approve` + a session driver that pauses per phase — see AUTONOMY.md). `autonomous` is unchanged. `unattended` reaches a branch-only commit boundary (`awaiting_merge`) but the real auto-commit stays gated behind `human_review` (spec `PR-T7`), so a human still performs every external write today. This fails *safe*: the un-wired path only halts before a write. See AUTONOMY.md and `docs/DESIGN--pause-resume-runner.md`.
 
 ## The two-axis model (context for routing changes)
 

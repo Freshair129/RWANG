@@ -4,7 +4,7 @@ Autonomy is what makes Rwang useful: given a spec, it drives the whole **VERIFY 
 
 ---
 
-> **Implementation status (current).** The runner (`orchestrator/run.js`) is a Workflow script that executes to completion, so it cannot pause for human input mid-run. Therefore **all three levels currently run with `autonomous` semantics**: the run drives end-to-end and **a human performs *every* external write — including the commit** (the runner never `git commit`s, even in `unattended`). `supervised` (pause-per-phase) and `unattended` (auto-commit-to-branch) are the **designed** behaviors documented below and the roadmap target; they are not yet wired. This fails *safe* — the un-wired behaviors only ever err toward halting before a write, so the safety invariants hold regardless.
+> **Implementation status (current).** `orchestrator/run.js` is split into disk-checkpointed **phases** (`route` / `execute` / `review` / `commit`) selectable via `args.phase`, so a run can pause *between* Workflow invocations even though a single invocation still cannot block mid-body. **`supervised` is wired**: the runner supports single-phase invocation plus the `progress.py` `gate`/`approve` pause states, and a **session driver** (see "The supervised driver contract" below) pauses for a human at each phase boundary. **`autonomous`** is unchanged — it drives end-to-end. **`unattended`** reaches a branch-only commit *boundary* (`awaiting_merge`), but the actual auto-`git commit` is still gated behind `human_review` (spec `PR-T7`) and not yet wired — so today a human still performs every external write, including the commit. This fails *safe* — the un-wired path only ever halts before a write, so the safety invariants hold regardless. See `docs/DESIGN--pause-resume-runner.md`.
 
 ## The three autonomy levels
 
@@ -81,6 +81,20 @@ But the gate does **not** substitute for human approval on **external writes**. 
 That split is the whole safety model: autonomy inside the loop, human authority at the boundary where work leaves the branch.
 
 ---
+
+## The supervised driver contract (session-driven)
+
+`supervised` pauses at every phase boundary. Because a Workflow invocation cannot block mid-body, the pause lives *between* invocations and **the session is the driver**:
+
+1. **Launch one phase:** `Workflow(run.js, { …, phase: "route" })`. It runs Route, writes the durable `tasks.json`, and returns `phase_done:route`.
+2. **Before each subsequent phase** P (`execute` → `review`, plus `commit` for `unattended`), the driver:
+   - sets the pause and surfaces it — `python orchestrator/progress.py <runDir> gate --phase P --await` (status → `awaiting_approval`),
+   - **waits for the human's go-ahead**,
+   - records it — `python orchestrator/progress.py <runDir> approve --phase P --by <human>` (appends `approvals.ndjson`, status → `running`),
+   - then launches `Workflow(run.js, { …, phase: P })`.
+3. **After each phase**, read `progress.json`: `phase_done:P` → advance to the next phase; `blocked` / `needs_work` → surface and **stop** (a human acts).
+
+Convenience path: launched with **no** `phase` and `autonomy=supervised`, the runner runs Route and then sets the `execute` gate itself, returning `awaiting_approval` — the driver takes over from there. Either way, nothing crosses a phase boundary without the recorded approval in `approvals.ndjson`, and **the merge is always human**.
 
 ## Optional: scheduled / unattended long jobs
 
