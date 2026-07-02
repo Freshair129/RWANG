@@ -191,6 +191,12 @@
   .qtrack{ height:7px; border-radius:99px; background:rgba(255,255,255,.07); overflow:hidden; }
   .qtrack i{ display:block; height:100%; border-radius:99px; transition:width .5s ease; background:var(--ice); }
   .quota .qf{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--mut); margin-top:4px; }
+  /* two-window (5h / 7d) labelled bars */
+  .qrow{ display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .qrow .ql{ width:26px; flex:none; font-size:10px; font-weight:700; letter-spacing:.4px; color:var(--mut); }
+  .qrow .qtrack{ flex:1; }
+  .qrow .qn{ flex:none; min-width:104px; text-align:right; font-size:10.5px; color:var(--mut); font-variant-numeric:tabular-nums; }
+  .qrow .qn .rst{ color:var(--ice); } .qrow .qn .rst.hot{ color:var(--warn); }
 
   .cchips{ display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
   .chip{ font-size:11px; padding:4px 10px; border-radius:9px; border:1px solid var(--line); background:var(--panel-2); cursor:pointer; white-space:nowrap; color:var(--txt); }
@@ -627,16 +633,21 @@ function accCard(p,a){
   } else {
     // ── no provider quota API (claude/codex/antigravity): Rwang-tracked estimate vs your cap ──
     const noApi=["claude","codex","antigravity"].includes(p.provider);
-    const cap=p.limit5h||0;
-    const pct=cap?Math.min(100,w5.uses/cap*100):(w5.uses?10:0);
-    const barC=cap?(pct>=100?"var(--bad)":pct>=80?"var(--warn)":"var(--ice)"):"var(--ice-dim)";
-    const rst=fmtDur(w5.resetMs);
-    stats=`<div class="cstats"><div class="stat"><div class="l">5H USES</div><div class="v">${w5.uses}<small>${cap?` / ${cap}`:''}</small></div></div><div class="stat"><div class="l">7D USES</div><div class="v">${w7.uses}<small>${p.limit7d?` / ${p.limit7d}`:''}</small></div></div></div>`;
-    const lbl=noApi?`Rwang-tracked · 5h <span class="tip" title="ผู้ให้บริการไม่เปิด API quota ของแพลน (claude/codex/antigravity) — แถบนี้นับจากที่ Rwang ยิงเทียบ cap ที่คุณตั้งเอง ไม่ใช่ยอดจริงของแพลน">ⓘ</span>`:`Usage · 5h${cap?'':' <span style="opacity:.6">(ตั้ง cap ที่หัว provider)</span>'}`;
+    // one labelled progress bar: uses vs the cap you set for that window (+ reset countdown)
+    const barRow=(lbl,w,cap)=>{
+      const pct=cap?Math.min(100,w.uses/cap*100):(w.uses?10:0);
+      const c=cap?(pct>=100?"var(--bad)":pct>=80?"var(--warn)":"var(--ice)"):"var(--ice-dim)";
+      const rst=fmtDur(w.resetMs);
+      return `<div class="qrow"><span class="ql">${lbl}</span>`+
+        `<div class="qtrack"><i style="width:${pct}%;background:${c}"></i></div>`+
+        `<span class="qn">${w.uses}${cap?`/${cap}`:''} · ${fmtTok(w.tokens)}${rst?` · <span class="rst ${pct>=80?'hot':''}">⏳${rst}</span>`:''}</span></div>`;
+    };
+    stats=`<div class="cstats"><div class="stat"><div class="l">5H USES</div><div class="v">${w5.uses}<small>${p.limit5h?` / ${p.limit5h}`:''}</small></div></div><div class="stat"><div class="l">7D USES</div><div class="v">${w7.uses}<small>${p.limit7d?` / ${p.limit7d}`:''}</small></div></div></div>`;
+    const lbl=noApi?`Rwang-tracked <span class="tip" title="ผู้ให้บริการไม่เปิด API quota ของแพลน (claude/codex/antigravity) — แถบนี้นับจากที่ Rwang ยิงเทียบ cap ที่คุณตั้งเอง ไม่ใช่ยอดจริงของแพลน">ⓘ</span>`:`Usage`;
     quota=`<div class="quota">
-      <div class="qh"><span>${lbl}</span>${rst?`<span class="rst ${pct>=80?'hot':''}">⏳ ${rst}</span>`:''}</div>
-      <div class="qtrack"><i style="width:${pct}%;background:${barC}"></i></div>
-      <div class="qf"><span>${w5.uses}${cap?` / ${cap}`:''} uses · ${fmtTok(w5.tokens)} tok</span><span>${noApi?'ไม่มี API quota':`7d ${w7.uses}${p.limit7d?`/${p.limit7d}`:''}`}</span></div></div>`;
+      <div class="qh"><span>${lbl}</span><span style="opacity:.6">${(p.limit5h||p.limit7d)?'vs cap':'ตั้ง cap ที่หัว provider'}</span></div>
+      ${barRow('5H',w5,p.limit5h||0)}
+      ${barRow('7D',w7,p.limit7d||0)}</div>`;
   }
   let chips="";
   if(a.canLogin) chips+=`<button class="chip" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${a.authed?'↻ re-login':'🔓 login'}</button>`;

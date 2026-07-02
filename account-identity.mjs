@@ -24,18 +24,31 @@ export function decodeJwtClaims(token) {
   } catch { return null; }
 }
 
-// codex: {dir}/auth.json → tokens.id_token (JWT) carries email + chatgpt_plan_type
+// codex: {dir}/auth.json → tokens.id_token (JWT) carries email + chatgpt_plan_type.
+// NB: chatgpt_plan_type is nested under the "https://api.openai.com/auth" claim (not top-level),
+// alongside the subscription window — so we search claims recursively for it.
+function findClaim(o, re, depth = 0) {
+  if (!o || typeof o !== "object" || depth > 4) return null;
+  for (const [k, v] of Object.entries(o)) {
+    if (re.test(k) && v != null && typeof v !== "object") return v;
+    if (v && typeof v === "object") { const r = findClaim(v, re, depth + 1); if (r != null) return r; }
+  }
+  return null;
+}
 function codexIdentity(dir) {
   const f = join(dir, "auth.json");
   if (!existsSync(f)) return { authed: false };
   try {
     const j = JSON.parse(readFileSync(f, "utf8"));
     const claims = decodeJwtClaims(j.tokens?.id_token || j.id_token) || {};
-    const planKey = Object.keys(claims).find((k) => /chatgpt_plan_type$/.test(k));
+    const planType = findClaim(claims, /chatgpt_plan_type$/);
+    const until = findClaim(claims, /subscription_active_until$/); // ISO date the plan renews/expires
+    const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : s);
     return {
       authed: !!(j.tokens || j.OPENAI_API_KEY),
       email: claims.email || null,
-      plan: (planKey && claims[planKey]) || (j.OPENAI_API_KEY ? "api-key" : null),
+      plan: planType ? `ChatGPT ${cap(planType)}` : (j.OPENAI_API_KEY ? "api-key" : null),
+      tier: until ? `renews ${String(until).slice(0, 10)}` : null,
     };
   } catch { return { authed: existsSync(f) }; }
 }

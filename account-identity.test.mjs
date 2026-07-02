@@ -22,13 +22,17 @@ test("codex: empty dir = not logged in; auth.json = authed + email + plan", () =
   assert.equal(readLoginIdentity("codex", empty).authed, false); // the exact bug: empty dir isn't 'live'
 
   const dir = mkdtempSync(join(tmpdir(), "cdx-"));
+  // real ChatGPT id_token: chatgpt_plan_type is NESTED under the "https://api.openai.com/auth" claim
   writeFileSync(join(dir, "auth.json"), JSON.stringify({
-    tokens: { id_token: jwt({ email: "me@gmail.com", "https://api.openai.com/auth.chatgpt_plan_type": "plus" }) },
+    tokens: { id_token: jwt({ email: "me@gmail.com", "https://api.openai.com/auth": {
+      chatgpt_plan_type: "plus", chatgpt_subscription_active_until: "2026-07-10T00:15:08+00:00",
+    } }) },
   }));
   const id = readLoginIdentity("codex", dir);
   assert.equal(id.authed, true);
   assert.equal(id.email, "me@gmail.com");
-  assert.equal(id.plan, "plus");
+  assert.equal(id.plan, "ChatGPT Plus");           // nested plan, title-cased with product prefix
+  assert.equal(id.tier, "renews 2026-07-10");      // subscription window surfaced as tier line
 });
 
 test("claude: .credentials.json → authed + subscription plan + tier", () => {
