@@ -631,8 +631,22 @@ function accCard(p,a){
   const w5=a.w5h||{uses:0,tokens:0,resetMs:0}, w7=a.w7d||{uses:0,tokens:0};
   const pq=a.planQuota; // real subscribed-plan quota (OpenRouter today); null elsewhere
   let stats, quota;
-  if(pq){
-    // ── REAL plan quota from the provider API (OpenRouter: $ usage/limit) ──
+  if(pq && pq.kind==="window"){
+    // ── REAL windowed plan quota (claude: same /api/oauth/usage Claude Code reads) — matches exactly ──
+    const barW=(lbl,w)=>{
+      if(!w){ return `<div class="qrow"><span class="ql">${lbl}</span><div class="qtrack"></div><span class="qn">—</span></div>`; }
+      const pct=Math.max(0,Math.min(100,w.util||0));
+      const c=pct>=90?"var(--bad)":pct>=70?"var(--warn)":"var(--ok,#39d98a)";
+      let cd="";
+      if(w.resetAt){ const at=Date.parse(w.resetAt); const clock=new Date(at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+        cd=` · <span class="rst ${pct>=80?'hot':''}" data-reset="${at}">⏳<span class="cd">${fmtDur(at-Date.now())}</span></span> <span class="atc">${clock}</span>`; }
+      return `<div class="qrow"><span class="ql">${lbl}</span><div class="qtrack"><i style="width:${pct}%;background:${c}"></i></div><span class="qn">${pct.toFixed(pct<10?1:0)}%${cd}</span></div>`;
+    };
+    const pf=w=>w&&w.util!=null?`${Math.round(w.util)}%`:'—';
+    stats=`<div class="cstats"><div class="stat"><div class="l">5H PLAN</div><div class="v">${pf(pq.five)}</div></div><div class="stat"><div class="l">7D PLAN</div><div class="v">${pf(pq.seven)}</div></div></div>`;
+    quota=`<div class="quota"><div class="qh"><span>Plan quota · live</span><span class="rst">◉ API</span></div>${barW('5H',pq.five)}${barW('7D',pq.seven)}</div>`;
+  } else if(pq){
+    // ── REAL $ plan quota (OpenRouter: usage/limit) ──
     const money=v=>v==null?'∞':'$'+Number(v).toFixed(v<1?4:2);
     const hasLim=pq.limit!=null;
     const pct=hasLim&&pq.limit>0?Math.min(100,(pq.used||0)/pq.limit*100):0;
@@ -672,7 +686,7 @@ function accCard(p,a){
   if(a.canLogin) chips+=`<button class="chip" onclick="acctPost('login',{provider:'${p.provider}',id:'${a.id}'})">${a.authed?'↻ re-login':'🔓 login'}</button>`;
   // pulse: only the rolling-window plans (claude/codex/antigravity) + when authed. Fires a tiny real
   // dispatch to seed a usage event so the 5h/7d countdown starts. Excludes openrouter ($-metered card).
-  if(["claude","codex","antigravity"].includes(p.provider) && a.authed && !cool)
+  if(["claude","codex","antigravity"].includes(p.provider) && a.authed && !cool && pq?.kind!=="window")
     chips+=`<button class="chip pulse" title="ส่ง req จิ๋วผ่าน account นี้ (ใช้โทเคนจริงเล็กน้อย) เพื่อเริ่มนับ window 5h/7d" onclick="pulse('${p.provider}','${a.id}')">⚡ pulse</button>`;
   if(cool) chips+=`<button class="chip" onclick="acctPost('manage',{action:'reset-cooldown',provider:'${p.provider}',id:'${a.id}'})">clear cooldown</button>`;
   chips+=`<button class="chip cfg" onclick="flipCard('${cid}')">⚙ config</button>`;

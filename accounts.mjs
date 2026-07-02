@@ -182,7 +182,32 @@ export function selectAccount(providerName, provider, statePath, { now = Date.no
 // antigravity CLIs write no quota to disk and expose no endpoint, so there is nothing to read —
 // their cards fall back to a Rwang-tracked estimate vs the cap you declare (clearly labelled).
 // Returns a map keyed "<provider>/<id>" → { source, used, limit, remaining, unit }.
-export async function fetchPlanQuotas(config, { secretsPath = DEFAULT_SECRETS_PATH, fetchImpl = fetch } = {}) {
+// claude (Claude Code max/pro): the SAME endpoint Claude Code's own "Plan usage" panel reads —
+// GET /api/oauth/usage with the login-dir's OAuth token → real 5h/7d utilization + reset instants.
+// This is what makes Rwang's claude card match Claude Code exactly (not an estimate). Token is a
+// secret read from {configDir}/.credentials.json and NEVER returned — only the usage numbers are.
+function readClaudeToken(configDir) {
+  if (!configDir) return null;
+  const f = join(expandHome(configDir), ".credentials.json");
+  if (!existsSync(f)) return null;
+  try { return JSON.parse(readFileSync(f, "utf8")).claudeAiOauth?.accessToken || null; } catch { return null; }
+}
+export async function fetchClaudeUsage(configDir, { fetchImpl = fetch } = {}) {
+  const tok = readClaudeToken(configDir);
+  if (!tok) return null;
+  try {
+    const r = await fetchImpl("https://api.anthropic.com/api/oauth/usage", {
+      headers: { Authorization: `Bearer ${tok}`, "anthropic-beta": "oauth-2025-04-20", "anthropic-version": "2023-06-01" },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const win = (w) => (w ? { util: w.utilization ?? null, resetAt: w.resets_at || null } : null);
+    return { source: "api", kind: "window", five: win(d.five_hour), seven: win(d.seven_day) };
+  } catch { return null; }
+}
+
+async function computePlanQuotas(config, secretsPath, fetchImpl) {
   const reg = loadAccounts(config, { secretsPath });
   const out = {};
   const or = reg.openrouter;
@@ -201,12 +226,33 @@ export async function fetchPlanQuotas(config, { secretsPath = DEFAULT_SECRETS_PA
         const limit = d.limit ?? null; // null = pay-as-you-go / no hard cap
         const used = d.usage ?? null;
         const remaining = d.limit_remaining ?? (limit != null ? Math.max(0, limit - (used || 0)) : null);
-        out[`openrouter/${a.id}`] = { source: "api", used, limit, remaining, unit: "$" };
+        out[`openrouter/${a.id}`] = { source: "api", kind: "dollar", used, limit, remaining, unit: "$" };
       } catch { /* offline / bad key → leave to the Rwang-tracked fallback */ }
+    }
+  }
+  const cl = reg.claude;
+  if (cl) {
+    for (const a of cl.accounts) {
+      const q = await fetchClaudeUsage(a.configDir, { fetchImpl });
+      if (q) out[`claude/${a.id}`] = q;
     }
   }
   return out;
 }
+
+// The plan-quota endpoints (esp. Anthropic /api/oauth/usage) are HARD rate-limited (429, retry-after
+// ~160s) while the dashboard polls /api/accounts every ~4s. Cache the result: the countdown ticks
+// client-side off the absolute resetAt, so a few-minutes-stale utilization is invisible. On a
+// transient failure we keep the last-known-good entry (merge) instead of dropping the card to nothing.
+let _pqCache = { at: 0, data: {} };
+export async function fetchPlanQuotas(config, { secretsPath = DEFAULT_SECRETS_PATH, fetchImpl = null, ttlMs = 90000, now = Date.now() } = {}) {
+  if (fetchImpl) return computePlanQuotas(config, secretsPath, fetchImpl); // tests: deterministic, no cache
+  if (_pqCache.at && now - _pqCache.at < ttlMs) return _pqCache.data;
+  const fresh = await computePlanQuotas(config, secretsPath, fetch);
+  _pqCache = { at: now, data: { ..._pqCache.data, ...fresh } };
+  return _pqCache.data;
+}
+export function _resetPlanQuotaCache() { _pqCache = { at: 0, data: {} }; } // test hook
 
 // ── read-only status view (CLI `accounts` + GET /api/accounts) ───────────────────────────────
 export function accountsStatus(config, statePath = DEFAULT_STATE_PATH, { now = Date.now(), secretsPath = DEFAULT_SECRETS_PATH } = {}) {
