@@ -1,0 +1,43 @@
+{
+  "$comment": "Shared Runtime Contract — machine mirror ของ SPEC--AGENT-RUNTIME-GOVERNANCE.md §7.1 (SSOT คือเอกสาร; แก้ contract = แก้เอกสารทั้งสอง + ไฟล์นี้ใน commit เดียว) · type syntax: 'str|null' = อนุญาตหลาย type คั่น | · required = field ขั้นต่ำของทุก event; ที่เหลือ optional ตามชนิด event",
+  "version": 1,
+  "required": ["run_id", "task_id", "attempt_id", "ts", "event_type"],
+  "types": {
+    "run_id": "str",
+    "task_id": "str",
+    "attempt_id": "int",
+    "ts": "str",
+    "event_type": "str",
+    "agent_role": "str",
+    "model": "str",
+    "tier": "str",
+    "gate": "str",
+    "verify": "dict",
+    "files": "list",
+    "approved_by": "str|null",
+    "rework_round": "int",
+    "escalated_to": "str|null",
+    "note": "str",
+    "cost_usd": "int|float"
+  },
+  "verify_types": {
+    "cmd": "str",
+    "visible_exit": "int",
+    "holdout_exit": "int|null"
+  },
+  "example": {
+    "run_id": "run-20260703-01",
+    "task_id": "T-3",
+    "attempt_id": 1,
+    "ts": "2026-07-03T10:00:00+07:00",
+    "event_type": "verify",
+    "agent_role": "execute",
+    "model": "qwen3:latest",
+    "tier": "T1",
+    "verify": { "cmd": "npx vitest run grid.test.ts", "visible_exit": 0, "holdout_exit": 0 },
+    "files": ["frontend/src/timeline/grid.ts"],
+    "approved_by": null,
+    "rework_round": 0,
+    "escalated_to": null
+  }
+}

@@ -17,8 +17,8 @@ FINDING shape (JSON). Accepts a single object, a JSON array, or JSONL (one per l
       "must_match": "RwLock<Vec<f32>>"                  # optional: substring required in stdout
     }
 A finding PASSES iff its evidence_command exits 0 AND (must_match is absent OR present in
-stdout). A finding with no evidence_command FAILS (an unverifiable finding is rejected at
-the gate, not passed downstream).
+the command's combined stdout+stderr). A finding with no evidence_command FAILS (an
+unverifiable finding is rejected at the gate, not passed downstream).
 
 USAGE:
     python check_evidence.py findings.json            # run gate; exit 0 iff all pass
@@ -90,6 +90,12 @@ def check(finding, dry_run):
 def main(argv):
     args = [a for a in argv if not a.startswith("--")]
     dry_run = "--dry-run" in argv
+    # A mistyped flag (e.g. --dryrun) must not silently EXECUTE the commands it was
+    # meant to suppress — unknown flags are a hard usage error.
+    unknown = [a for a in argv if a.startswith("--") and a != "--dry-run"]
+    if unknown:
+        sys.stderr.write(f"check_evidence.py: unknown flag(s): {' '.join(unknown)}\n")
+        sys.exit(2)
     if not args:
         sys.stderr.write(__doc__)
         sys.exit(2)

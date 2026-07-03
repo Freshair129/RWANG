@@ -1,0 +1,100 @@
+# governance.yaml — machine-readable Governance Matrix
+# SSOT เชิงเนื้อหา: D:\G-Music\docs\SPEC--AGENT-RUNTIME-GOVERNANCE.md §2 (ไฟล์นี้คือ mirror ที่ lint อ่าน)
+#
+# กติกาเหล็ก (G6):
+#   - policy ที่ status != enforced ห้าม claim ว่ามีผลบังคับ (ยังเป็นแผน)
+#   - enforced ทุกตัวต้องมี guard file ที่มีอยู่จริง + guard_test ที่ exit 0
+#     ไม่งั้น governance_lint.py exit non-zero → run.js ไม่เริ่ม run ใหม่
+#   - เพิ่ม policy ใหม่ = เพิ่มแถวที่นี่ + guard + guard_test ก่อน แล้วค่อยประกาศใช้
+#
+# fields ต่อ policy:
+#   policy       ชื่อ (unique)
+#   status       enforced | planned
+#   intent       ชั้น prompt (ว่างได้ = policy ที่เป็น code ล้วนโดยนิยาม)
+#   guard        path (relative จาก repo root) ของ runtime guard — ต้องมีจริงเมื่อ enforced
+#   guard_test   คำสั่งพิสูจน์ว่า guard ยังทำงาน (บังคับเมื่อ enforced)
+#   check        full | structural (structural = ตรวจว่า mechanism ยังอยู่ใน code ไม่ใช่ e2e)
+#   audit_event  event ที่เป็นหลักฐานใน progress.ndjson
+#   gp           rollout phase ตาม governance spec §12
+
+version: 1
+policies:
+  - policy: verify-gate
+    status: enforced
+    intent: "prompt สั่งรัน verify_command ทุก task; finding ไม่มี evidence_command = reject"
+    guard: orchestrator/check_evidence.py
+    guard_test: "python orchestrator/governance/test_guards.py verify-gate"
+    check: full
+    audit_event: verify
+    gp: GP1
+
+  - policy: maxrework-1
+    status: enforced
+    intent: ""   # เป็น code ล้วน — ladder ใน run.js
+    guard: orchestrator/run.js
+    guard_test: "python orchestrator/governance/test_guards.py maxrework-1"
+    check: structural   # ตรวจว่า escalation-ladder mechanism ยังอยู่ (single climb ต่อ fail)
+    audit_event: escalate
+    gp: GP1
+
+  - policy: shared-runtime-contract
+    status: planned   # schema พร้อมและ test ผ่านแล้ว แต่ progress.py ยังไม่ emit field ครบ → enforced เมื่อ GP5
+    intent: "ทุกไฟล์ event (progress.ndjson / model_stats.jsonl / ledger.jsonl) ใช้ field ตาม governance spec §7.1"
+    guard: orchestrator/governance/event_schema.json
+    guard_test: "python orchestrator/governance/test_guards.py shared-runtime-contract"
+    check: full
+    audit_event: "*"
+    gp: GP5
+
+  - policy: no-external-write
+    status: planned   # pattern file พร้อม; hook/wrapper wiring = GP4 (วันนี้พึ่ง human_review halt ใน run.js + ไม่มี credential)
+    intent: "system prompt ทุก agent: ห้าม push/PR/merge/deploy"
+    guard: orchestrator/governance/blocked_patterns.txt
+    guard_test: "python orchestrator/governance/test_guards.py blocked-patterns"
+    check: full
+    audit_event: blocked
+    gp: GP4
+
+  - policy: confirm-destructive
+    status: planned   # ใช้ pattern file เดียวกับ no-external-write (class DESTRUCTIVE) — wiring = GP4
+    intent: "prompt ระบุ list action ที่ต้อง confirm (reset --hard, rm -r, แก้ tests/)"
+    guard: orchestrator/governance/blocked_patterns.txt
+    guard_test: "python orchestrator/governance/test_guards.py blocked-patterns"
+    check: full
+    audit_event: confirm_required
+    gp: GP4
+
+  - policy: branch-only
+    status: planned
+    intent: "prompt: ทำงานบน run branch เท่านั้น ห้าม commit บน default branch"
+    guard: orchestrator/governance/git_guard.sh
+    audit_event: blocked
+    gp: GP4
+
+  - policy: tests-immutable
+    status: planned
+    intent: "prompt: ห้ามลบ/แก้ tests หลัง approve — ถ้า test ผิดให้แจ้ง ไม่ใช่หาทางอ้อม"
+    guard: orchestrator/governance/tests_hash_check.py
+    audit_event: tests_amended
+    gp: GP2
+
+  - policy: verify-claims
+    status: planned
+    intent: "prompt: ทุก progress report ต้องอ้าง tool output ในเซสชัน"
+    guard: orchestrator/governance/drift_check.py
+    audit_event: drift_detected
+    gp: GP3
+
+  - policy: holdout-acceptance
+    status: planned
+    intent: ""   # ต้องไม่อยู่ใน prompt โดยนิยาม
+    guard: orchestrator/governance/holdout_runner.py
+    audit_event: verify
+    gp: GP6
+
+  - policy: holdout-isolation
+    status: planned
+    intent: ""   # structural — tests/holdout/ อยู่นอก worker worktree
+    guard: orchestrator/governance/holdout_runner.py
+    audit_event: verify
+    gp: GP6
