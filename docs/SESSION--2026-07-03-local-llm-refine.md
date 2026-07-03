@@ -91,7 +91,15 @@
 - สถานะ: MCP runtime = Phase 1 ใช้จริง มี test 826 LOC, PRD ตรงโค้ด · legacy engine = **ถูกวางข้าง** (backlog ว่าง) แต่มีของอ้างอิงดี: claim/lease + usage.jsonl metering
 - **แนวคิดใหญ่ที่สุดจาก GoVibe: MCP-as-orchestration-interface** — 13 tools เป็น contract เดียวให้ UI/CLI/CI/agent เรียกเหมือนกันหมด → ตรงกับวิสัยทัศน์ hub
 
-### G-Maiden family (G-Maiden / RWANG-fork / govibe-embedded) — *agent สำรวจกำลังทำงาน จะ append ผล*
+### G-Maiden family (G-Maiden / RWANG-fork / govibe-embedded) — สำรวจเสร็จ
+- **สายพันธุ์:** engine เดียวกัน 770 LOC (file-lock claim + lease reclaim 30m + DAG waves) · **RWANG-fork (D:\rwang\RWANG) = ตัวสมบูรณ์สุด**: GKS + DACI borrow-checker (persona exclusive/shared) + approval-chain + test 10 ไฟล์ + React/Vite SPA (~15 components: Kanban, dependency graph React Flow, cost cockpit) · G-Maiden = ต้นตำรับ (ใช้จริงกับ Dota companion) · govibe-embedded = สำเนา + voice stack
+- **ของดีที่ G:/Rwang ยังไม่มี (top 5, ระบุไฟล์):**
+  1. **Worker pool + lease reclaim** (`G-Maiden/engine.mjs` runPool/reapStale ~50 LOC): claim atomic ผ่าน file-lock + คืน task อัตโนมัติเมื่อ worker ตาย — G:/Rwang รันเรียงตัว
+  2. **Verify gate + rework loop** (`engine.mjs` executeWithReview/parseVerdict): reviewer-agent tier ถูก + ฉีด issues กลับเป็น rework note (จำกัดรอบ) — เสริม check_evidence ที่เป็น single-pass
+  3. **Cost meter + auto-downgrade** (`cost-meter.mjs` + tierDowngrade): เกิน 80% budget → ลด tier อัตโนมัติ, เกิน 90% → สลับ local, มี kill-switch — cost_ledger ของ G:/Rwang ไม่มี enforcement
+  4. **Governance confirm gate** (`engine.mjs` needsConfirm): task type guard/safety/audit ต้อง confirm ก่อน dispatch — enforce ที่ engine ไม่ใช่ prompt (ตรงปรัชญา governance spec G3)
+  5. **Knowledge adapter** (`engine.mjs` queryPastMistakes + failures.jsonl): แนวเดียวกับ FR-4 ที่เราสร้างวันนี้ — มี prior art ใช้จริงมาก่อน ควรรวมร่างเป็นตัวเดียวใน hub
+- **ข้อสังเกตรวม 2 ตระกูล:** GoVibe เด่นชั้น *planning/contract* (waves, dry-run, temporal, MCP interface) · G-Maiden เด่นชั้น *execution* (pool, rework, cost enforcement) · G:/Rwang เด่นชั้น *policy* (tier ladder, deterministic gate, governance spec) — **สามเหลี่ยมนี้คือพิมพ์เขียว Rwang v2**
 
 ### G-Music harness — คือของที่สร้างเซสชันนี้ (§1) จุดแข็งเฉพาะ: Verify Gate + holdout, extractor v2, per-model options, ledger+recall — **เป็นแก่นของ P1**
 
