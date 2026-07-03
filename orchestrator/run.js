@@ -345,6 +345,21 @@ const REHYDRATE_SCHEMA = {
   required: ["governance_lint_exit", "tasks"],
 };
 
+// JSON schema the drift-check agent returns at the end of the Execute phase.
+// drift_check.py (governance G2/GP3, the verify-claims guard) re-proves that every
+// task CLAIMING `passed` still verifies against the live target repo; its
+// drift_cache.json makes an unchanged repo state cost ZERO verify re-runs. The
+// agent is MECHANICAL (haiku, relay-only) — the block/continue decision is made
+// in CODE below from drift_exit, never from prose.
+const DRIFT_SCHEMA = {
+  type: "object",
+  properties: {
+    drift_exit: { type: "number" },       // exit code of drift_check.py (0 = no drift)
+    drifted_summary: { type: "string" },  // "<task>: <reason>" per line; "" when none
+  },
+  required: ["drift_exit", "drifted_summary"],
+};
+
 // Topologically batch tasks into dependency "waves": independent tasks in a wave
 // run in parallel; a later wave waits on earlier ones. Extracted so both the
 // autonomous chain and a standalone Execute phase build waves identically.
@@ -541,6 +556,55 @@ async function phaseExecute(routed) {
         blockedTask = r;
         log(`[STOP] run blocked by task ${r.id} (reason=${r.reason}).`);
       }
+    }
+  }
+
+  // DRIFT CHECK (governance verify-claims, G2/GP3): after all waves, BEFORE the
+  // phase closes, re-prove every task that CLAIMS passed against the live target
+  // repo — a later wave's edit can silently break an earlier wave's verified work.
+  // drift_check.py is deterministic and cached (runDir/drift_cache.json): an
+  // unchanged repo state re-runs nothing. It writes ONLY its cache; the
+  // drift_detected audit event below goes through progress.py, the sole writer
+  // of progress.*. Skipped when the run is already blocked (it already halts
+  // and goes to the T3 review).
+  if (!runBlocked) {
+    const drift = await agent(
+      [
+        `RWANG DRIFT CHECK — MECHANICAL: run the command below EXACTLY, from G:/Rwang,`,
+        `and relay its result. Do not interpret, fix, or re-run anything else.`,
+        `  python orchestrator/governance/drift_check.py ${runDir} --target "${CFG.targetRepo}" --json`,
+        `Record the process EXIT CODE as drift_exit (0 = no drift). From the JSON it`,
+        `prints on stdout, join the drifted[] entries into drifted_summary as one`,
+        `"<task>: <reason>" per line ("" when drifted is empty).`,
+        `Return ONLY the schema JSON: drift_exit, drifted_summary.`,
+      ].join("\n"),
+      { label: "drift-check", phase: "Execute", model: "haiku", schema: DRIFT_SCHEMA }
+    );
+
+    // GATE (invariant 2 extension): a `passed` claim that no longer verifies must
+    // not cross the phase boundary. Decision in CODE: any non-zero exit (drift
+    // found, or drift_check itself unusable) blocks the run like a blocked task —
+    // the T3 adversarial review still runs, then finish --status blocked.
+    if (!drift || drift.drift_exit !== 0) {
+      const code = drift ? drift.drift_exit : "?";
+      const summary = (drift && typeof drift.drifted_summary === "string"
+        ? drift.drifted_summary : "").replace(/[\r\n\\"]+/g, " ").trim().slice(0, 180);
+      log(`[drift] drift_check exit=${code} — passed claim(s) no longer verify; blocking the run.`);
+      await agent(
+        [
+          `Record the drift finding (the verify-claims audit event). From G:/Rwang run:`,
+          `  python orchestrator/progress.py ${runDir} event --task "<run>" \\`,
+          `    --status note --cost 0 \\`,
+          `    --note "drift_detected: drift_check exit=${code}${summary ? " — " + summary : ""}"`,
+          `(progress.py is the ONLY writer of progress.* — do not edit those files directly.)`,
+          `Return a one-line confirmation.`,
+        ].join("\n"),
+        { label: "record-drift", phase: "Execute", model: "haiku", effort: "low" }
+      );
+      runBlocked = true;
+      blockedTask = { id: "<drift>", terminal: "blocked", reason: "drift_detected",
+        summary: summary || `drift_check exit=${code}` };
+      results.push(blockedTask);
     }
   }
 
