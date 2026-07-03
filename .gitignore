@@ -3,3 +3,6 @@ __pycache__/
 runs/*/
 !runs/.gitkeep
 node_modules/
+# approval tokens are ephemeral human-minted artifacts; the consumed ledger is
+# local audit — none of it belongs in git
+orchestrator/governance/approvals/

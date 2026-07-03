@@ -177,6 +177,29 @@ def self_test():
               "verify-chain exit %s, warnings=%r (want exit 0 + 'no chain (legacy run)')"
               % (rc, warns))
 
+        # ---- leg 5: CONCURRENT appends must still verify (adversarial review MJ1:
+        # the snapshot tip used to mirror a process-local value under a separate
+        # lock, so a parallel wave — run.js's normal path — made verify-chain cry
+        # BROKEN on an untampered chain)
+        run_d = os.path.join(td, "run-concurrent")
+        _make_run(run_d)
+        procs = []
+        for i in range(12):
+            procs.append(subprocess.Popen(
+                [PY, PROGRESS, run_d, "event", "--task", "T-1", "--status", "note",
+                 "--tier", "T1", "--model", "local-fixture", "--cost", "0",
+                 "--note", "concurrent event %d" % i, "--ts", TS],
+                cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        rcs = [p.wait(timeout=120) for p in procs]
+        rc, report, err = _verify(run_d)
+        hashed = report.get("hashed") if isinstance(report, dict) else None
+        check("concurrent-appends-intact",
+              all(r == 0 for r in rcs) and rc == 0
+              and isinstance(report, dict) and report.get("ok") is True
+              and (hashed or 0) >= 16,
+              "12 parallel events: appender exits=%r, verify exit %s, hashed=%s "
+              "(want all 0, exit 0, hashed>=16)" % (sorted(set(rcs)), rc, hashed))
+
     ok = all(c["ok"] for c in checks)
     report = {"ok": ok, "policy": "event-hash-chain",
               "checks": checks,

@@ -130,8 +130,10 @@ Every Rwang file agrees on this exact shape. Per run, `runs/<runId>/` holds `pro
 ### `progress.ndjson` (append-only, one JSON event per line)
 
 ```json
-{ "ts": "iso", "task": "str", "event": "queued|running|verify|pass|fail|escalate|blocked|phase_done|gate|approve|note", "status": "str", "tier": "str", "model": "str", "cost_usd": 0, "detail": "str", "prev_event_hash": "str", "event_hash": "str" }
+{ "ts": "iso", "task": "str", "event": "queued|running|verify|pass|fail|escalate|blocked|phase_done|gate|approve|note", "status": "str", "tier": "str", "model": "str", "cost_usd": 0, "detail": "str", "run_id": "str", "task_id": "str", "event_type": "str", "attempt_id": 0, "files": [], "approved_by": null, "verify": { "cmd": "str", "visible_exit": 0, "holdout_exit": null }, "prev_event_hash": "str", "event_hash": "str" }
 ```
+
+**Shared Runtime Contract (governance spec §7.1):** `run_id`/`task_id`/`event_type`/`attempt_id`/`files[]`/`approved_by` are the canonical cross-layer names (join key = `run_id, task_id, attempt_id`) and land on **every** event; the legacy `task`/`event` keys stay for the monitor and rehydrate. `verify{cmd, visible_exit, holdout_exit}` rides on attempt-result events (`--verify-cmd/--verify-exit/--holdout-exit`); `approved_by` is set by `approve --by`. Machine mirror: `orchestrator/governance/event_schema.json`; proven end-to-end by `contract_selftest.py`; ready-made audit queries in `orchestrator/governance/audit_query.md`.
 
 **Tamper-evident hash chain:** every appended event carries `event_hash = sha256(prev_event_hash + "\n" + json.dumps(event_without_the_two_hash_fields, sort_keys=True, ensure_ascii=False, separators=(",", ":")))`. The first hashed event uses `prev_event_hash = "genesis"`. Legacy events (written before the chain existed) carry no hash fields; the chain starts at the first hashed event with `prev="genesis"`. `progress.json` mirrors the chain tip in `last_event_hash` on every append, so truncating the ndjson tail is detectable: the shortened chain still self-verifies but no longer matches the snapshot tip. Audit a run with the read-only subcommand `python orchestrator/progress.py runs/<runId> verify-chain` — exit `0` chain intact (a pure-legacy run also exits `0`, with a `no chain (legacy run)` warning), `1` broken/tampered/truncated, `2` unreadable input.
 

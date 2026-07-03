@@ -1,5 +1,5 @@
 # governance.yaml — machine-readable Governance Matrix
-# SSOT เชิงเนื้อหา: D:\G-Music\docs\SPEC--AGENT-RUNTIME-GOVERNANCE.md §2 (ไฟล์นี้คือ mirror ที่ lint อ่าน)
+# SSOT เชิงเนื้อหา: G:\Rwang\docs\SPEC--AGENT-RUNTIME-GOVERNANCE.md §2 (ไฟล์นี้คือ mirror ที่ lint อ่าน)
 #
 # กติกาเหล็ก (G6):
 #   - policy ที่ status != enforced ห้าม claim ว่ามีผลบังคับ (ยังเป็นแผน)
@@ -13,7 +13,7 @@
 #   intent       ชั้น prompt (ว่างได้ = policy ที่เป็น code ล้วนโดยนิยาม)
 #   guard        path (relative จาก repo root) ของ runtime guard — ต้องมีจริงเมื่อ enforced
 #   guard_test   คำสั่งพิสูจน์ว่า guard ยังทำงาน (บังคับเมื่อ enforced)
-#   check        full | structural (structural = ตรวจว่า mechanism ยังอยู่ใน code ไม่ใช่ e2e)
+#   check        full | structural (structural = ตรวจว่า mechanism ยังอยู่ ไม่ใช่ e2e)
 #   audit_event  event ที่เป็นหลักฐานใน progress.ndjson
 #   gp           rollout phase ตาม governance spec §12
 
@@ -38,63 +38,112 @@ policies:
     gp: GP1
 
   - policy: shared-runtime-contract
-    status: planned   # schema พร้อมและ test ผ่านแล้ว แต่ progress.py ยังไม่ emit field ครบ → enforced เมื่อ GP5
+    status: enforced   # GP5: progress.py emit field ครบแล้ว — contract_selftest พิสูจน์ end-to-end
     intent: "ทุกไฟล์ event (progress.ndjson / model_stats.jsonl / ledger.jsonl) ใช้ field ตาม governance spec §7.1"
     guard: orchestrator/governance/event_schema.json
-    guard_test: "python orchestrator/governance/test_guards.py shared-runtime-contract"
+    guard_test: "python orchestrator/governance/contract_selftest.py --self-test"
     check: full
     audit_event: "*"
     gp: GP5
 
   - policy: no-external-write
-    status: planned   # pattern file พร้อม; hook/wrapper wiring = GP4 (วันนี้พึ่ง human_review halt ใน run.js + ไม่มี credential)
+    status: enforced   # law = (1) ไม่มี credential (2) needs_external_write halt ใน run.js (3) tool_guard classifier
     intent: "system prompt ทุก agent: ห้าม push/PR/merge/deploy"
-    guard: orchestrator/governance/blocked_patterns.txt
-    guard_test: "python orchestrator/governance/test_guards.py blocked-patterns"
+    guard: orchestrator/governance/tool_guard.py
+    guard_test: "python orchestrator/governance/tool_guard.py --self-test"
     check: full
     audit_event: blocked
     gp: GP4
 
   - policy: confirm-destructive
-    status: planned   # ใช้ pattern file เดียวกับ no-external-write (class DESTRUCTIVE) — wiring = GP4
+    status: enforced   # hook wired 2026-07-03 (user-approved): .claude/settings.json PreToolUse
+                       # → tool_guard --hook block DESTRUCTIVE ทุก Bash/PowerShell call ใน repo นี้
+                       # (มีผลกับ session ใหม่; canonical copy = governance/claude_settings.hook.json)
     intent: "prompt ระบุ list action ที่ต้อง confirm (reset --hard, rm -r, แก้ tests/)"
-    guard: orchestrator/governance/blocked_patterns.txt
-    guard_test: "python orchestrator/governance/test_guards.py blocked-patterns"
+    guard: orchestrator/governance/tool_guard.py
+    guard_test: "python orchestrator/governance/tool_guard.py --self-test"
     check: full
     audit_event: confirm_required
     gp: GP4
 
   - policy: branch-only
-    status: planned
+    status: enforced   # git_guard.py + code gate ใน run.js phaseCommit (unattended path)
     intent: "prompt: ทำงานบน run branch เท่านั้น ห้าม commit บน default branch"
-    guard: orchestrator/governance/git_guard.sh
+    guard: orchestrator/governance/git_guard.py
+    guard_test: "python orchestrator/governance/git_guard.py --self-test"
+    check: full
     audit_event: blocked
     gp: GP4
 
   - policy: tests-immutable
-    status: planned
+    status: enforced
     intent: "prompt: ห้ามลบ/แก้ tests หลัง approve — ถ้า test ผิดให้แจ้ง ไม่ใช่หาทางอ้อม"
     guard: orchestrator/governance/tests_hash_check.py
+    guard_test: "python orchestrator/governance/tests_hash_check.py --self-test"
+    check: full
     audit_event: tests_amended
     gp: GP2
 
+  - policy: external-state-contract
+    status: enforced
+    intent: "prompt: state ทั้งหมดของ run อยู่ในไฟล์ใต้ runDir — resume ผ่าน restart_prompt.md เท่านั้น ห้ามเดาสิ่งที่ไฟล์ไม่ได้บอก"
+    guard: orchestrator/governance/state_check.py
+    guard_test: "python orchestrator/governance/state_check.py --self-test"
+    check: full
+    audit_event: state_verified
+    gp: GP2
+
   - policy: verify-claims
-    status: planned
+    status: enforced
     intent: "prompt: ทุก progress report ต้องอ้าง tool output ในเซสชัน"
     guard: orchestrator/governance/drift_check.py
+    guard_test: "python orchestrator/governance/drift_check.py --self-test"
+    check: full
     audit_event: drift_detected
     gp: GP3
 
+  - policy: event-hash-chain
+    status: enforced
+    intent: ""   # code ล้วน — hash chain อยู่ที่จุด append เดียวใน progress.py; snapshot เก็บ tip กัน truncation
+    guard: orchestrator/progress.py
+    guard_test: "python orchestrator/governance/chain_selftest.py --self-test"
+    check: full
+    audit_event: "*"
+    gp: P1
+
+  - policy: coordination-ownership
+    status: enforced   # GP5: owners_check พิสูจน์ file-set ไม่ทับกันภายใน wave ก่อนรัน
+    intent: "spec ประกาศ files: ต่อ task; งานขนานห้ามแตะไฟล์ทับกัน"
+    guard: orchestrator/governance/owners_check.py
+    guard_test: "python orchestrator/governance/owners_check.py --self-test"
+    check: full
+    audit_event: blocked
+    gp: GP5
+
   - policy: holdout-acceptance
-    status: planned
+    status: enforced   # GP6: holdout_runner + gate ใน run.js ท้าย Execute (บล็อกใน code)
     intent: ""   # ต้องไม่อยู่ใน prompt โดยนิยาม
     guard: orchestrator/governance/holdout_runner.py
+    guard_test: "python orchestrator/governance/holdout_runner.py --self-test"
+    check: full
     audit_event: verify
     gp: GP6
 
   - policy: holdout-isolation
-    status: planned
-    intent: ""   # structural — tests/holdout/ อยู่นอก worker worktree
+    status: enforced   # structural — holdout อยู่ใต้ runDir (นอก target tree ของ worker);
+                       # self-test grep พิสูจน์ว่า EXEC prompts ใน run.js ไม่เอ่ยถึง holdout
+    intent: ""   # structural
     guard: orchestrator/governance/holdout_runner.py
+    guard_test: "python orchestrator/governance/holdout_runner.py --self-test"
+    check: structural
     audit_event: verify
+    gp: GP6
+
+  - policy: quality-decay-metrics
+    status: enforced   # GP6: วัดจาก ndjson deterministic; runner ตอบสนอง alert (หด batch) = ขั้นถัดไป
+    intent: ""   # code ล้วน — metrics จาก event log
+    guard: orchestrator/governance/decay_report.py
+    guard_test: "python orchestrator/governance/decay_report.py --self-test"
+    check: full
+    audit_event: "*"
     gp: GP6

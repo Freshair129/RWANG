@@ -116,20 +116,61 @@ def _git(repo, *argv):
         return 127, ""
 
 
+def _untracked_content_digest(repo, porcelain):
+    """Digest of the BYTES of every untracked file, keyed by sorted path.
+
+    `status --porcelain` lists '?? name' but neither it nor `diff HEAD` sees the
+    CONTENT of untracked files — so a GOOD->BAD edit inside an untracked file left
+    state_hash unchanged and the cache false-skipped a claim that no longer
+    verifies (adversarial review MJ2). Untracked *directories* appear as one
+    '?? dir/' entry, so walk them. Unreadable files digest as a marker (still a
+    state change when they appear/disappear)."""
+    names = []
+    for line in porcelain.splitlines():
+        if line.startswith("?? "):
+            names.append(line[3:].strip().strip('"'))
+    parts = []
+
+    def digest_file(path):
+        rel = os.path.relpath(path, repo).replace("\\", "/")
+        try:
+            with open(path, "rb") as f:
+                h = hashlib.sha256(f.read()).hexdigest()
+        except OSError:
+            h = "<unreadable>"
+        parts.append(rel + ":" + h)
+
+    for name in sorted(names):
+        p = os.path.join(repo, name)
+        if os.path.isdir(p):
+            for root, dirs, files in os.walk(p):
+                dirs.sort()
+                for fn in sorted(files):
+                    digest_file(os.path.join(root, fn))
+        elif os.path.isfile(p):
+            digest_file(p)
+    return "\n".join(parts)
+
+
 def compute_state_hash(repo):
-    """sha256(rev-parse HEAD + "\\n" + status --porcelain + "\\n" + diff HEAD).
+    """sha256(rev-parse HEAD + "\\n" + status --porcelain + "\\n" + diff HEAD
+    + "\\n" + untracked-file content digest).
 
     Returns None when the target is not a usable git repo (no .git, no commits) —
     the caller turns that into a usage error (exit 2), never a silent pass.
     """
     parts = []
+    porcelain = ""
     for argv in (("rev-parse", "HEAD"),
                  ("status", "--porcelain"),
                  ("diff", "HEAD")):
         rc, out = _git(repo, *argv)
         if rc != 0:
             return None
+        if argv[0] == "status":
+            porcelain = out
         parts.append(out)
+    parts.append(_untracked_content_digest(repo, porcelain))
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -467,6 +508,24 @@ def self_test():
              rc == 1 and bool(rep) and rep.get("checked") == 1
              and rep.get("skipped_cache") == 0, json.dumps(rep))
 
+        # (4c) untracked-file CONTENT regression must be a cache MISS + drift
+        # (adversarial review MJ2: porcelain lists '?? name' but not its bytes,
+        #  so a GOOD->BAD edit in an untracked file used to false-skip)
+        data = os.path.join(repo, "data.txt")  # untracked on purpose (never git-added)
+        with open(data, "w", encoding="utf-8") as f:
+            f.write("GOOD")
+        t_unt = {"id": "T-UNT", "verify_command":
+                 "python -c \"import sys; sys.exit(0 if open('data.txt').read().strip()=='GOOD' else 1)\""}
+        run3 = write_run("run3", [t_unt], {"T-UNT": "passed"})
+        rc, rep, err = cli(run3)
+        step("case4c: untracked GOOD -> verify passes (exit 0)", rc == 0, err[:200])
+        with open(data, "w", encoding="utf-8") as f:
+            f.write("BAD")
+        rc, rep, err = cli(run3)
+        step("case4c: untracked content change -> cache MISS + drift (exit 1)",
+             rc == 1 and bool(rep) and rep.get("checked") == 1
+             and rep.get("skipped_cache") == 0, json.dumps(rep))
+
         # (5) usage error: missing tasks.json/progress.json -> exit 2
         rc, rep, err = cli(os.path.join(td, "does-not-exist"))
         step("case5: missing inputs -> exit 2", rc == 2, err[:200])
@@ -477,8 +536,8 @@ def self_test():
         print("SELF-TEST FAILED — %d case(s): %s" % (len(fails), ", ".join(fails)))
         return 1
     print("SELF-TEST OK — pass path, cache skip, cache miss on diff change, drift "
-          "fail path, failure-never-skipped, unverifiable warning, usage error "
-          "all proven.")
+          "fail path, failure-never-skipped, untracked-content cache miss, "
+          "unverifiable warning, usage error all proven.")
     return 0
 
 
