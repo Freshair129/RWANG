@@ -1,0 +1,87 @@
+# M0 smoke spec — prove the runner end-to-end on a throwaway target.
+# Casting: T2/sonnet workers; the adversarial Review phase (opus) is the gate;
+# the driving session (integrator) owns the final gate. All tasks carry a
+# machine-checkable verify_command, so every worker attempt is cheap-eligible
+# and the verify gate does the grading.
+
+goal: >
+  M0 smoke: drive a tiny Python module through Route -> Execute (2+ waves,
+  one parallel) -> drift gate -> adversarial Review, producing a real
+  runs/<runId>/ artifact set (progress.json/ndjson + hash chain + context.md).
+
+target_repo: "C:/Users/freshair/AppData/Local/Temp/claude/G--Rwang/6eaaf459-dc5c-435f-acc1-b957d869e509/scratchpad/m0-target"
+
+autonomy: autonomous
+
+constraints:
+  - "Language: Python 3 stdlib only; all files live at the target repo root."
+  - "Must stay green: python -m unittest test_all (once M0-T4 lands)."
+  - "Out of scope: no packaging, no CI config, no external dependencies."
+  - "Human-in-the-loop: no commit on the target default branch; work on the run branch."
+
+epic_dod: >
+  WHEN the run completes THE SYSTEM SHALL provide calc.py exposing add, sub,
+  mul and greet.py exposing greet, with python -m unittest test_all exiting 0
+  on the run branch, AND a README.md naming all four functions.
+  Done means: every task verify_command exits 0 and the adversarial review
+  returns PASS.
+
+phase_gates:
+  Verify-gate: >
+    Every task carries an executable verify_command; a task claims pass only
+    with verify_exit == 0 from actually running it.
+  Author-gate: >
+    Each executor receives only its self-contained task description plus the
+    run context brief (facts-only); no conversation context crosses tasks.
+  Review-gate: >
+    The T3/opus adversarial review re-runs the load-bearing verify_commands
+    and returns PASS with no unresolved blocking objection.
+  Assemble-gate: >
+    All changes stay on the run branch of the throwaway target; a human owns
+    any merge (none expected for a smoke).
+
+tasks:
+  - id: M0-T1
+    description: "Create calc.py at the target repo root with two pure functions: add(a, b) returning a+b, and sub(a, b) returning a-b. Stdlib only, no classes, no I/O."
+    requirement_ref: R-1.1
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: 'python -c "from calc import add, sub; assert add(2,3)==5 and sub(5,3)==2"'
+    depends_on: []
+    review_gate: false
+
+  - id: M0-T2
+    description: "Create greet.py at the target repo root with one pure function greet(name) returning the exact string 'hello, ' + name. Stdlib only, no I/O."
+    requirement_ref: R-1.2
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: 'python -c "from greet import greet; assert greet(''m0'')==''hello, m0''"'
+    depends_on: []
+    review_gate: false
+
+  - id: M0-T3
+    description: "Extend calc.py with mul(a, b) returning a*b. Keep add and sub working unchanged."
+    requirement_ref: R-1.3
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: 'python -c "from calc import add, sub, mul; assert mul(3,4)==12 and add(1,1)==2 and sub(2,1)==1"'
+    depends_on: [M0-T1]
+    review_gate: false
+
+  - id: M0-T4
+    description: "Create test_all.py at the target repo root: unittest TestCase(s) covering add, sub, mul from calc.py and greet from greet.py — at least one assertion per function, including one negative-number case for sub."
+    requirement_ref: R-2.1
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "python -m unittest test_all"
+    depends_on: [M0-T2, M0-T3]
+    review_gate: false
+
+  - id: M0-T5
+    description: "Write README.md at the target repo root describing the module: what calc.py and greet.py are, and a usage line for each of add, sub, mul, greet."
+    requirement_ref: R-3.1
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "grep -q mul README.md && grep -q greet README.md && grep -q sub README.md"
+    depends_on: [M0-T4]
+    review_gate: false
