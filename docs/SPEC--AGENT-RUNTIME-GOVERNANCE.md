@@ -124,8 +124,8 @@ Enforcement 3 ชั้นซ้อน (ชั้นเดียวไม่พ�
 2. **hook/wrapper**: pattern list ใน `governance/blocked_patterns.txt` (`git push`, `gh pr create`, `rm -rf` นอก run dir, `git reset --hard`, เขียนใต้ `tests/`) — hook ปฏิเสธ + append event
 3. **spec-level**: `human_review: true` → runner halt แล้ว surface (มีแล้วใน run.js)
 
-**Approval token (one-shot) — ช่องอนุมัติของ invariant "ไม่มี external write โดยไม่มี human approval":**
-human mint token ใน terminal ธรรมดา (`tool_guard.py --mint "<exact command>" --by <name> --ttl <นาที>`) → hook ยอมปล่อยคำสั่งที่ตรง token **เป๊ะ ๆ หนึ่งครั้ง** (consume แบบ atomic เข้า `approvals/used/` + ลง `approvals/consumed.ndjson`) · `--mint` ปฏิเสธใน agent shell (ตรวจ env `CLAUDECODE`) — การ mint จาก terminal ธรรมดา**คือ**การอนุมัติ · **threat model ตรงไปตรงมา:** process ใน user เดียวกัน (รวมถึง agent ที่จงใจโกง) forge token ได้ และ line-matching หลบได้ด้วย script indirection — กติกา protocol เด็ดขาด: **agent ห้ามสร้าง/แก้ token file และห้ามห่อคำสั่งต้องห้ามในสคริปต์เพื่อหลบ hook** (ทำ = ละเมิด invariant เอง); ledger ทิ้งหลักฐานให้ตรวจย้อนหลังเสมอ
+**Approval token (metered) — ช่องอนุมัติของ invariant "ไม่มี external write โดยไม่มี human approval":**
+human mint token ใน terminal ธรรมดา (`tool_guard.py --mint "<exact command>" --by <name> --ttl <นาที> [--uses N≤20]`) → hook ยอมปล่อยคำสั่งที่ตรง token **เป๊ะ ๆ ตามจำนวน uses** (default 1) — claim แบบ atomic rename (แพ้ race = block, under-allow ได้แต่ double-spend ไม่ได้), หมด uses ย้ายเข้า `approvals/used/`, ทุกครั้งลง `approvals/consumed.ndjson` พร้อม `remaining` · `--mint` ปฏิเสธใน agent shell (ตรวจ env `CLAUDECODE`) — การ mint จาก terminal ธรรมดา**คือ**การอนุมัติ · **threat model ตรงไปตรงมา:** process ใน user เดียวกัน (รวมถึง agent ที่จงใจโกง) forge token ได้ และ line-matching หลบได้ด้วย script indirection — กติกา protocol เด็ดขาด: **agent ห้ามสร้าง/แก้ token file และห้ามห่อคำสั่งต้องห้ามในสคริปต์เพื่อหลบ hook** (ทำ = ละเมิด invariant เอง); ledger ทิ้งหลักฐานให้ตรวจย้อนหลังเสมอ
 
 **Acceptance:** จำลอง action ทั้ง 4 class → ผลตรงตาราง + มี event ครบทุกกรณีที่ถูก block
 

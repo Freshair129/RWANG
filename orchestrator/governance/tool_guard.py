@@ -19,20 +19,25 @@ Three runtime faces:
                              must not brick every tool call in the harness — the
                              failure is visible in stderr and governance_lint still
                              proves the classifier itself daily via --self-test.
-  --mint "<command line>"    HUMAN-ONLY: write a one-shot approval token for that
-                             EXACT command (--by <name>, --ttl <minutes, default 15>).
-                             Refuses inside an agent shell (CLAUDECODE env present) —
-                             minting from a plain terminal IS the human approval.
+  --mint "<command line>"    HUMAN-ONLY: write an approval token for that EXACT
+                             command (--by <name>, --ttl <minutes, default 15>,
+                             --uses <N, default 1, max 20>). Refuses inside an
+                             agent shell (CLAUDECODE env present) — minting from
+                             a plain terminal IS the human approval.
 
 APPROVAL TOKENS (the invariant is "no external write WITHOUT HUMAN APPROVAL" —
 tokens are the approval channel; the hook stays the enforcement channel):
   - live under orchestrator/governance/approvals/*.json:
       {"command": "<exact command>", "class": "EXTERNAL|DESTRUCTIVE",
-       "expires_at": "<ISO-8601>", "approved_by": "<name>", "once": true}
+       "expires_at": "<ISO-8601>", "approved_by": "<name>", "uses": N}
   - match = EXACT command string (whitespace-normalized) + class + not expired
-  - one-shot: consumed atomically (os.replace into approvals/used/) — a second
-    identical command blocks again; every consumption is appended to
-    approvals/consumed.ndjson (the audit ledger)
+  - metered: "uses" (default 1, mint cap 20) decrements per consumption; the
+    claim is an atomic os.replace to a .claim temp — under a race the loser
+    sees no token and BLOCKS (fail-closed: a token can under-allow, never
+    double-spend). At 0 the token moves to approvals/used/; every consumption
+    is appended to approvals/consumed.ndjson with the remaining count (audit).
+    A crash mid-claim leaves a stale *.claim file = token suspended until a
+    human inspects it (again fail-closed).
   THREAT MODEL (documented, not hidden): a same-user process — including a
   deliberately misbehaving agent — CAN forge a token file; the CLAUDECODE
   refusal on --mint plus the consumed ledger raise the bar and leave evidence,
@@ -124,23 +129,46 @@ def find_and_consume_token(cmdline, cls):
             continue
         if now > exp:
             continue  # expired tokens stay in place as evidence
-        used_dir = os.path.join(APPROVALS_DIR, "used")
-        os.makedirs(used_dir, exist_ok=True)
         try:
-            os.replace(path, os.path.join(used_dir, fn))  # atomic one-shot claim
+            uses = int(tok.get("uses", 1))
+        except (TypeError, ValueError):
+            uses = 1
+        if uses < 1:
+            continue  # a spent/garbled counter never allows
+        # Exclusive claim: atomic rename to a .claim temp. Under a race the
+        # loser sees the file gone and BLOCKS — a token can under-allow,
+        # never double-spend. A crash mid-claim strands a *.claim file =
+        # token suspended until a human looks (fail-closed).
+        claim = path + ".claim"
+        try:
+            os.replace(path, claim)
         except OSError:
-            continue  # another process claimed it first
+            continue  # another process holds the claim
+        remaining = uses - 1
+        if remaining > 0:
+            tok["uses"] = remaining
+            with open(claim, "w", encoding="utf-8") as f:
+                json.dump(tok, f, ensure_ascii=False, indent=2)
+            os.replace(claim, path)  # token goes back live with N-1 uses
+        else:
+            used_dir = os.path.join(APPROVALS_DIR, "used")
+            os.makedirs(used_dir, exist_ok=True)
+            os.replace(claim, os.path.join(used_dir, fn))
         with open(os.path.join(APPROVALS_DIR, "consumed.ndjson"), "a",
                   encoding="utf-8") as f:
             f.write(json.dumps({"ts": now.isoformat(), "token": fn,
                                 "command": target, "class": cls,
-                                "approved_by": tok.get("approved_by", "?")},
+                                "approved_by": tok.get("approved_by", "?"),
+                                "remaining": remaining},
                                ensure_ascii=False) + "\n")
         return tok
     return None
 
 
-def cmd_mint(command, by, ttl_min):
+MAX_USES = 20  # mint-time cap — a bigger grant should be a policy change, not a token
+
+
+def cmd_mint(command, by, ttl_min, uses=1):
     """HUMAN-ONLY token minting. An agent shell carries CLAUDECODE in its env —
     refusing under it makes 'minting from a plain terminal' the approval act."""
     if os.environ.get("CLAUDECODE"):
@@ -154,17 +182,21 @@ def cmd_mint(command, by, ttl_min):
         sys.stderr.write("tool_guard --mint: that command is not blocked — no token "
                          "needed.\n")
         return 2
+    if not (1 <= uses <= MAX_USES):
+        sys.stderr.write(f"tool_guard --mint: --uses must be 1..{MAX_USES} "
+                         f"(got {uses}) — a bigger grant belongs in policy, not a token.\n")
+        return 2
     now = datetime.datetime.now(datetime.timezone.utc)
     exp = now + datetime.timedelta(minutes=ttl_min)
     tok = {"command": _norm_cmd(command), "class": cls,
-           "expires_at": exp.isoformat(), "approved_by": by, "once": True}
+           "expires_at": exp.isoformat(), "approved_by": by, "uses": uses}
     os.makedirs(APPROVALS_DIR, exist_ok=True)
     name = "tok-%s.json" % hashlib.sha256(
         (tok["command"] + tok["expires_at"]).encode("utf-8")).hexdigest()[:12]
     path = os.path.join(APPROVALS_DIR, name)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(tok, f, ensure_ascii=False, indent=2)
-    print(json.dumps({"minted": path, "class": cls,
+    print(json.dumps({"minted": path, "class": cls, "uses": uses,
                       "expires_at": tok["expires_at"]}, ensure_ascii=False))
     return 0
 
@@ -316,18 +348,46 @@ def self_test():
         # (4g) expired token never allows
         expired = {"command": target_cmd, "class": "EXTERNAL",
                    "expires_at": "2020-01-01T00:00:00+00:00",
-                   "approved_by": "selftest", "once": True}
+                   "approved_by": "selftest", "uses": 1}
         with open(os.path.join(td, "tok-expired.json"), "w", encoding="utf-8") as f:
             json.dump(expired, f)
         rc, _ = hook_env(target_cmd, tok_env)
         step("token: expired -> blocked", rc == 2, f"rc={rc}")
 
+        # (4h) METERED token (uses: 2) — allow, allow, then block; ledger counts down
+        os.remove(os.path.join(td, "tok-expired.json"))
+        p = subprocess.run([py, me, "--mint", target_cmd, "--by", "selftest",
+                            "--ttl", "5", "--uses", "2"],
+                           capture_output=True, text=True, env=plain_env)
+        step("mint: --uses 2 accepted", p.returncode == 0 and '"uses": 2' in p.stdout,
+             f"rc={p.returncode} out={p.stdout.strip()[:120]}")
+        rc1, _ = hook_env(target_cmd, tok_env)
+        live_after_1 = [f for f in os.listdir(td) if f.startswith("tok-") and f.endswith(".json")]
+        rc2, _ = hook_env(target_cmd, tok_env)
+        rc3, _ = hook_env(target_cmd, tok_env)
+        step("token: uses=2 -> allow, allow, block",
+             rc1 == 0 and rc2 == 0 and rc3 == 2, f"rcs={rc1},{rc2},{rc3}")
+        step("token: decremented file stayed live between uses",
+             len(live_after_1) == 1, f"live={live_after_1}")
+        ledger_rows = [json.loads(l) for l in
+                       open(os.path.join(td, "consumed.ndjson"), encoding="utf-8")
+                       .read().splitlines() if l.strip()]
+        rem = [r.get("remaining") for r in ledger_rows if r["command"] == target_cmd]
+        step("token: ledger records remaining 0 (one-shot), 1 then 0 (metered)",
+             rem[-2:] == [1, 0], f"remaining-seq={rem}")
+
+        # (4i) mint cap: --uses 21 refused
+        p = subprocess.run([py, me, "--mint", target_cmd, "--by", "selftest",
+                            "--uses", "21"],
+                           capture_output=True, text=True, env=plain_env)
+        step("mint: --uses over cap refused", p.returncode == 2, f"rc={p.returncode}")
+
     if fails:
         print("SELF-TEST FAILED — %d case(s): %s" % (len(fails), ", ".join(fails)))
         return 1
     print("SELF-TEST OK — check exit-codes, hook block/allow, non-command pass-through, "
-          "fail-open, and approval tokens (mint fence, one-shot allow+consume, "
-          "exact-match, expiry) all proven.")
+          "fail-open, and approval tokens (mint fence, one-shot + metered uses:N "
+          "allow/consume/ledger, exact-match, expiry, mint cap) all proven.")
     return 0
 
 
@@ -342,6 +402,7 @@ def main(argv):
         command = None
         by = "human"
         ttl = 15
+        uses = 1
         i = 1
         while i < len(argv):
             a = argv[i]
@@ -354,6 +415,13 @@ def main(argv):
                     sys.stderr.write("tool_guard --mint: --ttl must be minutes (int)\n")
                     return 2
                 i += 2
+            elif a == "--uses" and i + 1 < len(argv):
+                try:
+                    uses = int(argv[i + 1])
+                except ValueError:
+                    sys.stderr.write("tool_guard --mint: --uses must be an int\n")
+                    return 2
+                i += 2
             elif command is None and not a.startswith("--"):
                 command = a; i += 1
             else:
@@ -362,7 +430,7 @@ def main(argv):
         if not command:
             sys.stderr.write(__doc__)
             return 2
-        return cmd_mint(command, by, ttl)
+        return cmd_mint(command, by, ttl, uses)
     sys.stderr.write(__doc__)
     return 2
 
