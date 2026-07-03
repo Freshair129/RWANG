@@ -112,7 +112,7 @@
 ## 6. คำตอบคำถามเฉพาะที่ถามในเซสชัน
 
 - **"คุณภาพ code ใครดีสุด"** → qwen3 = sushirl (7/7 ทุกชั้น) โดย qwen3 เร็วกว่า/sushirl ประหยัด VRAM กว่า; ดูตาราง §3
-- **"tool use ใครดีสุด"** → ณ ข้อมูลปัจจุบัน: **Ornith-1.0-9B** (3/3, 1.9–2.7s) > gemma-agentic-v2 (3/3, 2.3–4.1s) >> qwen3 (ใช้ไม่ได้ — timeout); เหลือ 4 โมเดลกำลังวัด
+- **"tool use ใครดีสุด" (ฉบับจบ ครบ 8 โมเดล)** → **Ornith 3/3 เร็วสุด (1.9–2.7s)** > sushirl/Qwythos/gemma-it/gemma-agentic-v2 (3/3 ทั้งหมด, warm 2–6s) > Mellum2 2/3 (S1-en ไม่เรียก tool) > **qwen3 0/3 — runaway จาก Ollama bug [#14493](https://github.com/ollama/ollama/issues/14493)** (qwen tool renderer ผิด format; พิสูจน์ 2 config + orphaned request ยึด GPU เกิน num_ctx ต้อง kill process) → ถอด qwen3 จาก pool (ผู้ใช้แจ้งลบ `670a5c200264`), **sushirl ขึ้น default** (code 7/7 + tools 3/3 + 5.57GB); ทางกลับ qwen3 = unsloth/Qwen3-14B-GGUF + presence_penalty 1.0–1.5 + smoke ก่อน
 - **"gemma list ตกหล่นอะไร + id ตัวพัง"** → พัง 1 ตัว: `5434f64afb3f` (แจ้งลบ) · duplicate tag: aroow-rust-coder = `4157468b3949` ซ้ำ 2 ชื่อ · ตกหล่นที่เทสเพิ่มแล้ว: Ornith, gemma-agentic-v2
 - **"สร้าง backend เอง (llama.cpp)?"** → ทำ hub ใช่ / เขียน engine เอง ไม่ (§4.1)
 
