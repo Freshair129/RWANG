@@ -4,14 +4,14 @@ Autonomy is what makes Rwang useful: given a spec, it drives the whole **VERIFY 
 
 ---
 
-> **Implementation status (current).** `orchestrator/run.js` is split into disk-checkpointed **phases** (`route` / `execute` / `review` / `commit`) selectable via `args.phase`, so a run can pause *between* Workflow invocations even though a single invocation still cannot block mid-body. **`supervised` is wired**: the runner supports single-phase invocation plus the `progress.py` `gate`/`approve` pause states, and a **session driver** (see "The supervised driver contract" below) pauses for a human at each phase boundary. **`autonomous`** is unchanged — it drives end-to-end. **`unattended`** reaches a branch-only commit *boundary* (`awaiting_merge`), but the actual auto-`git commit` is still gated behind `human_review` (spec `PR-T7`) and not yet wired — so today a human still performs every external write, including the commit. This fails *safe* — the un-wired path only ever halts before a write, so the safety invariants hold regardless. See `docs/DESIGN--pause-resume-runner.md`.
+> **Implementation status (current).** `orchestrator/run.js` is split into disk-checkpointed **phases** (`route` / `execute` / `review` / `commit`) selectable via `args.phase`, so a run can pause *between* Workflow invocations even though a single invocation still cannot block mid-body. **`supervised` is wired**: the runner supports single-phase invocation plus the `progress.py` `gate`/`approve` pause states, and a **session driver** (see "The supervised driver contract" below) pauses for a human at each phase boundary. **`autonomous`** is unchanged — it drives end-to-end. **`unattended` now performs a branch-only local `git commit`** (via `phaseCommit`, hard-guarded to `unattended`, aborting on the default branch, never push/PR/merge) and stops at `awaiting_merge` — **a human still owns the merge**. (The commit path is implemented but not yet exercised by an end-to-end smoke.) On top of all three levels there is a **governance interlock**: `run.js` runs `governance_lint.py` at the top of Route (and again at Execute resume) and **refuses to start/resume any run** if it exits non-zero. See `docs/DESIGN--pause-resume-runner.md`.
 
 ## The three autonomy levels
 
 You pick the level when you launch a run (`autonomy=` arg to `orchestrator/run.js`).
 
 ### 1. `supervised`
-- **Asks before each phase.** The runner pauses at every phase boundary (VERIFY → AUTHOR → REVIEW → ASSEMBLE) and waits for a human go-ahead before proceeding.
+- **Asks before each phase.** The runner pauses at every phase boundary (the implemented phases `route` → `execute` → `review`, plus `commit` for unattended) and waits for a human go-ahead before proceeding.
 - **Does not** advance phases, escalate, or write anything without a prompt.
 - Use when you're calibrating a new spec or don't yet trust the routing.
 
@@ -100,7 +100,7 @@ Convenience path: launched with **no** `phase` and `autonomy=supervised`, the ru
 
 Long runs can be paced or resumed without ever violating the no-auto-merge rule:
 
-- **Resume:** a run launched via the Workflow tool (`orchestrator/run.js`) can be continued via Claude Code Workflow **resume** — it picks up from `progress.json` state.
+- **Resume:** relaunch the runner with `phase: "execute"` (or the phase you stopped at). It rehydrates the task list from `tasks.json` + `progress.json` on disk and **skips already-`passed` tasks**, continuing where it stopped — no reliance on any Workflow-tool "resume" feature.
 - **Pacing:** for long jobs you can drive firings on a schedule (e.g. `ScheduleWakeup` / a cron-style trigger) so the run advances in windows rather than one long block.
 
 In every case the invariants hold: scheduled or resumed, the run still **stops at gate-exhaustion and `human_review` tasks**, still **auto-commits only to a branch** (in `unattended`), and **still never merges**. Scheduling changes *when* work happens, not *who* approves the write.

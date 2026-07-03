@@ -16,7 +16,8 @@ The data flow of a run, end to end:
 
 ```
 specs/<x>.yaml ──> run.js  (the Workflow runner)  ──> target repo (edited on a branch)
-   (SSOT)            ├─ runs route.py ................ tier assignment
+   (SSOT)            ├─ governance_lint.py gate ...... exit≠0 → refuse to start/resume
+                     ├─ runs route.py ................ tier assignment
                      ├─ drives VERIFY→AUTHOR→REVIEW→ASSEMBLE
                      ├─ climbs escalation ladder T0→T1→T1.5→T2→T3
                      └─ writes via progress.py ──> runs/<runId>/progress.{json,ndjson}
@@ -26,18 +27,19 @@ specs/<x>.yaml ──> run.js  (the Workflow runner)  ──> target repo (edite
 - **`specs/*.yaml`** — the single source of truth. Each task carries `verify_command`, `tier_hint`, `executor_model`, `depends_on`, `review_gate`, and optionally `human_review: true` (surfaced to a human, never auto-run — the Route agent also sets it for any external-write task). Routing is *derived* from this file, never a side-channel. Start from `specs/_TEMPLATE.yaml`; `specs/P0-vector-quant-sidecar.yaml` is a real worked example.
 - **`orchestrator/route.py`** — reads the spec, emits a tier per task from deterministic signals only. The router is a **role, not a tier** — it never sends work to a model.
 - **`orchestrator/run.js`** — the autonomous runner, a **Workflow script** (see below). It topologically batches tasks into dependency **waves** (independent tasks in a wave run in `parallel()`), runs each through the verify gate + escalation ladder in `runTaskWithEscalation`, and on the first `terminal: "blocked"` (external write / gate-exhaustion / human_review) it **skips all later waves** — siblings already running in the same wave still finish — then **still runs the T3 adversarial Review + `finish --status blocked`** so the human gets an assessment, not just a halt.
-- **`orchestrator/progress.py`** — the only writer of the shared progress schema. Agents inside `run.js` shell out to it (`init` / `event` / `finish`) to keep `runs/<runId>/progress.json` (snapshot) and `progress.ndjson` (append-only audit) in sync. The exact schema lives in this file's docstring and in USERFLOW.md — **every file agrees on that shape verbatim**.
+- **`orchestrator/progress.py`** — the only writer of the shared progress schema. Agents inside `run.js` shell out to it (`init` / `event` / `phase-done` / `gate` / `approve` / `finish`) to keep `runs/<runId>/progress.json` (snapshot) and `progress.ndjson` (append-only audit) in sync; the pause/approval trio (`phase-done`/`gate`/`approve`) also maintains `approvals.ndjson`. The exact schema lives in this file's docstring and in USERFLOW.md — **every file agrees on that shape verbatim**.
 - **`orchestrator/check_evidence.py`** — the standalone verify-gate enforcer: runs each finding's `evidence_command` and exits non-zero if any fails, so it can sit in a pipeline as a hard gate before the author phase.
 - **`orchestrator/cost_estimate.py`** / **`cost_ledger.py`** — the two-way cost model (token count × per-type price). `cost_ledger.py` is a thin wrapper that reads a JSONL ledger and prints a local-vs-billed split.
 - **`orchestrator/ollama_route.sh`** — local-tier dispatch: POSTs a prompt to local Ollama and prints the response text plus `prompt_eval_count` / `eval_count` for the ledger.
+- **`orchestrator/governance/`** — the **Governance Matrix**: `governance.yaml` maps each policy to a guard; `governance_lint.py` (deterministic, stdlib + PyYAML) proves every ENFORCED policy's guard and exits non-zero if any is broken; `test_guards.py` is its guard test suite. `run.js` runs the lint at the **top of the Route phase and again at Execute resume** — a non-zero exit **refuses to start/resume the run** (a hard interlock). Some guards are still `PLANNED` (WIP).
 
 ## The deterministic core is sacred
 
-`orchestrator/*.py` (+ `ollama_route.sh`) is the **deterministic core**: `route.py` (role-based model-tier router), `check_evidence.py` (the verify gate), `cost_estimate.py` (FrugalGPT break-even), `cost_ledger.py` (two-way token/cost ledger), `progress.py` (shared-schema writer), `ollama_route.sh` (local-tier dispatch).
+`orchestrator/*.py` (+ `ollama_route.sh`) is the **deterministic core**: `route.py` (role-based model-tier router), `check_evidence.py` (the verify gate), `cost_estimate.py` (FrugalGPT break-even), `cost_ledger.py` (two-way token/cost ledger), `progress.py` (shared-schema writer), `ollama_route.sh` (local-tier dispatch), `governance/governance_lint.py` (Governance-Matrix meta-gate).
 
 - **NEVER put LLM SDK calls in the core.** They are pure, testable, deterministic functions. Model calls happen in the runner / the session, not in the core. Keeping the core LLM-free is what makes routing and cost reproducible.
 - Treat these scripts as a stable contract. If you change one, it must stay deterministic and the existing CLI/IO shape must hold — `run.js`, `progress.py`, and `monitor.html` all depend on the exact schema and CLI flags.
-- The core is **dependency-free stdlib** except: `route.py` needs PyYAML *only* for `.yaml` input (JSON input needs nothing); `ollama_route.sh` needs `curl`.
+- The core is **dependency-free stdlib** except: `route.py` needs PyYAML *only* for `.yaml` input (JSON input needs nothing); `governance_lint.py` needs PyYAML for its default `governance.yaml` matrix (and since the lint gates every run start, PyYAML is now effectively required to launch anything); `ollama_route.sh` needs `curl`.
 
 ## Commands
 
@@ -62,10 +64,18 @@ python orchestrator/check_evidence.py findings.json --dry-run   # print, run not
 # Local-tier dispatch — prints response text + token counters
 bash orchestrator/ollama_route.sh mellum2-12b-a2.5b "your prompt"
 
+# Governance Matrix — meta-gate run at the top of every run; exit 0 iff every
+# ENFORCED policy proved its guard (PLANNED guards warn, don't fail)
+python orchestrator/governance/governance_lint.py
+python orchestrator/governance/test_guards.py          # per-policy guard test suite
+
 # Progress schema (normally called BY the runner's agents, not by hand)
 python orchestrator/progress.py runs/<runId> init --spec ... --target ... --autonomy ... --epic "..." --tasks runs/<runId>/tasks.json
 python orchestrator/progress.py runs/<runId> event --task T-1 --status pass --tier T2 --model claude-sonnet-4-6 --cost 0 --note "..."
-python orchestrator/progress.py runs/<runId> finish --status done
+python orchestrator/progress.py runs/<runId> phase-done --phase execute              # mark a phase boundary
+python orchestrator/progress.py runs/<runId> gate --phase execute --await            # supervised pause (awaiting_approval)
+python orchestrator/progress.py runs/<runId> approve --phase execute --by me         # clear the pause -> running
+python orchestrator/progress.py runs/<runId> finish --status done                    # done|blocked|failed|awaiting_merge|needs_work
 
 # Monitor — serve the runs dir over HTTP so the page can fetch() the JSON
 cd G:/Rwang/runs && python -m http.server 8000
@@ -73,7 +83,7 @@ cd G:/Rwang/runs && python -m http.server 8000
 # (monitor.html defaults to ../runs/latest/progress.json and also has a path input + file picker)
 ```
 
-There is **no test suite, build step, or linter** in this repo. The scripts self-verify via their `__main__` demos (`cost_estimate.py`) and their CLIs. The *target* repo has the tests; Rwang runs them via each task's `verify_command`.
+There is **no build step**, and no test suite for the *runner's own* work beyond the **governance layer**, which does have both: `governance/test_guards.py` (per-policy guard tests) and `governance/governance_lint.py` (a lint run at the top of every run). The other core scripts self-verify via their `__main__` demos (`cost_estimate.py`) and their CLIs. The *target* repo has the tests; Rwang runs them via each task's `verify_command`.
 
 ## How to run a spec
 
@@ -94,7 +104,7 @@ Omit `phase` to chain phases per the autonomy level. Pass a single `phase` to ru
 
 The runner reads the spec, then: runs `route.py` to assign tiers; has each Execute agent run the task's `verify_command` **directly** to verify; and records token/cost estimates via `progress.py`. It writes `runs/<runId>/progress.ndjson` (append-only) and `runs/<runId>/progress.json` (rolled-up snapshot the monitor reads), both conforming to the **shared progress schema** (USERFLOW.md and `progress.py`'s docstring — every file agrees on the exact shape).
 
-**What run.js does and does not call:** it invokes only `route.py` and `progress.py`. The other core scripts — `check_evidence.py`, `cost_estimate.py`, `cost_ledger.py` — are **standalone** gates/auditors it does *not* invoke. Consequently the `cost_usd` values in `progress.json` are each agent's **rough self-estimate**, not a `cost_estimate.py` computation; run `cost_ledger.py` over a real token ledger if you need audited dollars.
+**What run.js does and does not call:** it invokes `route.py`, `progress.py`, `governance/governance_lint.py` (the hard governance gate — a non-zero exit at Route entry or Execute resume aborts the run), and — via local-tier Execute agents — `ollama_route.sh`. The remaining core scripts — `check_evidence.py`, `cost_estimate.py`, `cost_ledger.py` — are **standalone** gates/auditors it does *not* invoke. Consequently the `cost_usd` values in `progress.json` are each agent's **rough self-estimate**, not a `cost_estimate.py` computation; run `cost_ledger.py` over a real token ledger if you need audited dollars.
 
 ### run.js is a Workflow script — the constraints that shape it
 
@@ -102,8 +112,11 @@ The runner reads the spec, then: runs `route.py` to assign tiers; has each Execu
 
 - **Pure JS only.** No `fs`, `Bash`, or Node APIs in the script *body*. All filesystem/shell/progress writes happen **inside `agent()` calls** (agents have tools; the body only orchestrates).
 - **`Date.now()` / `Math.random()` / argless `new Date()` THROW** in the body. Every timestamp is produced inside an agent (or pinned via `progress.py --ts`). `progress.py` itself runs as a normal CLI, so `datetime` is fine *there*.
-- Must begin with `export const meta = {...}` as a pure literal.
+- Must begin with `export const meta = {...}` as a pure literal (a **single string literal** for `description` — no `+` concatenation, or the loader rejects it).
 - Available hooks: `agent(prompt, opts)`, `parallel(thunks)`, `pipeline(items, ...stages)`, `phase(title)`, `log(msg)`, and the global `args`.
+- **The body is top-level, not `export default`.** The runtime executes the body directly (top-level `await`/`return` are fine); wrapping it in `export default async function run() {…}` makes the runtime reject the second export. (`node --check` still passes — CommonJS allows top-level `return`.)
+- **`args` may arrive as a JSON string**, not an object — so `args.specPath` is `undefined` and `Object.keys(args)` returns char indices. `run.js` normalizes once (`const CFG = typeof args === "string" ? JSON.parse(args) : args`), reads `CFG` everywhere, and fails fast on missing args.
+- **The file must be committed LF** (`.gitattributes` pins `*.js`/`*.py`/`*.sh` to `eol=lf`) — the Workflow loader rejects a script carrying CR bytes as "control characters".
 
 ## Autonomy safety invariants — NEVER yield these to autonomy
 
@@ -114,7 +127,9 @@ The runner reads the spec, then: runs `route.py` to assign tiers; has each Execu
 
 When autonomy says "drive end-to-end," it means *up to* these invariants — they are the interlocks, not suggestions.
 
-**Implementation status:** `run.js` is split into disk-checkpointed phases (`route`/`execute`/`review`/`commit`) via `args.phase`, so runs pause *between* invocations. `supervised` is wired (single-phase invocation + `progress.py` `gate`/`approve` + a session driver that pauses per phase — see AUTONOMY.md). `autonomous` is unchanged. `unattended` reaches a branch-only commit boundary (`awaiting_merge`) but the real auto-commit stays gated behind `human_review` (spec `PR-T7`), so a human still performs every external write today. This fails *safe*: the un-wired path only halts before a write. See AUTONOMY.md and `docs/DESIGN--pause-resume-runner.md`.
+There is also a **governance interlock** on top of these: `run.js` runs `governance_lint.py` at the top of the Route phase (and again at Execute resume) and **refuses to start/resume any run** if it exits non-zero — a broken Governance Matrix halts everything before work begins.
+
+**Implementation status:** `run.js` is split into disk-checkpointed phases (`route`/`execute`/`review`/`commit`) via `args.phase`, so runs pause *between* invocations. `supervised` is wired (single-phase invocation + `progress.py` `gate`/`approve` + a session driver that pauses per phase — see AUTONOMY.md). `autonomous` is unchanged. `unattended` **now performs a branch-only local `git commit`** (via `phaseCommit`, hard-guarded to `unattended`, aborts on the default branch, never push/PR/merge) and stops at `awaiting_merge`; **a human still owns the merge** — that invariant never relaxes. (The commit path is implemented but not yet exercised by an end-to-end smoke.) See AUTONOMY.md and `docs/DESIGN--pause-resume-runner.md`.
 
 ## The two-axis model (context for routing changes)
 

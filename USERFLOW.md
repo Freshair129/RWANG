@@ -32,17 +32,17 @@ A run is driven by a spec. Start from the template.
 > **You type:** `use Rwang to run specs/refine-quant.yaml against G:/GenesisBlock_Dev/GenesisBlock, autonomy=autonomous`
 
 **Claude does:**
-1. **Reads the spec** — derives the epic DoD, the phases (VERIFY → AUTHOR → REVIEW → ASSEMBLE), and the task graph.
-2. **Routes it** — calls the deterministic core (`orchestrator/route.py`, `cost_estimate.py`) to pick the cheapest eligible tier per task, honoring the verify gate.
-3. **Launches the runner** via the **Workflow tool**:
+1. **Launches the runner** via the **Workflow tool** — routing is *not* a session step; it happens inside the runner's Route phase:
    ```text
    scriptPath = orchestrator/run.js
    args = { specPath: "specs/refine-quant.yaml",
             targetRepo: "G:/GenesisBlock_Dev/GenesisBlock",
             autonomy: "autonomous",
-            runDir:   "G:/Rwang/runs/<runId>" }
+            runDir:   "G:/Rwang/runs/<runId>",
+            phase:    "route" | "execute" | "review" | "commit" }   // optional; omit to chain all
    ```
-4. Creates `runs/<runId>/` and begins writing `progress.ndjson` (one event per line) and `progress.json` (the snapshot).
+2. **The Route phase runs** `governance_lint.py` first (a hard gate — a non-zero exit refuses to start the run), then `orchestrator/route.py` to assign the cheapest eligible tier per task (honoring the verify gate), and writes the durable `tasks.json`. (`cost_estimate.py` is a standalone auditor and is NOT called during routing.)
+3. Creates `runs/<runId>/` and begins writing `progress.ndjson` (one event per line), `progress.json` (the snapshot), and — once the gate/approve trio runs — `approvals.ndjson`.
 
 You name the **autonomy** level here (`supervised` / `autonomous` / `unattended`) — see AUTONOMY.md for exactly what each does.
 
@@ -90,7 +90,7 @@ When the runner halts at an external write it surfaces the proposed commit/PR (d
 
 ## The shared progress schema
 
-Every Rwang file agrees on this exact shape. Per run, under `runs/<runId>/`:
+Every Rwang file agrees on this exact shape. Per run, `runs/<runId>/` holds `progress.json` (snapshot) and `progress.ndjson` (append-only audit) — both below — plus `tasks.json` (the durable routed task list the Route phase writes and a standalone Execute phase rehydrates from), `approvals.ndjson` (one line per supervised approval), and `governance_lint.json` (the stamped Governance-Matrix report).
 
 ### `progress.json` (the rolled-up snapshot the monitor reads)
 
@@ -100,7 +100,8 @@ Every Rwang file agrees on this exact shape. Per run, under `runs/<runId>/`:
   "spec": "str",
   "target_repo": "str",
   "autonomy": "str",
-  "status": "running|blocked|done|failed",
+  "status": "running|blocked|done|failed|phase_done:<phase>|awaiting_approval|awaiting_merge|needs_work",
+  "awaiting": { "phase": "str" },
   "started_at": "iso",
   "updated_at": "iso",
   "epic_dod": "str",
@@ -126,7 +127,7 @@ Every Rwang file agrees on this exact shape. Per run, under `runs/<runId>/`:
 ### `progress.ndjson` (append-only, one JSON event per line)
 
 ```json
-{ "ts": "iso", "task": "str", "event": "queued|running|verify|pass|fail|escalate|blocked|note", "status": "str", "tier": "str", "model": "str", "cost_usd": 0, "detail": "str" }
+{ "ts": "iso", "task": "str", "event": "queued|running|verify|pass|fail|escalate|blocked|phase_done|gate|approve|note", "status": "str", "tier": "str", "model": "str", "cost_usd": 0, "detail": "str" }
 ```
 
 ---

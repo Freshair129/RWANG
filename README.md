@@ -33,10 +33,12 @@ Rwang is the [`tiered-swarm` skill](.claude/skills/tiered-swarm/references/DESIG
 │      ▼                                             ▼              │
 │  orchestrator/*.py  (deterministic core)     TARGET REPO         │
 │    route.py          ← model-tier router      (e.g. GenesisBlock)│
-│    check_evidence.py ← the verify gate        edited on a branch │
-│    cost_estimate.py  ← FrugalGPT break-even   verified in place  │
+│    progress.py       ← shared-schema writer   edited on a branch │
+│    check_evidence.py ← the verify gate        verified in place  │
+│    cost_estimate.py  ← FrugalGPT break-even                      │
 │    cost_ledger.py    ← two-way token ledger                      │
 │    ollama_route.sh   ← local-tier dispatch                       │
+│    governance/       ← Governance-Matrix meta-gate (halts runs)  │
 │      │                                                           │
 │      ▼                                                           │
 │  runs/<runId>/progress.ndjson  +  progress.json  ◀── monitor/    │
@@ -71,14 +73,18 @@ G:/Rwang/
 ├── orchestrator/                 ← the runner + the deterministic core
 │   ├── run.js                    ← autonomous runner (launched via Workflow tool)
 │   ├── route.py                  ← model-tier router (role-based)
+│   ├── progress.py               ← shared-schema writer (progress.json/ndjson + pause/approve)
 │   ├── check_evidence.py         ← the verify gate
 │   ├── cost_estimate.py          ← FrugalGPT break-even estimator
 │   ├── cost_ledger.py            ← two-way token/cost ledger
-│   └── ollama_route.sh           ← local-tier dispatch
+│   ├── ollama_route.sh           ← local-tier dispatch
+│   └── governance/               ← Governance Matrix: governance.yaml + governance_lint.py
+│                                    (meta-gate; a non-zero lint refuses to start/resume a run) + test_guards.py
 ├── monitor/
 │   └── monitor.html              ← reads runs/<runId>/progress.json live
+├── docs/                         ← design docs + audits (e.g. DESIGN--pause-resume-runner.md)
 ├── specs/                        ← specs you write; see specs/_TEMPLATE.yaml
-└── runs/<runId>/                 ← per-run progress.ndjson + progress.json
+└── runs/<runId>/                 ← per-run progress.{ndjson,json} + tasks.json + approvals.ndjson
 ```
 
 ---

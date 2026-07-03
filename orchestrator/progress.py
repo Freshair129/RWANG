@@ -30,7 +30,8 @@ progress.json shape (agrees verbatim with run.js and monitor.html):
   }
 
 ndjson event line:
-  {"ts": iso, "task": str, "event": "queued|running|verify|pass|fail|escalate|blocked|note",
+  {"ts": iso, "task": str,
+   "event": "queued|running|verify|pass|fail|escalate|blocked|phase_done|gate|approve|note",
    "status": str, "tier": str, "model": str, "cost_usd": num, "detail": str}
 
 SUBCOMMANDS
@@ -39,7 +40,7 @@ SUBCOMMANDS
   phase-done <runDir> --phase <route|execute|review|commit>       # status -> phase_done:<p>
   gate       <runDir> --phase <p> --await                         # status -> awaiting_approval (supervised pause)
   approve    <runDir> --phase <p> [--by <who>]                    # record approval -> status running
-  finish     <runDir> --status done|blocked|failed
+  finish     <runDir> --status done|blocked|failed|awaiting_merge|needs_work
 
 The phase-done/gate/approve trio is the pause/resume interlock: a phase runner
 sets phase_done:<p>; a supervised driver gates the boundary (awaiting_approval)
