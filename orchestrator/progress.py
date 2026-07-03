@@ -41,6 +41,9 @@ SUBCOMMANDS
   gate       <runDir> --phase <p> --await                         # status -> awaiting_approval (supervised pause)
   approve    <runDir> --phase <p> [--by <who>]                    # record approval -> status running
   finish     <runDir> --status done|blocked|failed|awaiting_merge|needs_work
+  rehydrate  <runDir>              # READ-ONLY: print the deterministic resume join of
+                                   # tasks.json x progress.json ({"epic_dod", "tasks":[...]}
+                                   # with per-task status) — run.js consumes it verbatim
 
 The phase-done/gate/approve trio is the pause/resume interlock: a phase runner
 sets phase_done:<p>; a supervised driver gates the boundary (awaiting_approval)
@@ -564,6 +567,56 @@ def cmd_approve(a):
 
 
 # --------------------------------------------------------------------------- #
+# subcommand: rehydrate  (read-only resume join for a standalone Execute phase)#
+# --------------------------------------------------------------------------- #
+def cmd_rehydrate(a):
+    """Print {"epic_dod", "tasks":[...]} by joining tasks.json (routed truth)
+    with progress.json (live status). Deterministic — replaces the LLM join the
+    runner's rehydrate agent used to perform. Read-only: touches no state."""
+    run_dir = a.run_dir
+    json_path, _ = _paths(run_dir)
+    tasks_path = os.path.join(run_dir, "tasks.json")
+    try:
+        with open(tasks_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError) as e:
+        sys.stderr.write("progress.py rehydrate: cannot read %s: %s\n" % (tasks_path, e))
+        sys.exit(2)
+    routed = raw.get("tasks") if isinstance(raw, dict) else raw
+    if not isinstance(routed, list):
+        sys.stderr.write(
+            "progress.py rehydrate: tasks.json must be a task array or {\"tasks\": [...]}.\n")
+        sys.exit(2)
+    try:
+        snap = _read_snapshot(json_path)
+    except (OSError, ValueError) as e:
+        sys.stderr.write("progress.py rehydrate: cannot read progress.json: %s\n" % e)
+        sys.exit(2)
+
+    by_id = {str(t.get("id")): t for t in snap.get("tasks", [])}
+    out = []
+    for t in routed:
+        tid = str(t.get("id", "<unnamed>"))
+        live = by_id.get(tid, {})
+        out.append({
+            "id": tid,
+            "description": t.get("description", ""),
+            # Resume at the tier/model last ATTEMPTED (progress.json wins) so an
+            # escalated task does not restart at the bottom rung on resume.
+            "tier": live.get("tier") or t.get("tier", ""),
+            "executor_model": live.get("model") or t.get("executor_model", ""),
+            "verify_command": t.get("verify_command", "") or "",
+            "depends_on": list(t.get("depends_on") or []),
+            "review_gate": bool(t.get("review_gate")),
+            "human_review": bool(t.get("human_review")),
+            "status": live.get("status", "pending"),
+        })
+    # ensure_ascii=True: stdout may cross a cp1252 Windows console — \uXXXX
+    # escapes survive any encoding and json.load restores them losslessly.
+    print(json.dumps({"epic_dod": snap.get("epic_dod", ""), "tasks": out}, indent=2))
+
+
+# --------------------------------------------------------------------------- #
 # argparse                                                                     #
 # --------------------------------------------------------------------------- #
 def build_parser():
@@ -627,10 +680,16 @@ def build_parser():
     pa.add_argument("--ts", default=None, help="optional ISO-8601 timestamp (else now)")
     pa.set_defaults(func=cmd_approve)
 
+    pr = sub.add_parser(
+        "rehydrate",
+        help="READ-ONLY: print the resume join of tasks.json x progress.json")
+    pr.add_argument("run_dir")
+    pr.set_defaults(func=cmd_rehydrate)
+
     return p
 
 
-_SUBCMDS = {"init", "event", "finish", "phase-done", "gate", "approve"}
+_SUBCMDS = {"init", "event", "finish", "phase-done", "gate", "approve", "rehydrate"}
 
 
 def _normalize_order(argv):

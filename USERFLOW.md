@@ -90,7 +90,7 @@ When the runner halts at an external write it surfaces the proposed commit/PR (d
 
 ## The shared progress schema
 
-Every Rwang file agrees on this exact shape. Per run, `runs/<runId>/` holds `progress.json` (snapshot) and `progress.ndjson` (append-only audit) — both below — plus `tasks.json` (the durable routed task list the Route phase writes and a standalone Execute phase rehydrates from), `approvals.ndjson` (one line per supervised approval), and `governance_lint.json` (the stamped Governance-Matrix report).
+Every Rwang file agrees on this exact shape. Per run, `runs/<runId>/` holds `progress.json` (snapshot) and `progress.ndjson` (append-only audit) — both below — plus `tasks.json` (the durable routed task list the Route phase writes and a standalone Execute phase rehydrates from), `approvals.ndjson` (one line per supervised approval), `governance_lint.json` (the stamped Governance-Matrix report), and — for runs of 3+ tasks — `context.md` (the facts-only target-repo brief written once at Route; every Execute agent reads it instead of re-exploring the repo, and the live repo always wins on any disagreement).
 
 ### `progress.json` (the rolled-up snapshot the monitor reads)
 

@@ -13,6 +13,9 @@ You cannot safely route a model to work you cannot cheaply grade.
 USAGE:
     python route.py <spec.yaml|spec.json>          # pretty summary to stderr, JSON to stdout
     python route.py <spec.yaml> --json             # JSON only (machine-readable)
+    python route.py <spec.yaml> --runner-tasks     # {"epic_dod", "tasks":[...]} — the fully
+                                                   #   joined runner task list run.js consumes
+                                                   #   (tasks.json); no LLM re-reads the spec
     cat spec.yaml | python route.py -              # read spec from stdin (yaml)
 
 INPUT shape (either a top-level list of tasks, or a dict with a `tasks:` key). Each task:
@@ -129,6 +132,44 @@ def route_task(task):
     }
 
 
+# Words in a task description that mean the WORK ITSELF is an external write ->
+# deterministically flag human_review=true (autonomy invariant 1: a human owns
+# push/PR/merge/deploy). Conservative by design: a false positive only PAUSES a
+# task for a human, it never auto-runs one.
+_EXTERNAL_WRITE_WORDS = ("push", "merge", "deploy", "publish", "pull request",
+                         "open a pr", "open pr")
+
+
+def runner_task_list(spec, tasks, routed):
+    """Join route.py output with the spec fields into the runner's task shape.
+
+    The deterministic version of the join the Route agent used to do by hand:
+    {id, description, tier, executor_model, verify_command, depends_on,
+    review_gate, human_review} per task, plus the spec-level epic_dod. run.js
+    writes this verbatim to <runDir>/tasks.json, so no LLM re-reads the spec.
+    """
+    out = []
+    for t, r in zip(tasks, routed):
+        desc = str(t.get("description", ""))
+        blob = desc.lower()
+        human = bool(t.get("human_review")) or any(
+            w in blob for w in _EXTERNAL_WRITE_WORDS)
+        out.append({
+            "id": r["id"],
+            "description": desc,
+            "tier": r["computed_tier"],
+            "executor_model": r["executor_model"],
+            "verify_command": verify_command_of(t) or "",
+            "depends_on": list(t.get("depends_on") or []),
+            "review_gate": bool(t.get("review_gate")),
+            "human_review": human,
+        })
+    epic = ""
+    if isinstance(spec, dict):
+        epic = str(spec.get("epic_dod") or "").strip()
+    return {"epic_dod": epic, "tasks": out}
+
+
 def load_spec(path):
     if path == "-":
         raw = sys.stdin.read()
@@ -167,11 +208,20 @@ def extract_tasks(spec):
 def main(argv):
     args = [a for a in argv if not a.startswith("--")]
     json_only = "--json" in argv
+    runner_mode = "--runner-tasks" in argv
     if not args:
         sys.stderr.write(__doc__)
         sys.exit(2)
     spec = load_spec(args[0])
-    routed = [route_task(t) for t in extract_tasks(spec)]
+    tasks = extract_tasks(spec)
+    routed = [route_task(t) for t in tasks]
+
+    if runner_mode:
+        # ensure_ascii=True: stdout is often redirected to tasks.json on Windows,
+        # where the console/file encoding is cp1252 — \uXXXX escapes are safe
+        # everywhere and json.load restores them losslessly.
+        print(json.dumps(runner_task_list(spec, tasks, routed), indent=2))
+        return
 
     if not json_only:
         sys.stderr.write("\n=== route.py — tier assignments ===\n")

@@ -69,6 +69,15 @@ function nextRung(tier) {
   return LADDER[i + 1];
 }
 
+// The MECHANICAL work around the ladder runs on the cheapest Claude tier. Two
+// token leaks this plugs: (a) local-tier attempts used to inherit the SESSION
+// model (frontier) as their wrapper — inverting the FrugalGPT economics of the
+// cheap rungs; the wrapper's job (relay the prompt to ollama_route.sh, apply
+// the patch, run verify, report the exit code) is mechanical. (b) bookkeeping
+// agents run exactly one progress.py command each. A wrapper mistake is caught
+// by the verify gate and climbs the ladder like any other failure.
+const LOCAL_WRAPPER_MODEL = "haiku";
+
 // JSON schema the Route agent must return — one routed task per element.
 const ROUTE_SCHEMA = {
   type: "object",
@@ -115,8 +124,35 @@ const EXEC_SCHEMA = {
 // Build the prompt that makes one agent EXECUTE a task at a given tier in the
 // target repo and then RUN its verify_command. Local vs Claude differ only in
 // how the authoring step is performed; the verify gate is identical.
+// PROMPT-CACHE NOTE: the static gate text (EXEC_STATIC) comes FIRST and is
+// byte-identical across every task/attempt/tier; per-task fields go at the END
+// — so the provider prompt cache gets the longest common prefix on each attempt.
 // ---------------------------------------------------------------------------
-function executePrompt(task, tier, model, runDir, attemptNo, escalated) {
+const EXEC_STATIC = [
+  `RWANG TASK EXECUTION — execute ONE task, then verify it. Task details are at the end.`,
+  ``,
+  `// GATE (invariant 4): work ONLY on a feature branch in the target repo, never on`,
+  `// its default branch. If you are on the default branch, create/checkout a run branch`,
+  `// (e.g. rwang/<runId>) FIRST. Do not commit/push — that is an external write.`,
+  ``,
+  `// GATE (invariant 2): after editing, RUN the verify_command in the target repo and`,
+  `// capture its real exit code. Report verify_exit = that integer (0 == pass). Do NOT`,
+  `// claim pass without having actually run it. If there is no verify_command, you cannot`,
+  `// self-certify cheaply — this task should already be floored to T2+; report verify_exit`,
+  `// = 0 only after an equivalent Claude-grade check and explain it in summary.`,
+  ``,
+  `// GATE (invariant 1): if completing this task requires an EXTERNAL WRITE`,
+  `// (git push, opening a PR, merge, deploy, publishing a package), DO NOT perform it.`,
+  `// Set needs_external_write=true, pass=false, and explain in summary; the runner will`,
+  `// surface it for human approval.`,
+  ``,
+  `Progress protocol: run the progress command given at the end with --status running`,
+  `BEFORE the work, and again with --status <pass|fail> AFTER verify.`,
+  `Return ONLY the JSON for the schema: pass, verify_exit, summary (<= 2 sentences),`,
+  `local_tokens, billed_estimate, needs_external_write.`,
+].join("\n");
+
+function executePrompt(task, tier, model, runDir, attemptNo, prevFail) {
   const local = isLocalTier(tier);
   const localBlock = local
     ? [
@@ -132,43 +168,38 @@ function executePrompt(task, tier, model, runDir, attemptNo, escalated) {
         `and put a rough USD self-estimate in billed_estimate.`,
       ].join("\n");
 
-  return [
-    `RWANG TASK EXECUTION — task "${task.id}" at tier ${tier}${escalated ? " (ESCALATED)" : ""}.`,
-    ``,
-    `TARGET REPO (do ALL work here): ${CFG.targetRepo}`,
-    `RWANG DIR (scripts live here):   G:/Rwang`,
-    `RUN DIR (progress files):        ${runDir}`,
-    ``,
-    `Task: ${task.description}`,
-    `verify_command: ${task.verify_command ? task.verify_command : "(none)"}`,
+  const lines = [
+    EXEC_STATIC,
     ``,
     localBlock,
     ``,
-    `// GATE (invariant 4): work ONLY on a feature branch in the target repo, never on`,
-    `// its default branch. If you are on the default branch, create/checkout a run branch`,
-    `// (e.g. rwang/<runId>) FIRST. Do not commit/push — that is an external write.`,
-    ``,
-    `// GATE (invariant 2): after editing, RUN the verify_command in ${CFG.targetRepo} and`,
-    `// capture its real exit code. Report verify_exit = that integer (0 == pass). Do NOT`,
-    `// claim pass without having actually run it. If there is no verify_command, you cannot`,
-    `// self-certify cheaply — this task should already be floored to T2+; report verify_exit`,
-    `// = 0 only after an equivalent Claude-grade check and explain it in summary.`,
-    ``,
-    `// GATE (invariant 1): if completing this task requires an EXTERNAL WRITE`,
-    `// (git push, opening a PR, merge, deploy, publishing a package), DO NOT perform it.`,
-    `// Set needs_external_write=true, pass=false, and explain in summary; the runner will`,
-    `// surface it for human approval.`,
-    ``,
-    `After running verify, append a live progress event by calling (from G:/Rwang):`,
+    `TARGET REPO (do ALL work here): ${CFG.targetRepo}`,
+    `RWANG DIR (scripts live here):   G:/Rwang`,
+    `CONTEXT BRIEF: ${runDir}/context.md — verified facts about the target repo (build/`,
+    `test commands, layout, constraints). Read it FIRST instead of re-exploring the`,
+    `repo. If it is missing or contradicts the live repo, trust the repo.`,
+    `Task "${task.id}" at tier ${tier} (attempt #${attemptNo}${prevFail ? ", ESCALATED" : ""}).`,
+    `Task: ${task.description}`,
+    `verify_command: ${task.verify_command ? task.verify_command : "(none)"}`,
+    `Progress command (from G:/Rwang; fill in status/cost/note):`,
     `  python orchestrator/progress.py ${runDir} event --task ${task.id} \\`,
-    `    --status <pass|fail|escalate|blocked|running> --tier ${tier} --model ${model} \\`,
+    `    --status <running|pass|fail> --tier ${tier} --model ${model} \\`,
     `    --cost <billed_estimate-usd> --note "<one line>"`,
-    `Use --status running BEFORE the work and the pass/fail status AFTER verify.`,
-    `(attempt #${attemptNo} for this task.)`,
-    ``,
-    `Return ONLY the JSON for the schema: pass, verify_exit, summary, local_tokens,`,
-    `billed_estimate, needs_external_write.`,
-  ].join("\n");
+  ];
+
+  if (prevFail) {
+    lines.push(
+      ``,
+      `ESCALATION CONTEXT — the previous attempt at ${prevFail.tier} FAILED verify`,
+      `(verify_exit=${prevFail.verify_exit}). Its summary: ${prevFail.summary || "(none)"}`,
+      `Use that context — fix the failure, do not re-discover it. FIRST record the climb:`,
+      `  python orchestrator/progress.py ${runDir} event --task ${task.id} \\`,
+      `    --status escalate --tier ${prevFail.tier} --model ${prevFail.model} --cost 0 \\`,
+      `    --note "verify failed at ${prevFail.tier}; climbing to ${tier}"`,
+      `then proceed with the task at ${tier}.`
+    );
+  }
+  return lines.join("\n");
 }
 
 // Run one task through the escalation ladder. Returns a terminal result object.
@@ -186,7 +217,8 @@ async function runTaskWithEscalation(task, runDir) {
           `--cost 0 --note "human_review flag: requires a human; not auto-run"`,
         `Return a one-line confirmation.`,
       ].join("\n"),
-      { label: `surface-human-review:${task.id}`, phase: "Execute" }
+      { label: `surface-human-review:${task.id}`, phase: "Execute",
+        model: "haiku", effort: "low" }
     );
     return { id: task.id, terminal: "blocked", reason: "human_review" };
   }
@@ -194,19 +226,21 @@ async function runTaskWithEscalation(task, runDir) {
   let tier = task.tier;          // starting rung from the router (already >= safety floor)
   let model = task.executor_model;
   let attempt = 0;
+  let prevFail = null;           // failure context carried up to the next rung
 
   // ESCALATION LADDER: T0 -> T1 -> T1.5 -> T2 -> T3. Climb on verify failure only.
   while (true) {
     attempt += 1;
-    const escalated = attempt > 1;
     const claudeModel = claudeModelFor(tier);
 
     const res = await agent(
-      executePrompt(task, tier, model, runDir, attempt, escalated),
+      executePrompt(task, tier, model, runDir, attempt, prevFail),
       {
         label: `exec:${task.id}@${tier}`,
         phase: "Execute",
-        model: claudeModel,       // sonnet/opus for T2/T3; undefined => default agent drives Ollama
+        // sonnet/opus for T2/T3; local tiers get the cheap MECHANICAL wrapper
+        // that drives ollama_route.sh (never the frontier session default).
+        model: claudeModel || LOCAL_WRAPPER_MODEL,
         isolation: "default",
         schema: EXEC_SCHEMA,
       }
@@ -250,18 +284,17 @@ async function runTaskWithEscalation(task, runDir) {
       };
     }
 
-    // Record the escalation as a live event, then climb one rung and retry.
+    // Climb one rung and retry. The escalate event is recorded BY the next
+    // attempt's agent (first step of its prompt) — a standalone bookkeeping
+    // agent per climb was pure token overhead — and the failure summary rides
+    // along so the higher rung fixes the failure instead of re-discovering it.
     log(`[escalate] task ${task.id} ${tier} -> ${up} (verify_exit=${res ? res.verify_exit : "?"}).`);
-    await agent(
-      [
-        `Record an escalation for task "${task.id}": ${tier} -> ${up}. From G:/Rwang run:`,
-        `  python orchestrator/progress.py ${runDir} event --task ${task.id} ` +
-          `--status escalate --tier ${tier} --model ${model} --cost 0 ` +
-          `--note "verify failed at ${tier}; climbing to ${up}"`,
-        `Return a one-line confirmation.`,
-      ].join("\n"),
-      { label: `escalate:${task.id}:${tier}->${up}`, phase: "Execute" }
-    );
+    prevFail = {
+      tier,
+      model,
+      verify_exit: res && res.verify_exit !== undefined ? res.verify_exit : "?",
+      summary: (res && res.summary) || "",
+    };
 
     tier = up;
     // Re-derive the concrete executor for the new rung. Keep aroow for Rust at T1.
@@ -360,42 +393,34 @@ async function phaseRoute() {
 
   const routed = await agent(
     [
-      `RWANG ROUTE — you are the routing ROLE (deterministic, no model work).`,
+      `RWANG ROUTE — MECHANICAL phase: run the deterministic pipeline below EXACTLY,`,
+      `in order, from G:/Rwang. route.py computes everything; do not reason about tiers.`,
       ``,
-      `0) GOVERNANCE LINT — hard gate before anything else. From G:/Rwang run:`,
+      `0) Ensure the run dir exists: ${runDir}`,
+      `1) GOVERNANCE LINT — hard gate before anything else. Run:`,
       `     python orchestrator/governance/governance_lint.py --stamp "${runDir}"`,
       `   and record its exit code as governance_lint_exit. (--stamp also writes`,
       `   ${runDir}/governance_lint.json — the durable report later phases check.)`,
-      `   If the exit code is NON-ZERO: STOP HERE — skip steps 1-6 entirely`,
+      `   If the exit code is NON-ZERO: STOP HERE — skip steps 2-4 entirely`,
       `   (no route.py, no progress init) and return`,
       `   {"governance_lint_exit": <code>, "epic_dod": "", "tasks": []}.`,
       ``,
-      `1) Read the spec at: ${specPath}`,
-      `2) From G:/Rwang, run the deterministic tier router and capture its JSON:`,
-      `     python orchestrator/route.py ${specPath} --json`,
-      `   Each element has {id, cheap_eligible, computed_tier, executor_model, reasons,`,
-      `   spec_tier_hint, disagrees_with_spec}. The HARD RULE is already applied by route.py:`,
-      `   a task with NO verify_command is NOT cheap-eligible and floors at T2.`,
-      `3) Read the spec yourself to recover each task's description, verify_command (may be`,
-      `   ""), depends_on (array of task ids), review_gate (bool), and any human_review flag.`,
-      `   Also distill the EPIC definition-of-done (epic_dod) — the run-level acceptance.`,
-      `4) Build the routed task list by joining route.py output (tier=computed_tier,`,
-      `   executor_model) with the spec fields. Any task whose work is an external write`,
-      `   (push/PR/merge/deploy) OR is explicitly human-gated -> set human_review=true.`,
-      ``,
-      `5) Initialize the shared progress files. From G:/Rwang, write the DURABLE tasks JSON`,
-      `   to ${runDir}/tasks.json (status omitted; progress.py sets all to pending) — this`,
-      `   file is the source-of-truth a standalone Execute phase rehydrates from — then run:`,
+      `2) Emit the routed task list — route.py does the spec join itself (tiers,`,
+      `   executor models, verify_command floor rule, human_review flags, epic_dod):`,
+      `     python orchestrator/route.py ${specPath} --runner-tasks > ${runDir}/tasks.json`,
+      `   tasks.json = {"epic_dod": str, "tasks": [...]} — the durable source of truth`,
+      `   a standalone Execute phase rehydrates from.`,
+      `3) Initialize the shared progress files:`,
       `     python orchestrator/progress.py ${runDir} init --spec "${specPath}" \\`,
       `       --target "${targetRepo}" --autonomy "${autonomy}" \\`,
-      `       --epic "<epic_dod>" --tasks ${runDir}/tasks.json`,
-      `6) Mark the phase complete. From G:/Rwang run:`,
+      `       --epic "<the epic_dod string from tasks.json>" --tasks ${runDir}/tasks.json`,
+      `4) Mark the phase complete:`,
       `     python orchestrator/progress.py ${runDir} phase-done --phase route`,
       ``,
-      `Return ONLY the JSON for the schema: epic_dod, and tasks[] with`,
-      `{id, description, tier, executor_model, verify_command, depends_on, review_gate, human_review}.`,
+      `Return ONLY the JSON for the schema: governance_lint_exit, plus epic_dod and`,
+      `tasks[] copied VERBATIM from ${runDir}/tasks.json — do not reword any field.`,
     ].join("\n"),
-    { label: "route", phase: "Route", model: "sonnet", schema: ROUTE_SCHEMA }
+    { label: "route", phase: "Route", model: "haiku", schema: ROUTE_SCHEMA }
   );
 
   // GOVERNANCE GATE (G6/GP1): the decision is made HERE in code, not in the prompt.
@@ -411,6 +436,41 @@ async function phaseRoute() {
 
   const n = (routed && routed.tasks && routed.tasks.length) || 0;
   log(`Routed ${n} task(s). epic_dod="${(routed && routed.epic_dod) || ""}"`);
+
+  // CONTEXT BRIEF (token economy): ONE agent explores the target repo once and
+  // writes <runDir>/context.md — a read-only, facts-only reference every Execute
+  // agent reads INSTEAD of re-exploring the repo from scratch (N tasks used to
+  // pay N explorations). This is NOT conversation context: executors stay
+  // self-contained (Author-gate), they just share a verified map. Skipped for
+  // tiny runs where one exploration cannot pay for itself.
+  if (n >= 3) {
+    await agent(
+      [
+        `RWANG CONTEXT BRIEF — write the file ${runDir}/context.md: a SHORT,`,
+        `facts-only reference for this run's executor agents. HARD CAP: 60 lines.`,
+        ``,
+        `Sources (verify every line — never guess):`,
+        `1) The spec at ${specPath} — copy the goal and the constraints list`,
+        `   (verbatim where possible).`,
+        `2) The target repo at ${targetRepo} — record ONLY checkable facts:`,
+        `   - how to build/test: the REAL commands (from package.json / Cargo.toml /`,
+        `     Makefile / README — run the cheap ones to confirm they exist)`,
+        `   - top-level layout: the directories/files this run's tasks will touch`,
+        `   - conventions visible in the code (naming, error handling, lint/format setup)`,
+        ``,
+        `RULES: verifiable facts only — commands, paths, verbatim constraints. NO design`,
+        `opinions, NO interpretation, NO per-task advice. If unsure about a line, leave`,
+        `it out. End the file with this exact line:`,
+        `  "Facts frozen at Route time — if the live repo disagrees, trust the repo."`,
+        ``,
+        `Return a one-line confirmation with the final line count.`,
+      ].join("\n"),
+      { label: "context-brief", phase: "Route", model: "sonnet" }
+    );
+  } else {
+    log(`[context-brief] skipped — only ${n} task(s); one shared exploration cannot pay off.`);
+  }
+
   return routed || { epic_dod: "", tasks: [] };
 }
 
@@ -428,19 +488,17 @@ async function phaseExecute(routed) {
   } else {
     const re = await agent(
       [
-        `RWANG EXECUTE REHYDRATE — reconstruct run state from DISK only (no memory).`,
-        `0) GOVERNANCE LINT re-check (the matrix may have broken since Route). From`,
+        `RWANG EXECUTE REHYDRATE — MECHANICAL: reconstruct run state from DISK only.`,
+        `1) GOVERNANCE LINT re-check (the matrix may have broken since Route). From`,
         `   G:/Rwang run:  python orchestrator/governance/governance_lint.py --stamp "${runDir}"`,
         `   and record its exit code as governance_lint_exit. If NON-ZERO: STOP —`,
         `   return {"governance_lint_exit": <code>, "epic_dod": "", "tasks": []}.`,
-        `From G:/Rwang, read ${runDir}/tasks.json (the durable routed task list) and`,
-        `${runDir}/progress.json (for each task's current status and the epic_dod).`,
-        `Return epic_dod and tasks[] joining the two: each task {id, description, tier,`,
-        `executor_model, verify_command, depends_on, review_gate, human_review, status},`,
-        `where status is the progress.json task status (pending|running|passed|escalated|`,
-        `failed|blocked). Return ONLY the schema JSON.`,
+        `2) Print the deterministic resume join (tasks.json x progress.json):`,
+        `     python orchestrator/progress.py ${runDir} rehydrate`,
+        `3) Return ONLY the schema JSON: governance_lint_exit plus the rehydrate output`,
+        `   copied VERBATIM (epic_dod, tasks[] incl. per-task status) — do not reword.`,
       ].join("\n"),
-      { label: "rehydrate", phase: "Execute", model: "sonnet", schema: REHYDRATE_SCHEMA }
+      { label: "rehydrate", phase: "Execute", model: "haiku", schema: REHYDRATE_SCHEMA }
     );
     // GOVERNANCE GATE at Execute entry too (M3): resume/standalone must not bypass G6.
     if (!re || re.governance_lint_exit !== 0) {
@@ -493,7 +551,7 @@ async function phaseExecute(routed) {
         `  python orchestrator/progress.py ${runDir} phase-done --phase execute`,
         `Return a one-line confirmation.`,
       ].join("\n"),
-      { label: "phase-done:execute", phase: "Execute" }
+      { label: "phase-done:execute", phase: "Execute", model: "haiku", effort: "low" }
     );
   }
   return { tasks, epic_dod, results, runBlocked, blockedTask };
@@ -501,10 +559,23 @@ async function phaseExecute(routed) {
 
 // PHASE: Review. A T3/opus agent adversarially reviews the assembled changes vs
 // the epic DoD. If epic_dod is falsy (standalone), it is read from progress.json.
-// Ends by marking phase_done:review (review-only — never commits/pushes).
-async function phaseReview(epic_dod, runBlocked, blockedTask) {
+// `results` (when chained in-memory) becomes a per-task digest so the expensive
+// reviewer starts INFORMED and re-verifies selectively instead of re-discovering
+// the whole run. Ends by marking phase_done:review (review-only — never commits).
+async function phaseReview(epic_dod, runBlocked, blockedTask, results) {
   phase("Review");
   const runDir = CFG.runDir, targetRepo = CFG.targetRepo;
+
+  const digest = (results && results.length)
+    ? results.map((r) =>
+        `- ${r.id}: ${r.terminal}` +
+        (r.tier ? ` @${r.tier}` : "") +
+        (r.skipped ? " (skipped: already passed)" : "") +
+        (r.reason ? ` reason=${r.reason}` : "") +
+        (r.summary ? ` — ${r.summary}` : "")
+      ).join("\n")
+    : `(standalone review — read the tasks, tiers, attempts and statuses from ` +
+      `${runDir}/progress.json)`;
 
   const reviewSummary = await agent(
     [
@@ -514,12 +585,19 @@ async function phaseReview(epic_dod, runBlocked, blockedTask) {
       `TARGET REPO: ${targetRepo}`,
       `EPIC DoD:    ${epic_dod || `(read it from ${runDir}/progress.json .epic_dod)`}`,
       `RUN STATUS:  ${runBlocked ? "BLOCKED at task " + (blockedTask && blockedTask.id) : "all waves attempted"}`,
+      `TASK RESULTS (what each executor claims — verify, don't trust):`,
+      digest,
       ``,
-      `Inspect the working tree (git diff/status in ${targetRepo}), re-run the most`,
-      `load-bearing verify_command(s) if cheap, and look adversarially for: unverified`,
-      `claims, regressions, missed acceptance criteria, and anything that should have been`,
-      `human_review. Be skeptical of any cheap-tier output that crossed a phase boundary —`,
-      `confirm its verify actually passed.`,
+      `Inspect the working tree (git diff/status in ${targetRepo}) and look adversarially`,
+      `for: unverified claims, regressions, missed acceptance criteria, and anything that`,
+      `should have been human_review.`,
+      ``,
+      `Verification budget — re-verify SELECTIVELY, do not re-run everything:`,
+      `re-run a task's verify_command ONLY if it (a) carries review_gate=true, (b)`,
+      `escalated at least once, or (c) passed at a local tier (T0/T1/T1.5) — cheap-tier`,
+      `output that crossed a phase boundary is the least trustworthy. A first-attempt`,
+      `T2/T3 pass is checked from the diff, not re-executed, unless the diff contradicts`,
+      `its summary.`,
       ``,
       `// GATE (invariant 1): do NOT commit/push/merge. Review only. In "unattended" mode the`,
       `// commit-to-branch is a SEPARATE gated phase and a human still merges.`,
@@ -527,8 +605,8 @@ async function phaseReview(epic_dod, runBlocked, blockedTask) {
       `Then, from G:/Rwang, run:`,
       `  python orchestrator/progress.py ${runDir} phase-done --phase review`,
       ``,
-      `Return a concise prose verdict: PASS or NEEDS-WORK, the strongest concern, and whether`,
-      `the epic DoD is met.`,
+      `Return a concise prose verdict (<= 10 lines): PASS or NEEDS-WORK, the strongest`,
+      `concern, and whether the epic DoD is met.`,
     ].join("\n"),
     { label: "adversarial-review", phase: "Review", model: "opus", isolation: "default" }
   );
@@ -572,7 +650,9 @@ async function phaseCommit() {
       `Return a one-line confirmation: the branch name, the short commit sha (or "no-op"),`,
       `and that the run is awaiting a human merge.`,
     ].join("\n"),
-    { label: "unattended-commit", phase: "Review" }
+    // sonnet, not the session default: mechanical git work, but the default-
+    // branch abort guard matters — do not push it down to the cheapest tier.
+    { label: "unattended-commit", phase: "Review", model: "sonnet" }
   );
   return { status: "awaiting_merge", detail: typeof res === "string" ? res : "" };
 }
@@ -625,7 +705,7 @@ const requested = CFG.phase; // "route"|"execute"|"review"|"commit"|undefined
         blocked_task: ex.blockedTask ? { id: ex.blockedTask.id, reason: ex.blockedTask.reason } : null };
     }
     if (requested === "review") {
-      const review = await phaseReview("", false, null);
+      const review = await phaseReview("", false, null, null);
       return { runDir, phase: "review", status: "phase_done:review",
         review: typeof review === "string" ? review : (review && review.summary) || "" };
     }
@@ -648,7 +728,7 @@ const requested = CFG.phase; // "route"|"execute"|"review"|"commit"|undefined
         `  python orchestrator/progress.py ${runDir} gate --phase execute --await`,
         `Return a one-line confirmation.`,
       ].join("\n"),
-      { label: "gate:execute", phase: "Route" }
+      { label: "gate:execute", phase: "Route", model: "haiku", effort: "low" }
     );
     log(`[supervised] paused after Route — awaiting human approval to Execute.`);
     return { runDir, spec: CFG.specPath, target_repo: CFG.targetRepo, autonomy,
@@ -659,7 +739,7 @@ const requested = CFG.phase; // "route"|"execute"|"review"|"commit"|undefined
 
   // AUTONOMOUS / UNATTENDED: drive straight through.
   const ex = await phaseExecute(routed);
-  const review = await phaseReview(ex.epic_dod, ex.runBlocked, ex.blockedTask);
+  const review = await phaseReview(ex.epic_dod, ex.runBlocked, ex.blockedTask, ex.results);
 
   let terminalStatus = ex.runBlocked ? "blocked" : "done";
   if (!ex.runBlocked && autonomy === "unattended") {
@@ -675,7 +755,7 @@ const requested = CFG.phase; // "route"|"execute"|"review"|"commit"|undefined
         `This flips ${runDir}/progress.json status to "${terminalStatus}" and stamps updated_at.`,
         `Return a one-line confirmation of the final status.`,
       ].join("\n"),
-      { label: "finalize", phase: "Review" }
+      { label: "finalize", phase: "Review", model: "haiku", effort: "low" }
     );
   }
 
