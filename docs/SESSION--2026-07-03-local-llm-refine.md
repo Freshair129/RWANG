@@ -105,6 +105,10 @@
 
 ---
 
+### 5.1 การตัดสินใจเพิ่มเติม: knowledge backend + UI (ถาม-ตอบท้ายเซสชัน)
+- **Graph DB = GenesisBlockDB** (G:/GenesisBlock_Dev/GenesisBlock — embedded Rust graph+vector, HNSW bge-m3 1024-dim recall@10 0.984 @1.1ms, bitemporal, N-API/REST/MCP): เป็น **derived index** ของ hub — `ledger.jsonl` ยังเป็น SSOT append-only, DB ingest จาก JSONL (rebuild ได้เสมอ) · adapter pattern `file|genesisdb` มีอยู่แล้วใน G-Maiden `store/knowledge.mjs` — reuse
+- **UI = RWANG-fork `studio/` (React/Vite/TS) เป็นฐาน** + ยก WebSocket sidecar pattern (`/mission/ws`) ของ GoVibe มาแทน polling · monitor.html เป็น fallback · React Flow ใช้ render ทั้ง task DAG และ knowledge graph จาก GenesisBlockDB · เทียบ AO Electron หลัง P4 spike
+
 ## 6. คำตอบคำถามเฉพาะที่ถามในเซสชัน
 
 - **"คุณภาพ code ใครดีสุด"** → qwen3 = sushirl (7/7 ทุกชั้น) โดย qwen3 เร็วกว่า/sushirl ประหยัด VRAM กว่า; ดูตาราง §3
