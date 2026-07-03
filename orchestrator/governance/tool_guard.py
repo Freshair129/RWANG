@@ -6,18 +6,39 @@ ONE place that answers "may this command run?" from blocked_patterns.txt:
   DESTRUCTIVE -> requires human confirmation — blocked here; a human who intends it
                  runs it themselves (running it manually IS the confirmation)
 
-Two runtime faces:
+Three runtime faces:
   --check "<command line>"   classify one command: exit 0 allow / 3 EXTERNAL /
                              4 DESTRUCTIVE (JSON verdict on stdout)
   --hook                     Claude Code PreToolUse hook: reads the hook JSON from
                              stdin ({tool_name, tool_input}); when tool_input has a
                              "command" string it is classified — EXTERNAL/DESTRUCTIVE
                              exit 2 (the documented BLOCK code; stderr is surfaced to
-                             the model), anything else exit 0. Malformed input
+                             the model) UNLESS a live one-shot APPROVAL TOKEN matches
+                             (see below), anything else exit 0. Malformed input
                              FAILS OPEN (exit 0 + stderr warning): a broken guard
                              must not brick every tool call in the harness — the
                              failure is visible in stderr and governance_lint still
                              proves the classifier itself daily via --self-test.
+  --mint "<command line>"    HUMAN-ONLY: write a one-shot approval token for that
+                             EXACT command (--by <name>, --ttl <minutes, default 15>).
+                             Refuses inside an agent shell (CLAUDECODE env present) —
+                             minting from a plain terminal IS the human approval.
+
+APPROVAL TOKENS (the invariant is "no external write WITHOUT HUMAN APPROVAL" —
+tokens are the approval channel; the hook stays the enforcement channel):
+  - live under orchestrator/governance/approvals/*.json:
+      {"command": "<exact command>", "class": "EXTERNAL|DESTRUCTIVE",
+       "expires_at": "<ISO-8601>", "approved_by": "<name>", "once": true}
+  - match = EXACT command string (whitespace-normalized) + class + not expired
+  - one-shot: consumed atomically (os.replace into approvals/used/) — a second
+    identical command blocks again; every consumption is appended to
+    approvals/consumed.ndjson (the audit ledger)
+  THREAT MODEL (documented, not hidden): a same-user process — including a
+  deliberately misbehaving agent — CAN forge a token file; the CLAUDECODE
+  refusal on --mint plus the consumed ledger raise the bar and leave evidence,
+  they do not stop a determined local adversary. The protocol rule is absolute:
+  AGENTS MUST NEVER CREATE OR EDIT TOKEN FILES — writing one is itself an
+  unapproved external-write attempt.
 
 Wiring: .claude/settings.json PreToolUse (this repo) + run.js human_review halt.
 Patterns are line-regex over the command string — argv-level matching is the
@@ -26,11 +47,15 @@ known upgrade for false positives (see blocked_patterns.txt header).
 USAGE:
     python orchestrator/governance/tool_guard.py --check "git push origin main"
     ... | python orchestrator/governance/tool_guard.py --hook
+    python orchestrator/governance/tool_guard.py --mint "git push origin feat/x" --by boss --ttl 15
     python orchestrator/governance/tool_guard.py --self-test
 EXIT (--check): 0 allow · 3 EXTERNAL · 4 DESTRUCTIVE · 2 usage
-EXIT (--hook):  0 allow/fail-open · 2 BLOCK
-stdlib-only, deterministic.
+EXIT (--hook):  0 allow/token-allow/fail-open · 2 BLOCK
+EXIT (--mint):  0 minted · 3 refused (agent shell) · 2 usage
+stdlib-only; deterministic except token expiry (time-windowed by design).
 """
+import datetime
+import hashlib
 import json
 import os
 import sys
@@ -45,17 +70,103 @@ import test_guards  # noqa: E402  — load_patterns / match_blocked (same dir)
 
 BLOCK_MSG = {
     "EXTERNAL": ("BLOCKED by Rwang governance (no-external-write, invariant #1): "
-                 "this command writes outside the machine/repo. Autonomy may never "
-                 "run it — surface it for a human instead."),
+                 "this command writes outside the machine/repo."),
     "DESTRUCTIVE": ("BLOCKED by Rwang governance (confirm-destructive, G3): this "
-                    "command is hard to reverse. A human must run it themselves if "
-                    "it is intended (running it manually IS the confirmation)."),
+                    "command is hard to reverse."),
 }
+MINT_HINT = ("To approve it, a HUMAN mints a one-shot token in a PLAIN terminal "
+             "(not an agent shell):\n"
+             "  python \"G:/Rwang/orchestrator/governance/tool_guard.py\" "
+             "--mint \"<exact command>\" --by <name> --ttl 15\n"
+             "then re-run the command once within the TTL.")
+
+# Token dir — env override exists ONLY so self-tests stay hermetic.
+APPROVALS_DIR = (os.environ.get("RWANG_APPROVALS_DIR")
+                 or os.path.join(HERE, "approvals"))
 
 
 def classify(cmdline, patterns=None):
     patterns = patterns if patterns is not None else test_guards.load_patterns()
     return test_guards.match_blocked(cmdline, patterns)
+
+
+def _norm_cmd(c):
+    return " ".join(str(c).split())
+
+
+def find_and_consume_token(cmdline, cls):
+    """Return the matching live token (and consume it atomically), else None.
+
+    Match = exact whitespace-normalized command + class + not expired. One-shot
+    claim is os.replace into approvals/used/ — under a race exactly one caller
+    wins; every consumption lands in approvals/consumed.ndjson for audit."""
+    if not os.path.isdir(APPROVALS_DIR):
+        return None
+    now = datetime.datetime.now(datetime.timezone.utc)
+    target = _norm_cmd(cmdline)
+    for fn in sorted(os.listdir(APPROVALS_DIR)):
+        if not fn.endswith(".json"):
+            continue
+        path = os.path.join(APPROVALS_DIR, fn)
+        try:
+            tok = json.load(open(path, "r", encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(tok, dict) or _norm_cmd(tok.get("command", "")) != target:
+            continue
+        if tok.get("class") not in (None, cls):
+            continue
+        try:
+            exp = datetime.datetime.fromisoformat(str(tok.get("expires_at", "")))
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            continue
+        if now > exp:
+            continue  # expired tokens stay in place as evidence
+        used_dir = os.path.join(APPROVALS_DIR, "used")
+        os.makedirs(used_dir, exist_ok=True)
+        try:
+            os.replace(path, os.path.join(used_dir, fn))  # atomic one-shot claim
+        except OSError:
+            continue  # another process claimed it first
+        with open(os.path.join(APPROVALS_DIR, "consumed.ndjson"), "a",
+                  encoding="utf-8") as f:
+            f.write(json.dumps({"ts": now.isoformat(), "token": fn,
+                                "command": target, "class": cls,
+                                "approved_by": tok.get("approved_by", "?")},
+                               ensure_ascii=False) + "\n")
+        return tok
+    return None
+
+
+def cmd_mint(command, by, ttl_min):
+    """HUMAN-ONLY token minting. An agent shell carries CLAUDECODE in its env —
+    refusing under it makes 'minting from a plain terminal' the approval act."""
+    if os.environ.get("CLAUDECODE"):
+        sys.stderr.write(
+            "tool_guard --mint: REFUSED — this is an agent shell (CLAUDECODE env "
+            "present). Minting an approval token is the HUMAN act of approval; "
+            "run this in a plain terminal.\n")
+        return 3
+    cls = classify(command)
+    if cls is None:
+        sys.stderr.write("tool_guard --mint: that command is not blocked — no token "
+                         "needed.\n")
+        return 2
+    now = datetime.datetime.now(datetime.timezone.utc)
+    exp = now + datetime.timedelta(minutes=ttl_min)
+    tok = {"command": _norm_cmd(command), "class": cls,
+           "expires_at": exp.isoformat(), "approved_by": by, "once": True}
+    os.makedirs(APPROVALS_DIR, exist_ok=True)
+    name = "tok-%s.json" % hashlib.sha256(
+        (tok["command"] + tok["expires_at"]).encode("utf-8")).hexdigest()[:12]
+    path = os.path.join(APPROVALS_DIR, name)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(tok, f, ensure_ascii=False, indent=2)
+    print(json.dumps({"minted": path, "class": cls,
+                      "expires_at": tok["expires_at"]}, ensure_ascii=False))
+    return 0
 
 
 def cmd_check(cmdline):
@@ -85,7 +196,13 @@ def cmd_hook(stdin_text):
         sys.stderr.write(f"tool_guard --hook: pattern load failed ({e}) — failing OPEN\n")
         return 0
     if cls in BLOCK_MSG:
-        sys.stderr.write(BLOCK_MSG[cls] + f"\n  command: {command}\n")
+        tok = find_and_consume_token(command, cls)
+        if tok is not None:
+            sys.stderr.write(
+                f"ALLOWED ONCE by approval token (approved_by={tok.get('approved_by')}, "
+                f"class={cls}) — token consumed; a repeat needs a fresh mint.\n")
+            return 0
+        sys.stderr.write(BLOCK_MSG[cls] + "\n" + MINT_HINT + f"\n  command: {command}\n")
         return 2
     return 0
 
@@ -141,11 +258,76 @@ def self_test():
     step("hook: malformed stdin -> exit 0 (fail open) + warning",
          rc == 0 and "failing OPEN" in err, f"rc={rc} err={err[:120]}")
 
+    # (4) APPROVAL TOKENS — one-shot allow, consumption, expiry, exact-match, mint fence
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        tok_env = dict(os.environ)
+        tok_env["RWANG_APPROVALS_DIR"] = td
+
+        def hook_env(cmdline, env):
+            p = subprocess.run([py, me, "--hook"],
+                               input=json.dumps({"tool_name": "Bash",
+                                                 "tool_input": {"command": cmdline}}),
+                               capture_output=True, text=True, env=env)
+            return p.returncode, p.stderr
+
+        target_cmd = "git push origin feat/x"
+
+        # (4a) no token -> still blocked
+        rc, err = hook_env(target_cmd, tok_env)
+        step("token: no token -> blocked + mint hint",
+             rc == 2 and "--mint" in err, f"rc={rc}")
+
+        # (4b) mint refused inside an agent shell (CLAUDECODE present)
+        agent_env = dict(tok_env)
+        agent_env["CLAUDECODE"] = "1"
+        p = subprocess.run([py, me, "--mint", target_cmd, "--by", "selftest"],
+                           capture_output=True, text=True, env=agent_env)
+        step("mint: refused under CLAUDECODE (agent shell)",
+             p.returncode == 3 and "REFUSED" in p.stderr, f"rc={p.returncode}")
+
+        # (4c) mint from a "plain terminal" (CLAUDECODE removed) -> token file
+        plain_env = dict(tok_env)
+        plain_env.pop("CLAUDECODE", None)
+        p = subprocess.run([py, me, "--mint", target_cmd, "--by", "selftest",
+                            "--ttl", "5"],
+                           capture_output=True, text=True, env=plain_env)
+        minted = [f for f in os.listdir(td) if f.endswith(".json")]
+        step("mint: plain terminal -> token written",
+             p.returncode == 0 and len(minted) == 1, f"rc={p.returncode} files={minted}")
+
+        # (4d) wrong command does NOT ride the token
+        rc, _ = hook_env("git push origin main", tok_env)
+        step("token: different command -> still blocked", rc == 2, f"rc={rc}")
+
+        # (4e) exact command -> allowed ONCE, token consumed to used/ + ledger
+        rc, err = hook_env(target_cmd, tok_env)
+        step("token: exact command -> ALLOWED once",
+             rc == 0 and "ALLOWED ONCE" in err, f"rc={rc} err={err[:120]}")
+        consumed = os.path.isfile(os.path.join(td, "consumed.ndjson"))
+        moved = os.path.isdir(os.path.join(td, "used")) and \
+            len(os.listdir(os.path.join(td, "used"))) == 1
+        step("token: consumed -> moved to used/ + ledger row", consumed and moved, "")
+
+        # (4f) second use -> blocked again (one-shot proven)
+        rc, _ = hook_env(target_cmd, tok_env)
+        step("token: second use -> blocked (one-shot)", rc == 2, f"rc={rc}")
+
+        # (4g) expired token never allows
+        expired = {"command": target_cmd, "class": "EXTERNAL",
+                   "expires_at": "2020-01-01T00:00:00+00:00",
+                   "approved_by": "selftest", "once": True}
+        with open(os.path.join(td, "tok-expired.json"), "w", encoding="utf-8") as f:
+            json.dump(expired, f)
+        rc, _ = hook_env(target_cmd, tok_env)
+        step("token: expired -> blocked", rc == 2, f"rc={rc}")
+
     if fails:
         print("SELF-TEST FAILED — %d case(s): %s" % (len(fails), ", ".join(fails)))
         return 1
     print("SELF-TEST OK — check exit-codes, hook block/allow, non-command pass-through, "
-          "fail-open all proven.")
+          "fail-open, and approval tokens (mint fence, one-shot allow+consume, "
+          "exact-match, expiry) all proven.")
     return 0
 
 
@@ -156,6 +338,31 @@ def main(argv):
         return cmd_hook(sys.stdin.read())
     if len(argv) == 2 and argv[0] == "--check":
         return cmd_check(argv[1])
+    if argv and argv[0] == "--mint":
+        command = None
+        by = "human"
+        ttl = 15
+        i = 1
+        while i < len(argv):
+            a = argv[i]
+            if a == "--by" and i + 1 < len(argv):
+                by = argv[i + 1]; i += 2
+            elif a == "--ttl" and i + 1 < len(argv):
+                try:
+                    ttl = int(argv[i + 1])
+                except ValueError:
+                    sys.stderr.write("tool_guard --mint: --ttl must be minutes (int)\n")
+                    return 2
+                i += 2
+            elif command is None and not a.startswith("--"):
+                command = a; i += 1
+            else:
+                sys.stderr.write(f"tool_guard --mint: unexpected arg {a!r}\n")
+                return 2
+        if not command:
+            sys.stderr.write(__doc__)
+            return 2
+        return cmd_mint(command, by, ttl)
     sys.stderr.write(__doc__)
     return 2
 
