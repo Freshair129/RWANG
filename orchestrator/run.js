@@ -608,6 +608,51 @@ async function phaseExecute(routed) {
     }
   }
 
+  // GATE (G7/GP6): HOLDOUT acceptance — cases the worker model has never seen.
+  // holdout_runner.py exits 0 when runs/<id>/tests/holdout/ does not exist (the
+  // gate is a no-op on runs without holdout, reported not silent), so this step
+  // is safe on every run. Decision in CODE from holdout_exit, same pattern as
+  // the drift gate above.
+  if (!runBlocked) {
+    const hold = await agent(
+      [
+        `RWANG HOLDOUT GATE — MECHANICAL: run the command below EXACTLY, from G:/Rwang,`,
+        `and relay its result. Do not interpret, fix, or re-run anything else.`,
+        `  python orchestrator/governance/holdout_runner.py "${runDir}" --target "${CFG.targetRepo}" --json`,
+        `Record the process EXIT CODE as holdout_exit (0 = pass or no holdout dir).`,
+        `From the JSON it prints, join failing tasks into failed_summary as one`,
+        `"<task>: exit <code>" per line ("" when none fail).`,
+        `Return ONLY the schema JSON: holdout_exit, failed_summary.`,
+      ].join("\n"),
+      { label: "holdout-gate", phase: "Execute", model: "haiku",
+        schema: { type: "object",
+                  properties: { holdout_exit: { type: "number" },
+                                failed_summary: { type: "string" } },
+                  required: ["holdout_exit", "failed_summary"] } }
+    );
+    if (!hold || hold.holdout_exit !== 0) {
+      const code = hold ? hold.holdout_exit : "?";
+      const summary = (hold && typeof hold.failed_summary === "string"
+        ? hold.failed_summary : "").replace(/[\r\n\\"]+/g, " ").trim().slice(0, 180);
+      log(`[holdout] holdout_runner exit=${code} — unseen acceptance failed; blocking the run.`);
+      await agent(
+        [
+          `Record the holdout finding (the holdout-acceptance audit event). From G:/Rwang run:`,
+          `  python orchestrator/progress.py "${runDir}" event --task "<run>" \\`,
+          `    --status note --cost 0 --holdout-exit ${typeof code === "number" ? code : 1} \\`,
+          `    --note "holdout_failed: holdout_runner exit=${code}${summary ? " — " + summary : ""}"`,
+          `(progress.py is the ONLY writer of progress.* — do not edit those files directly.)`,
+          `Return a one-line confirmation.`,
+        ].join("\n"),
+        { label: "record-holdout", phase: "Execute", model: "haiku", effort: "low" }
+      );
+      runBlocked = true;
+      blockedTask = { id: "<holdout>", terminal: "blocked", reason: "holdout_failed",
+        summary: summary || `holdout_runner exit=${code}` };
+      results.push(blockedTask);
+    }
+  }
+
   if (!runBlocked) {
     await agent(
       [
@@ -700,25 +745,40 @@ async function phaseCommit() {
       `// open a PR, merge, or deploy, and MUST NOT commit on the repository's default`,
       `// branch. The human always owns the merge.`,
       ``,
-      `Steps (run git inside ${targetRepo}):`,
-      `1) Read the current branch and the default branch. If the current branch IS the`,
-      `   default branch (e.g. main/master), STOP: do NOT commit. Set needs_external_write`,
-      `   in your summary and return — the run stays blocked for a human. Otherwise continue.`,
-      `2) Stage and commit ONLY on this feature branch — no push, no merge, no PR:`,
+      `Steps:`,
+      `1) BRANCH GUARD (deterministic — governance branch-only policy). From G:/Rwang run:`,
+      `     python orchestrator/governance/git_guard.py "${targetRepo}"`,
+      `   Record its exit code as git_guard_exit. If NON-ZERO (on the default branch, or`,
+      `   the default cannot be resolved): STOP — do NOT commit; return`,
+      `   {"git_guard_exit": <code>, "committed": false, "detail": "<why>"}.`,
+      `2) Stage and commit ONLY on this feature branch (run git inside ${targetRepo}) —`,
+      `   no push, no merge, no PR:`,
       `     git add -A`,
       `     git commit -m "rwang(unattended): verified work for run ${runDir}"`,
       `   (If there is nothing to commit, say so; that is fine — treat it as a no-op.)`,
       `3) From G:/Rwang, record the boundary so a human can merge:`,
-      `     python orchestrator/progress.py ${runDir} finish --status awaiting_merge`,
+      `     python orchestrator/progress.py "${runDir}" finish --status awaiting_merge`,
       ``,
-      `Return a one-line confirmation: the branch name, the short commit sha (or "no-op"),`,
-      `and that the run is awaiting a human merge.`,
+      `Return the schema JSON: git_guard_exit, committed (true|false|"no-op" as boolean +`,
+      `detail), detail = one line with branch name + short sha (or the abort reason).`,
     ].join("\n"),
     // sonnet, not the session default: mechanical git work, but the default-
     // branch abort guard matters — do not push it down to the cheapest tier.
-    { label: "unattended-commit", phase: "Review", model: "sonnet" }
+    { label: "unattended-commit", phase: "Review", model: "sonnet",
+      schema: { type: "object",
+                properties: { git_guard_exit: { type: "number" },
+                              committed: { type: "boolean" },
+                              detail: { type: "string" } },
+                required: ["git_guard_exit", "committed", "detail"] } }
   );
-  return { status: "awaiting_merge", detail: typeof res === "string" ? res : "" };
+  // GATE (invariant 4, in CODE): a non-zero git_guard means the commit must not
+  // have happened — surface as blocked instead of claiming awaiting_merge.
+  if (!res || res.git_guard_exit !== 0) {
+    const code = res ? res.git_guard_exit : "?";
+    log(`[commit] git_guard exit=${code} — refusing the unattended commit (branch-only).`);
+    return { status: "blocked", reason: "git_guard", detail: res ? res.detail : "" };
+  }
+  return { status: "awaiting_merge", detail: res.detail || "" };
 }
 
 // ---------------------------------------------------------------------------

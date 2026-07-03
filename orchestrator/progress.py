@@ -49,6 +49,7 @@ the shortened chain still self-verifies but no longer matches the snapshot tip.
 SUBCOMMANDS
   init       <runDir> --spec --target --autonomy --epic "..." --tasks <tasks.json>
   event      <runDir> --task --status --tier --model --cost --note [--local-tokens] [--billed-tokens] [--verify-exit]
+             [--attempt N] [--files a,b] [--verify-cmd "..."] [--holdout-exit N]   (Shared Runtime Contract §7.1)
   phase-done <runDir> --phase <route|execute|review|commit>       # status -> phase_done:<p>
   gate       <runDir> --phase <p> --await                         # status -> awaiting_approval (supervised pause)
   approve    <runDir> --phase <p> [--by <who>]                    # record approval -> status running
@@ -247,8 +248,21 @@ def _append_ndjson(ndjson_path, event):
     with _Lock(ndjson_path):
         prev = _last_chain_hash(ndjson_path)
         chained = dict(event)
+        # Shared Runtime Contract (governance spec §7.1) — canonical cross-layer
+        # names ALONGSIDE the legacy keys (task/event stay: monitor.html and
+        # rehydrate read them). run_id == the runDir basename (what init uses as
+        # runId), so every event self-identifies without a snapshot read. Callers
+        # may pre-set attempt_id/files/approved_by/verify; defaults land here so
+        # EVERY event validates against event_schema.json.
+        run_id = os.path.basename(os.path.dirname(os.path.abspath(ndjson_path)))
+        chained.setdefault("run_id", run_id)
+        chained.setdefault("task_id", chained.get("task", ""))
+        chained.setdefault("event_type", chained.get("event", ""))
+        chained.setdefault("attempt_id", 0)
+        chained.setdefault("files", [])
+        chained.setdefault("approved_by", None)
         chained["prev_event_hash"] = prev
-        chained["event_hash"] = _event_hash(prev, event)
+        chained["event_hash"] = _event_hash(prev, chained)
         with open(ndjson_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(chained, ensure_ascii=False) + "\n")
             f.flush()
@@ -389,6 +403,10 @@ def cmd_init(a):
                 "ts": ts, "task": t["id"], "event": "queued", "status": "pending",
                 "tier": t["tier"], "model": t["model"], "cost_usd": 0.0,
                 "detail": "queued at init",
+                # Shared Runtime Contract (§7.1) — init writes directly (not via
+                # _append_ndjson), so the canonical fields land here too.
+                "run_id": run_id, "task_id": t["id"], "event_type": "queued",
+                "attempt_id": 0, "files": [], "approved_by": None,
             }
             ev["prev_event_hash"] = tip
             ev["event_hash"] = _event_hash(tip, ev)
@@ -426,12 +444,23 @@ def cmd_event(a):
         0 if attempt_result == "pass" else 1 if attempt_result == "fail" else 0)
 
     # 1) Append the ndjson event (append-mode; safe to interleave whole lines).
-    chain_tip = _append_ndjson(ndjson_path, {
+    ev_body = {
         "ts": ts, "task": a.task, "event": ndjson_event,
         "status": task_status or "note",
         "tier": a.tier or "", "model": a.model or "",
         "cost_usd": cost, "detail": a.note or "",
-    })
+        "attempt_id": int(a.attempt or 1),
+        "files": [f.strip() for f in (a.files or "").split(",") if f.strip()],
+    }
+    # verify{} (contract §7.1) rides on attempt-result events; holdout_exit stays
+    # None until the holdout gate reports one (GP6 holdout_runner).
+    if attempt_result in ("pass", "fail") or a.verify_exit is not None or a.holdout_exit is not None:
+        ev_body["verify"] = {
+            "cmd": a.verify_cmd or "",
+            "visible_exit": verify_exit,
+            "holdout_exit": int(a.holdout_exit) if a.holdout_exit is not None else None,
+        }
+    chain_tip = _append_ndjson(ndjson_path, ev_body)
 
     # 2) Read-modify-write progress.json under the lock, with a small retry on the
     #    rare torn/looping read so concurrent writers can't corrupt the snapshot.
@@ -642,6 +671,7 @@ def cmd_approve(a):
         "ts": ts, "task": "<run>", "event": "approve", "status": "running",
         "tier": "", "model": "", "cost_usd": 0.0,
         "detail": "approved to start %s by %s" % (phase, by),
+        "approved_by": by,
     })
 
     with _Lock(json_path):
@@ -846,6 +876,15 @@ def build_parser():
     pe.add_argument("--verify-exit", dest="verify_exit", default=None,
                     help="explicit verify exit code for this attempt")
     pe.add_argument("--ts", default=None, help="optional ISO-8601 timestamp (else now)")
+    # Shared Runtime Contract (§7.1) fields — all optional/additive:
+    pe.add_argument("--attempt", default=1, type=int,
+                    help="attempt_id within the current tier (contract join key)")
+    pe.add_argument("--files", default="",
+                    help="comma-separated files touched by this task attempt")
+    pe.add_argument("--verify-cmd", dest="verify_cmd", default="",
+                    help="the verify command that produced --verify-exit")
+    pe.add_argument("--holdout-exit", dest="holdout_exit", default=None,
+                    help="exit code of the holdout gate for this attempt (GP6)")
     pe.set_defaults(func=cmd_event)
 
     pf = sub.add_parser("finish", help="flip the terminal run status")
