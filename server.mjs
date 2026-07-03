@@ -16,6 +16,12 @@ import {
   setAccountKey, resetCooldown, resetUsage,
   setProviderEnabled, setRotation, setUsageLimit, startLogin, clearAccount,
 } from "./accounts-admin.mjs";
+import { listRuns, readRun } from "./runs-reader.mjs";
+import { verifyChain } from "./chain-verify.mjs";
+
+// Rwang runs/ tree — read-only observation surface (Mission Control "Runs" view).
+// Never written to from this server; see runs-reader.mjs / chain-verify.mjs.
+const RUNS_DIR = process.env.RWANG_RUNS_DIR || "G:/Rwang/runs";
 
 // Account-pool mutations touch secrets on disk — allow them from localhost only.
 function isLocal(req) {
@@ -94,6 +100,16 @@ const server = createServer(async (req, res) => {
         }
         return send(res, 404, { ok: false, error: "not found" });
       } catch (e) { return send(res, 400, { ok: false, error: e.message }); }
+    }
+    if (req.method === "GET" && url.pathname === "/api/runs") {
+      return send(res, 200, listRuns(RUNS_DIR));
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/api/runs/")) {
+      const runId = decodeURIComponent(url.pathname.slice("/api/runs/".length));
+      const run = readRun(RUNS_DIR, runId);
+      if (!run) return send(res, 404, { ok: false, error: "run not found: " + runId });
+      const chain = verifyChain(join(RUNS_DIR, runId));
+      return send(res, 200, { ...run, chain });
     }
     if (req.method === "GET" && url.pathname === "/api/knowledge") return send(res, 200, E.knowledgeOutcomes());
     if (req.method === "GET" && url.pathname === "/api/personas") {
