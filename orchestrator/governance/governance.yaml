@@ -56,9 +56,9 @@ policies:
     gp: GP4
 
   - policy: confirm-destructive
-    status: planned   # guard พร้อม + test ผ่าน แต่ choke point (PreToolUse hook) รอ human apply
-                      # orchestrator/governance/claude_settings.hook.json เข้า .claude/settings.json
-                      # (harness ไม่ให้ agent แก้ config ตัวเอง — ถูกต้องแล้ว) → apply แล้วค่อย flip enforced
+    status: enforced   # hook wired 2026-07-03 (user-approved): .claude/settings.json PreToolUse
+                       # → tool_guard --hook block DESTRUCTIVE ทุก Bash/PowerShell call ใน repo นี้
+                       # (มีผลกับ session ใหม่; canonical copy = governance/claude_settings.hook.json)
     intent: "prompt ระบุ list action ที่ต้อง confirm (reset --hard, rm -r, แก้ tests/)"
     guard: orchestrator/governance/tool_guard.py
     guard_test: "python orchestrator/governance/tool_guard.py --self-test"

@@ -15,7 +15,7 @@
 |---|---|---|---|---|
 | 1 | Context loss | **G1** External State Contract (ไฟล์บังคับ 5 ชนิด + restart protocol) | `state_check.py` + first-window protocol | ✅ GP2 |
 | 2 | State drift | **G2** Reconcile-before-act | `drift_check.py` ทุก phase boundary | ✅ GP3 |
-| 3 | Uncontrolled tool use | **G3** Action classification 4 ระดับ + hard gate | no-credential + `tool_guard.py`/`git_guard.py` + `human_review` halt | ✅ GP4 (PreToolUse hook = ไฟล์พร้อม รอ human apply → confirm-destructive ยัง planned) |
+| 3 | Uncontrolled tool use | **G3** Action classification 4 ระดับ + hard gate | no-credential + `tool_guard.py`/`git_guard.py` + PreToolUse hook + `human_review` halt | ✅ GP4 ครบ (hook wired 2026-07-03 โดย user) |
 | 4 | No deterministic coordination | **G4** Ownership declaration + waves + worktree isolation | `owners_check.py` ก่อนรัน + `run.js` topological waves | ✅ GP5 |
 | 5 | No auditability | **G5** Append-only event log ตอบ "5 คำถาม audit" ได้ | `progress.py` (writer เดียว) + schema ขยาย + hash chain | มีแล้ว + hash chain ✅ |
 | 6 | Prompt-only governance ไม่พอ | **G6** Governance Matrix + `governance_lint.py` (meta-guard) | lint ก่อนเริ่มทุก run + ที่ Execute resume | ✅ GP1 หัวใจของเอกสาร |
@@ -263,7 +263,7 @@ MODELS  (local Ollama T0–T1.5 ↔ Claude T2–T3)
 | **GP1** | `governance.yaml` + `governance_lint.py` + `test_guards.py` | ลบ guard 1 ตัว → lint fail → run เริ่มไม่ได้ | ✅ 2026-07-03 (ผ่าน adversarial review 7 majors) |
 | **GP2** | G1: ไฟล์บังคับ + `state_check.py` + restart_prompt.md + `tests_hash_check.py` | kill-restart test ผ่าน (agent สดกู้ state ตรง 100%) | ✅ guards สร้าง+enforced; kill-restart e2e ยังไม่ได้รันกับ run จริง |
 | **GP3** | G2: `drift_check.py` + wiring เข้า phase boundary ของ run.js | claim ปลอม → drift_detected event | ✅ (wiring ท้าย Execute; ผ่าน adversarial review MJ2 fix) |
-| **GP4** | G3: `tool_guard.py` (classifier + PreToolUse hook mode) + `git_guard.py` (branch-only — code gate ใน phaseCommit) | ทุก action class ให้ผลตามตาราง §5 | ✅ 2026-07-03 — ยกเว้น hook wiring เข้า `.claude/settings.json` ที่ harness สงวนให้ human apply เอง (ไฟล์พร้อม: `governance/claude_settings.hook.json` — apply แล้ว flip confirm-destructive → enforced) |
+| **GP4** | G3: `tool_guard.py` (classifier + PreToolUse hook mode) + `git_guard.py` (branch-only — code gate ใน phaseCommit) + hook ใน `.claude/settings.json` | ทุก action class ให้ผลตามตาราง §5 | ✅ 2026-07-03 ครบ (hook wired โดย user — canonical copy: `governance/claude_settings.hook.json`; มีผลกับ session ที่เปิดใหม่) |
 | **GP5** | G4 `owners_check.py` + G5 contract fields ใน `progress.py` (`run_id/task_id/attempt_id/files[]/approved_by/verify{}`) + `contract_selftest.py` + `audit_query.md` | 5 คำถามตอบได้จาก ndjson ของ run จริง | ✅ 2026-07-03 (shared-runtime-contract → enforced) |
 | **GP6** | G7: `holdout_runner.py` (gate ท้าย Execute ใน run.js — block ใน code) + `decay_report.py` + isolation structural check | hardcode ปลูก → ถูกจับ ≥ 1 ชั้น (self-test พิสูจน์ unseen-regression catch) | ✅ 2026-07-03 |
 | **P1-7** | event hash chain ใน `progress.py` + `verify-chain` | tamper/truncate → verify-chain exit 1; parallel wave → intact | ✅ (ผ่าน adversarial review MJ1 fix + concurrency leg) |
