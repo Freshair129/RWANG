@@ -72,18 +72,40 @@ policies:
     gp: GP4
 
   - policy: tests-immutable
-    status: planned
+    status: enforced
     intent: "prompt: ห้ามลบ/แก้ tests หลัง approve — ถ้า test ผิดให้แจ้ง ไม่ใช่หาทางอ้อม"
     guard: orchestrator/governance/tests_hash_check.py
+    guard_test: "python orchestrator/governance/tests_hash_check.py --self-test"
+    check: full
     audit_event: tests_amended
     gp: GP2
 
+  - policy: external-state-contract
+    status: enforced
+    intent: "prompt: state ทั้งหมดของ run อยู่ในไฟล์ใต้ runDir — resume ผ่าน restart_prompt.md เท่านั้น ห้ามเดาสิ่งที่ไฟล์ไม่ได้บอก"
+    guard: orchestrator/governance/state_check.py
+    guard_test: "python orchestrator/governance/state_check.py --self-test"
+    check: full
+    audit_event: state_verified
+    gp: GP2
+
   - policy: verify-claims
-    status: planned
+    status: enforced
     intent: "prompt: ทุก progress report ต้องอ้าง tool output ในเซสชัน"
     guard: orchestrator/governance/drift_check.py
+    guard_test: "python orchestrator/governance/drift_check.py --self-test"
+    check: full
     audit_event: drift_detected
     gp: GP3
+
+  - policy: event-hash-chain
+    status: enforced
+    intent: ""   # code ล้วน — hash chain อยู่ที่จุด append เดียวใน progress.py; snapshot เก็บ tip กัน truncation
+    guard: orchestrator/progress.py
+    guard_test: "python orchestrator/governance/chain_selftest.py --self-test"
+    check: full
+    audit_event: "*"
+    gp: P1
 
   - policy: holdout-acceptance
     status: planned

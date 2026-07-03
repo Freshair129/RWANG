@@ -33,11 +33,39 @@ executing. Commands run through `bash -c` when bash is available (so POSIX check
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
 
-_BASH = shutil.which("bash")
+
+def _find_bash():
+    """Prefer GIT BASH explicitly on Windows: `shutil.which("bash")` can resolve to
+    System32's bash.exe — the WSL launcher, a different OS where the host's
+    python/C: paths do not exist — so evidence that resolves on the host would
+    falsely fail with exit 127 (and the gate would block every run). Deterministic
+    probe order: Git-Bash next to git.exe -> well-known Git installs -> PATH bash
+    (unless it is the WSL launcher) -> None (= system shell fallback)."""
+    if os.name == "nt":
+        git = shutil.which("git")
+        if git:
+            root = os.path.dirname(os.path.dirname(git))  # <Git>\cmd\git.exe -> <Git>
+            for cand in (os.path.join(root, "bin", "bash.exe"),
+                         os.path.join(root, "usr", "bin", "bash.exe")):
+                if os.path.isfile(cand):
+                    return cand
+        for cand in (r"C:\Program Files\Git\bin\bash.exe",
+                     r"C:\Program Files (x86)\Git\bin\bash.exe"):
+            if os.path.isfile(cand):
+                return cand
+        b = shutil.which("bash")
+        if b and "system32" in b.lower():
+            return None  # WSL launcher: the system shell is truer to the host
+        return b
+    return shutil.which("bash")
+
+
+_BASH = _find_bash()
 
 
 def load_findings(path):

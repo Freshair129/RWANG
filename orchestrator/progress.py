@@ -255,6 +255,21 @@ def _append_ndjson(ndjson_path, event):
     return chained["event_hash"]
 
 
+def _current_chain_tip(ndjson_path, fallback):
+    """The REAL chain tip right now, read from the ndjson under its lock.
+
+    Under concurrent appends (run.js runs a whole wave in parallel), the
+    process-local tip returned by _append_ndjson can be stale by the time this
+    process wins the progress.json lock — mirroring the stale tip made
+    verify-chain report BROKEN on an untampered chain (adversarial review MJ1).
+    Callers hold the json lock when calling this; the nested ndjson lock is safe
+    because no code path holds the ndjson lock while waiting on the json lock.
+    The final snapshot writer in any interleaving therefore lands the true tip."""
+    with _Lock(ndjson_path):
+        tip = _last_chain_hash(ndjson_path)
+    return tip if isinstance(tip, str) and tip else fallback
+
+
 # --------------------------------------------------------------------------- #
 # recomputation: phase status + run status derived from the tasks              #
 # --------------------------------------------------------------------------- #
@@ -475,7 +490,7 @@ def cmd_event(a):
                 _recompute_phases(snap)
                 _recompute_run_status(snap)
                 snap["updated_at"] = ts
-                snap["last_event_hash"] = chain_tip
+                snap["last_event_hash"] = _current_chain_tip(ndjson_path, chain_tip)
 
                 _write_snapshot_atomic(json_path, snap)
 
@@ -522,7 +537,7 @@ def cmd_finish(a):
         snap = _read_snapshot(json_path)
         snap["status"] = status
         snap["updated_at"] = ts
-        snap["last_event_hash"] = chain_tip
+        snap["last_event_hash"] = _current_chain_tip(ndjson_path, chain_tip)
         # Settle the Review phase: passed iff the run reached a clean terminal
         # (done, or awaiting_merge = committed-to-branch clean), else failed.
         for ph in snap.get("phases", []):
@@ -557,7 +572,7 @@ def cmd_phase_done(a):
         snap = _read_snapshot(json_path)
         snap["status"] = new_status
         snap["updated_at"] = ts
-        snap["last_event_hash"] = chain_tip
+        snap["last_event_hash"] = _current_chain_tip(ndjson_path, chain_tip)
         # Light up that phase in the phases[] roll-up (case-insensitive match).
         for ph in snap.get("phases", []):
             if str(ph.get("name", "")).lower() == phase.lower():
@@ -595,7 +610,7 @@ def cmd_gate(a):
         snap["status"] = "awaiting_approval"
         snap["awaiting"] = {"phase": phase}
         snap["updated_at"] = ts
-        snap["last_event_hash"] = chain_tip
+        snap["last_event_hash"] = _current_chain_tip(ndjson_path, chain_tip)
         snap.setdefault("events", []).append({
             "ts": ts, "task": "<run>", "event": "gate",
             "detail": "awaiting approval to start %s" % phase,
@@ -634,7 +649,7 @@ def cmd_approve(a):
         snap["status"] = "running"
         snap.pop("awaiting", None)
         snap["updated_at"] = ts
-        snap["last_event_hash"] = chain_tip
+        snap["last_event_hash"] = _current_chain_tip(ndjson_path, chain_tip)
         snap.setdefault("events", []).append({
             "ts": ts, "task": "<run>", "event": "approve",
             "detail": "approved to start %s by %s" % (phase, by),

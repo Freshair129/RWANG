@@ -572,7 +572,7 @@ async function phaseExecute(routed) {
       [
         `RWANG DRIFT CHECK — MECHANICAL: run the command below EXACTLY, from G:/Rwang,`,
         `and relay its result. Do not interpret, fix, or re-run anything else.`,
-        `  python orchestrator/governance/drift_check.py ${runDir} --target "${CFG.targetRepo}" --json`,
+        `  python orchestrator/governance/drift_check.py "${runDir}" --target "${CFG.targetRepo}" --json`,
         `Record the process EXIT CODE as drift_exit (0 = no drift). From the JSON it`,
         `prints on stdout, join the drifted[] entries into drifted_summary as one`,
         `"<task>: <reason>" per line ("" when drifted is empty).`,
@@ -593,7 +593,7 @@ async function phaseExecute(routed) {
       await agent(
         [
           `Record the drift finding (the verify-claims audit event). From G:/Rwang run:`,
-          `  python orchestrator/progress.py ${runDir} event --task "<run>" \\`,
+          `  python orchestrator/progress.py "${runDir}" event --task "<run>" \\`,
           `    --status note --cost 0 \\`,
           `    --note "drift_detected: drift_check exit=${code}${summary ? " — " + summary : ""}"`,
           `(progress.py is the ONLY writer of progress.* — do not edit those files directly.)`,
