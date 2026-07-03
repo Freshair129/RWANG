@@ -26,13 +26,25 @@ progress.json shape (agrees verbatim with run.js and monitor.html):
         "verify_command": str, "depends_on": [str], "updated_at": iso
     } ],
     "ledger": {"local_tokens": int, "billed_tokens": int, "billed_usd": num},
-    "events": [ {"ts": iso, "task": str, "event": str, "detail": str} ]
-  }
+    "events": [ {"ts": iso, "task": str, "event": str, "detail": str} ],
+    "last_event_hash": str        # tip of the ndjson hash chain ("genesis" while empty);
+  }                               # updated on EVERY append — see TAMPER-EVIDENT HASH CHAIN
 
 ndjson event line:
   {"ts": iso, "task": str,
    "event": "queued|running|verify|pass|fail|escalate|blocked|phase_done|gate|approve|note",
-   "status": str, "tier": str, "model": str, "cost_usd": num, "detail": str}
+   "status": str, "tier": str, "model": str, "cost_usd": num, "detail": str,
+   "prev_event_hash": str, "event_hash": str}
+
+TAMPER-EVIDENT HASH CHAIN: every appended ndjson event carries
+    event_hash = sha256(prev_event_hash + "\n" +
+                        json.dumps(event_without_the_two_hash_fields, sort_keys=True,
+                                   ensure_ascii=False, separators=(",", ":")))
+The first hashed event uses prev_event_hash = "genesis". Legacy events (written
+before the chain existed) carry no hash fields; the chain starts at the first
+hashed event with prev="genesis". progress.json mirrors the chain tip in
+"last_event_hash" on every append, so truncating the ndjson tail is detectable:
+the shortened chain still self-verifies but no longer matches the snapshot tip.
 
 SUBCOMMANDS
   init       <runDir> --spec --target --autonomy --epic "..." --tasks <tasks.json>
@@ -44,6 +56,11 @@ SUBCOMMANDS
   rehydrate  <runDir>              # READ-ONLY: print the deterministic resume join of
                                    # tasks.json x progress.json ({"epic_dod", "tasks":[...]}
                                    # with per-task status) — run.js consumes it verbatim
+  verify-chain <runDir>            # READ-ONLY: walk the ndjson hash chain, then compare the
+                                   # tip against progress.json "last_event_hash".
+                                   # exit 0 chain intact (or pure-legacy run — warning only)
+                                   #      1 broken/tampered/truncated
+                                   #      2 unreadable input (missing ndjson/snapshot)
 
 The phase-done/gate/approve trio is the pause/resume interlock: a phase runner
 sets phase_done:<p>; a supervised driver gates the boundary (awaiting_approval)
@@ -58,6 +75,7 @@ Dependency-free (stdlib only).
 
 import argparse
 import errno
+import hashlib
 import json
 import os
 import sys
@@ -180,12 +198,61 @@ def _write_snapshot_atomic(json_path, snap):
     os.replace(tmp, json_path)  # atomic on Windows + POSIX
 
 
+# --------------------------------------------------------------------------- #
+# tamper-evident hash chain over progress.ndjson (see docstring)                #
+# --------------------------------------------------------------------------- #
+GENESIS = "genesis"
+_HASH_FIELDS = ("prev_event_hash", "event_hash")
+
+
+def _event_hash(prev_hash, event):
+    """sha256 chain hash of one event. The event is canonicalized WITHOUT the two
+    hash fields (sorted keys, compact separators, ensure_ascii=False) so verify can
+    recompute it from the parsed line regardless of on-disk key order/spacing."""
+    body = {k: v for k, v in event.items() if k not in _HASH_FIELDS}
+    canon = json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256((prev_hash + "\n" + canon).encode("utf-8")).hexdigest()
+
+
+def _last_chain_hash(ndjson_path):
+    """Return the event_hash of the last hashed event in the ndjson, else GENESIS.
+    Legacy lines (no hash fields) and torn/unparseable lines are skipped — the
+    chain resumes from the last hash that made it to disk."""
+    last = GENESIS
+    try:
+        with open(ndjson_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                h = ev.get("event_hash") if isinstance(ev, dict) else None
+                if isinstance(h, str) and h:
+                    last = h
+    except OSError:
+        pass  # no ndjson yet -> chain starts at genesis
+    return last
+
+
 def _append_ndjson(ndjson_path, event):
-    """Append one event line. Open in append mode per-call so concurrent writers
-    interleave whole lines (small writes are atomic enough for line-oriented logs)."""
-    with open(ndjson_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(event, ensure_ascii=False) + "\n")
-        f.flush()
+    """Append one event line, extended with the tamper-evident hash chain fields
+    (prev_event_hash, event_hash). Read-prev + append happen under a lockfile on
+    the ndjson so concurrent writers cannot fork the chain; the file itself is
+    still opened append-mode per call (whole-line writes). Returns the appended
+    event's event_hash (the new chain tip) so callers can mirror it into
+    progress.json as "last_event_hash"."""
+    with _Lock(ndjson_path):
+        prev = _last_chain_hash(ndjson_path)
+        chained = dict(event)
+        chained["prev_event_hash"] = prev
+        chained["event_hash"] = _event_hash(prev, event)
+        with open(ndjson_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(chained, ensure_ascii=False) + "\n")
+            f.flush()
+    return chained["event_hash"]
 
 
 # --------------------------------------------------------------------------- #
@@ -298,14 +365,21 @@ def cmd_init(a):
     # Route phase is 'running' the moment we initialize (the router just ran).
     _recompute_phases(snap)
 
-    # Fresh ndjson (truncate any prior) + first 'queued' line per task.
+    # Fresh ndjson (truncate any prior) + first 'queued' line per task, hash-chained
+    # from GENESIS (init owns the fresh file, so the chain restarts here by design).
+    tip = GENESIS
     with open(ndjson_path, "w", encoding="utf-8") as f:
         for t in tasks:
-            f.write(json.dumps({
+            ev = {
                 "ts": ts, "task": t["id"], "event": "queued", "status": "pending",
                 "tier": t["tier"], "model": t["model"], "cost_usd": 0.0,
                 "detail": "queued at init",
-            }, ensure_ascii=False) + "\n")
+            }
+            ev["prev_event_hash"] = tip
+            ev["event_hash"] = _event_hash(tip, ev)
+            tip = ev["event_hash"]
+            f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+    snap["last_event_hash"] = tip
 
     with _Lock(json_path):
         _write_snapshot_atomic(json_path, snap)
@@ -337,7 +411,7 @@ def cmd_event(a):
         0 if attempt_result == "pass" else 1 if attempt_result == "fail" else 0)
 
     # 1) Append the ndjson event (append-mode; safe to interleave whole lines).
-    _append_ndjson(ndjson_path, {
+    chain_tip = _append_ndjson(ndjson_path, {
         "ts": ts, "task": a.task, "event": ndjson_event,
         "status": task_status or "note",
         "tier": a.tier or "", "model": a.model or "",
@@ -401,6 +475,7 @@ def cmd_event(a):
                 _recompute_phases(snap)
                 _recompute_run_status(snap)
                 snap["updated_at"] = ts
+                snap["last_event_hash"] = chain_tip
 
                 _write_snapshot_atomic(json_path, snap)
 
@@ -438,7 +513,7 @@ def cmd_finish(a):
             "progress.py finish: --status must be done|blocked|failed|awaiting_merge|needs_work.\n")
         sys.exit(2)
 
-    _append_ndjson(ndjson_path, {
+    chain_tip = _append_ndjson(ndjson_path, {
         "ts": ts, "task": "<run>", "event": "note", "status": status,
         "tier": "", "model": "", "cost_usd": 0.0, "detail": "run finished: %s" % status,
     })
@@ -447,6 +522,7 @@ def cmd_finish(a):
         snap = _read_snapshot(json_path)
         snap["status"] = status
         snap["updated_at"] = ts
+        snap["last_event_hash"] = chain_tip
         # Settle the Review phase: passed iff the run reached a clean terminal
         # (done, or awaiting_merge = committed-to-branch clean), else failed.
         for ph in snap.get("phases", []):
@@ -472,7 +548,7 @@ def cmd_phase_done(a):
     phase = a.phase
     new_status = "phase_done:%s" % phase
 
-    _append_ndjson(ndjson_path, {
+    chain_tip = _append_ndjson(ndjson_path, {
         "ts": ts, "task": "<run>", "event": "phase_done", "status": new_status,
         "tier": "", "model": "", "cost_usd": 0.0, "detail": "phase %s complete" % phase,
     })
@@ -481,6 +557,7 @@ def cmd_phase_done(a):
         snap = _read_snapshot(json_path)
         snap["status"] = new_status
         snap["updated_at"] = ts
+        snap["last_event_hash"] = chain_tip
         # Light up that phase in the phases[] roll-up (case-insensitive match).
         for ph in snap.get("phases", []):
             if str(ph.get("name", "")).lower() == phase.lower():
@@ -507,7 +584,7 @@ def cmd_gate(a):
         sys.stderr.write("progress.py gate: only --await is supported.\n")
         sys.exit(2)
 
-    _append_ndjson(ndjson_path, {
+    chain_tip = _append_ndjson(ndjson_path, {
         "ts": ts, "task": "<run>", "event": "gate", "status": "awaiting_approval",
         "tier": "", "model": "", "cost_usd": 0.0,
         "detail": "awaiting approval to start %s" % phase,
@@ -518,6 +595,7 @@ def cmd_gate(a):
         snap["status"] = "awaiting_approval"
         snap["awaiting"] = {"phase": phase}
         snap["updated_at"] = ts
+        snap["last_event_hash"] = chain_tip
         snap.setdefault("events", []).append({
             "ts": ts, "task": "<run>", "event": "gate",
             "detail": "awaiting approval to start %s" % phase,
@@ -545,7 +623,7 @@ def cmd_approve(a):
         }, ensure_ascii=False) + "\n")
         f.flush()
 
-    _append_ndjson(ndjson_path, {
+    chain_tip = _append_ndjson(ndjson_path, {
         "ts": ts, "task": "<run>", "event": "approve", "status": "running",
         "tier": "", "model": "", "cost_usd": 0.0,
         "detail": "approved to start %s by %s" % (phase, by),
@@ -556,6 +634,7 @@ def cmd_approve(a):
         snap["status"] = "running"
         snap.pop("awaiting", None)
         snap["updated_at"] = ts
+        snap["last_event_hash"] = chain_tip
         snap.setdefault("events", []).append({
             "ts": ts, "task": "<run>", "event": "approve",
             "detail": "approved to start %s by %s" % (phase, by),
@@ -614,6 +693,107 @@ def cmd_rehydrate(a):
     # ensure_ascii=True: stdout may cross a cp1252 Windows console — \uXXXX
     # escapes survive any encoding and json.load restores them losslessly.
     print(json.dumps({"epic_dod": snap.get("epic_dod", ""), "tasks": out}, indent=2))
+
+
+# --------------------------------------------------------------------------- #
+# subcommand: verify-chain  (read-only tamper-evidence audit of the ndjson)     #
+# --------------------------------------------------------------------------- #
+def cmd_verify_chain(a):
+    """Walk progress.ndjson verifying the hash chain, then compare the chain tip
+    against progress.json "last_event_hash" (the anti-truncation anchor).
+
+    Deterministic + read-only. JSON report -> stdout, summary -> stderr.
+    exit 0 = intact (a pure-legacy run — no hash fields at all — also exits 0,
+    with a "no chain (legacy run)" warning); 1 = broken/tampered/truncated;
+    2 = unreadable input (missing progress.ndjson / progress.json).
+    """
+    run_dir = a.run_dir
+    json_path, ndjson_path = _paths(run_dir)
+    errors, warnings = [], []
+    n_events = n_hashed = 0
+    prev = GENESIS
+    chain_started = False
+
+    try:
+        f = open(ndjson_path, "r", encoding="utf-8")
+    except OSError as e:
+        sys.stderr.write("progress.py verify-chain: cannot read %s: %s\n" % (ndjson_path, e))
+        sys.exit(2)
+    with f:
+        for i, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            n_events += 1
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                errors.append("line %d: not valid JSON" % i)
+                continue
+            if not isinstance(ev, dict):
+                errors.append("line %d: event is not an object" % i)
+                continue
+            stored = ev.get("event_hash")
+            if not (isinstance(stored, str) and stored):
+                if chain_started:
+                    # An unhashed line AFTER the chain began cannot be attested —
+                    # every writer hashes now, so this is a break, not legacy.
+                    errors.append("line %d: unhashed event after the chain started" % i)
+                # else: legacy prefix (pre-chain writer) — allowed, chain not begun.
+                continue
+            n_hashed += 1
+            if ev.get("prev_event_hash") != prev:
+                errors.append("line %d: prev_event_hash mismatch (expected %s, got %s)"
+                              % (i, prev, ev.get("prev_event_hash")))
+            recomputed = _event_hash(prev, ev)
+            if recomputed != stored:
+                errors.append("line %d: event_hash mismatch — event content was altered" % i)
+            # Chain onward from the STORED hash: a single tampered line then yields
+            # exactly one mismatch instead of cascading down the rest of the file.
+            prev = stored
+            chain_started = True
+
+    try:
+        snap = _read_snapshot(json_path)
+    except (OSError, ValueError) as e:
+        sys.stderr.write("progress.py verify-chain: cannot read progress.json: %s\n" % e)
+        sys.exit(2)
+    snap_tip = snap.get("last_event_hash")
+
+    legacy = False
+    if n_hashed == 0:
+        if snap_tip is None:
+            legacy = True
+            warnings.append("no chain (legacy run)")
+        elif snap_tip == GENESIS:
+            pass  # new-format run with zero events yet — an empty chain is intact
+        else:
+            errors.append("progress.json last_event_hash=%s but progress.ndjson has no "
+                          "hashed events (chain deleted or file replaced)" % snap_tip)
+    else:
+        if snap_tip is None:
+            errors.append("chain present in ndjson but progress.json has no "
+                          "last_event_hash (snapshot stale or tampered)")
+        elif snap_tip != prev:
+            errors.append("chain tip %s != progress.json last_event_hash %s "
+                          "(ndjson truncated or snapshot stale)" % (prev, snap_tip))
+
+    ok = not errors
+    report = {
+        "ok": ok, "legacy": legacy, "events": n_events, "hashed": n_hashed,
+        "chain_tip": prev if n_hashed else None,
+        "snapshot_last_event_hash": snap_tip,
+        "errors": errors, "warnings": warnings,
+    }
+    print(json.dumps(report, indent=2))
+    w = sys.stderr.write
+    for e in errors:
+        w("  ERROR: %s\n" % e)
+    for x in warnings:
+        w("  warn:  %s\n" % x)
+    w("verify-chain: %s (%d event(s), %d hashed)\n"
+      % ("INTACT" if ok else "BROKEN", n_events, n_hashed))
+    sys.exit(0 if ok else 1)
 
 
 # --------------------------------------------------------------------------- #
@@ -686,10 +866,18 @@ def build_parser():
     pr.add_argument("run_dir")
     pr.set_defaults(func=cmd_rehydrate)
 
+    pv = sub.add_parser(
+        "verify-chain",
+        help="READ-ONLY: verify the ndjson hash chain + the snapshot tip "
+             "(exit 0 intact/legacy-warning, 1 broken/tampered/truncated, 2 unreadable)")
+    pv.add_argument("run_dir")
+    pv.set_defaults(func=cmd_verify_chain)
+
     return p
 
 
-_SUBCMDS = {"init", "event", "finish", "phase-done", "gate", "approve", "rehydrate"}
+_SUBCMDS = {"init", "event", "finish", "phase-done", "gate", "approve", "rehydrate",
+            "verify-chain"}
 
 
 def _normalize_order(argv):

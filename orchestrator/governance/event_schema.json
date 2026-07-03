@@ -18,7 +18,9 @@
     "rework_round": "int",
     "escalated_to": "str|null",
     "note": "str",
-    "cost_usd": "int|float"
+    "cost_usd": "int|float",
+    "prev_event_hash": "str",
+    "event_hash": "str"
   },
   "verify_types": {
     "cmd": "str",
