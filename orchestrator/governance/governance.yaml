@@ -162,11 +162,11 @@ policies:
     gp: GP7
 
   - policy: access-scope-enforcement
-    status: planned    # GP8 (RCA Phase B2 #1, Boss 2026-07-10): declared H tier = permission
-                       # CEILING ที่จุด spawn จริง (engine.mjs permissionFor + config tierPermissions
-                       # + providers permissionModes) — wiring ลงแล้ว + structural guard เขียว;
-                       # flip เป็น enforced หลัง e2e smoke ใน runnable origin (G-Maiden) พิสูจน์ว่า
-                       # worker ที่ประกาศ H2 รัน Bash ไม่ได้จริง
+    status: enforced   # GP8 — smoke-proven ที่ runnable origin (G-Maiden de1c6c94, 2026-07-10):
+                       # argv จริงผ่านเส้น runAgent→runProvider→spawn 5/5 เคส — H2+code ถูกกดเหลือ
+                       # acceptEdits (จาก full), H0→plan (read-only), H3→acceptEdits+allowedTools Bash,
+                       # legacy ไม่ประกาศ tier = bypassPermissions เดิมเป๊ะ, H4+docs ไม่ถูกยกขึ้น;
+                       # guard ที่นี่เป็น structural (ceiling map lint-locked + engine consumption)
     intent: ""   # code ล้วน — เพดานอยู่ที่ spawn args ไม่ใช่ prompt
     guard: orchestrator/governance/access_scope_check.py
     guard_test: "python orchestrator/governance/access_scope_check.py"
@@ -175,11 +175,12 @@ policies:
     gp: GP8
 
   - policy: engine-lint-interlock
-    status: planned    # GP8 (RCA Phase B2 #2): engine daemon ต้องเคารพ meta-guard เท่าเส้น run.js
-                       # (SPEC §13: gates cannot be bypassed by daemon) — governanceInterlock ที่ boot
-                       # + governanceBlock ใน runPool/dispatchOne, cache ตาม mtime ของ matrix;
-                       # ระหว่าง planned: python/lint หาย = warn (config governance.required=true
-                       # เพื่อ fail-closed); flip เป็น enforced หลัง smoke: matrix พัง → engine ปฏิเสธ dispatch
+    status: enforced   # GP8 — smoke-proven ที่ G-Maiden (de1c6c94, 2026-07-10): lint exit 1 →
+                       # dispatchOne และ runPool ปฏิเสธก่อน claim ("governance interlock" error);
+                       # lint เขียว → gated task ทะลุไปตายที่ confirm-gate (ผ่าน interlock โดยไม่ spawn);
+                       # meta-guard จริงข้าม repo ok=true 23.4s + cache ตาม mtime ทำงาน
+                       # หมายเหตุ: python/lint หายและ governance.required=false = warn-path (fail-open
+                       # โดยตั้งใจสำหรับ engine ที่ deploy โดดเดี่ยว) — ตั้ง required=true เพื่อ fail-closed
     intent: ""   # code ล้วน
     guard: orchestrator/governance/engine_interlock_check.py
     guard_test: "python orchestrator/governance/engine_interlock_check.py"
