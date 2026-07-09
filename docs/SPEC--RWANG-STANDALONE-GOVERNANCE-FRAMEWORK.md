@@ -1,8 +1,8 @@
 ---
-version: "0.6.0b"
+version: "0.6.0"
 created_at: "2026-07-01T00:00:00+07:00,ATHER,pending"
-last_update: "2026-07-10T00:00:00+07:00,ClaudeFable"
-status: "candidate"
+last_update: "2026-07-10T00:00:00+07:00,Boss"
+status: "active"
 superseded_by: null
 attributes:
   domain: "agent-governance"
@@ -340,6 +340,7 @@ Model Level is copied from the provider-registry resolution (Section 7.1), not c
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.6.0 | 2026-07-10 | active | Approved: upstream disposition recorded (STD-Execution-Governance 2.3.0+ga stable, GVDOC-1003 1.4.0 active — signed off and merged in govibe); `b` suffix dropped per Section 12 — the approval act. | pending | Boss (approver) |
 | 0.6.0b | 2026-07-10 | candidate | 0.6.0a per RFC--H-AXIS-0.6.0 (D1-D6 approved by Boss 2026-07-10): H redefined as Access Scope with five capability-defined tiers (H5/H6 removed — no atom used them; they granted nothing the top tier does not), approval grantor derives from C, H defaults from C with upward-only override, artifact table rekeyed, hop language removed from binding text pending measurement (D3). Major bump: rules removed/renamed. | pending | ClaudeFable |
 | 0.5.0b | 2026-07-09 | candidate | Applied 25 adversarially-verified review fixes (see REVIEW--GOVERNANCE-FRAMEWORK-2026-07-09): added Safety Invariants (2.1) and scope/precedence vs SPEC--AGENT-RUNTIME-GOVERNANCE; repaired 7.2 gate ownership, Leader flow, failure semantics, C-scaled applicability, Worker-only coding + Hotfix definition, read-only gate roles, hybrid-injection authorization, runtime role binding; defined Verify Gate, approval, Brief Packet, non-trivial, Risk defaults; totalized W and artifact tables; fixed D direction and Budget/Ceiling rules; delegated model names to the provider registry; removed per-task D; tightened status enum and MUST language; post-apply consistency pass (verify-gate force scoping, approval-authority totality, hotfix ownership without a Leader, template notation, escalation order). | pending | ClaudeFable |
 | 0.4.0b | 2026-07-09 | candidate | Added Gate-Driven Execution model (section 7.2) with role-to-gate mapping and hybrid injection rules. | pending | Antigravity |
