@@ -160,3 +160,29 @@ policies:
     check: full
     audit_event: blocked
     gp: GP7
+
+  - policy: access-scope-enforcement
+    status: planned    # GP8 (RCA Phase B2 #1, Boss 2026-07-10): declared H tier = permission
+                       # CEILING ที่จุด spawn จริง (engine.mjs permissionFor + config tierPermissions
+                       # + providers permissionModes) — wiring ลงแล้ว + structural guard เขียว;
+                       # flip เป็น enforced หลัง e2e smoke ใน runnable origin (G-Maiden) พิสูจน์ว่า
+                       # worker ที่ประกาศ H2 รัน Bash ไม่ได้จริง
+    intent: ""   # code ล้วน — เพดานอยู่ที่ spawn args ไม่ใช่ prompt
+    guard: orchestrator/governance/access_scope_check.py
+    guard_test: "python orchestrator/governance/access_scope_check.py"
+    check: structural
+    audit_event: blocked
+    gp: GP8
+
+  - policy: engine-lint-interlock
+    status: planned    # GP8 (RCA Phase B2 #2): engine daemon ต้องเคารพ meta-guard เท่าเส้น run.js
+                       # (SPEC §13: gates cannot be bypassed by daemon) — governanceInterlock ที่ boot
+                       # + governanceBlock ใน runPool/dispatchOne, cache ตาม mtime ของ matrix;
+                       # ระหว่าง planned: python/lint หาย = warn (config governance.required=true
+                       # เพื่อ fail-closed); flip เป็น enforced หลัง smoke: matrix พัง → engine ปฏิเสธ dispatch
+    intent: ""   # code ล้วน
+    guard: orchestrator/governance/engine_interlock_check.py
+    guard_test: "python orchestrator/governance/engine_interlock_check.py"
+    check: structural
+    audit_event: blocked
+    gp: GP8
