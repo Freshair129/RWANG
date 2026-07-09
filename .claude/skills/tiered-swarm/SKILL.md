@@ -5,6 +5,8 @@ description: "Orchestrate a multi-step build/audit/refine task across local Olla
 
 # tiered-swarm
 
+> **Precedence:** this skill is the *intent layer*. `docs/SPEC--RWANG-STANDALONE-GOVERNANCE-FRAMEWORK.md` + `orchestrator/governance/governance.yaml` are *law* (runtime-enforced, 17/17); on any conflict, law wins — do not "fix" the law to match this skill.
+
 Spec-driven, local-first, cost-tiered multi-model orchestration. Routes each unit of
 work to the cheapest model tier that can pass a **machine-checkable acceptance command**,
 escalating up the ladder (local SLM → local mid → cloud open-weights → Claude) only when
@@ -58,6 +60,7 @@ SPEC ──▶ ROUTE ──▶ EXECUTE(tier) ──▶ VERIFY(cheap gate) ──
 ## Compact routing table
 
 Task class → starting tier → concrete model. The router escalates on a failed gate.
+Model names below are a **snapshot for orientation** — the living model→tier assignments are `docs/SPEC--PROVIDER-REGISTRY.md` + `config.json`, which win when this table rots.
 
 | Task class | Start tier | Concrete model (ollama tag / id) |
 |---|---|---|
