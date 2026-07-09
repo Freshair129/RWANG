@@ -147,3 +147,16 @@ policies:
     check: full
     audit_event: "*"
     gp: GP6
+
+  - policy: doc-governance
+    status: enforced   # GP7 (RCA--GOVERNANCE-FRAMEWORK-DRIFT §6 Phase B): เอกสารที่ gate ทุกอย่าง
+                       # ต้องถูก gate เอง — canonical docs (SPEC §12 format) ต้องผ่าน lint และ
+                       # H tiers ใน SPEC ต้องมีจริงใน planner.mjs H_TIERS (บทเรียน silent-H6 bug)
+                       # guard_test รัน fixture self-test + lint docs/ จริงในคำสั่งเดียว —
+                       # canonical doc พังหรือ tier contract หลุด = ไม่มี run ใหม่เริ่มได้
+    intent: ""   # code ล้วน — กติกาอยู่ใน SPEC--RWANG-STANDALONE-GOVERNANCE-FRAMEWORK §12
+    guard: orchestrator/governance/doc_lint.py
+    guard_test: "python orchestrator/governance/doc_lint.py"
+    check: full
+    audit_event: blocked
+    gp: GP7

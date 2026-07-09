@@ -56,6 +56,7 @@
 | holdout acceptance ต่อ task | — (**ต้องไม่อยู่ใน prompt** โดยนิยาม) | gate รัน case ชุดที่โมเดลไม่เคยเห็น (§9.2) | ผล holdout แยก field ใน event | hardcode ผ่าน visible → holdout จับ |
 | holdout isolation (secrecy เป็น structural) | — (ไม่พึ่งวินัย agent โดยนิยาม) | `tests/holdout/` อยู่**นอก worktree ของ worker** — gate runner รันจากข้างนอกเท่านั้น (§9.2) | `verify.holdout_exit` + ไม่มี read event ของ path นี้จาก worker | worker อ่าน `tests/holdout/` → file-not-found |
 | confirm ก่อน destructive action | prompt ระบุ list ชัด (จากรายงาน: Opus อาจ force-push เอง) | PreToolUse hook block pattern (§5) | event `confirm_required` | จำลอง `reset --hard` → ถูก block |
+| canonical docs ต้อง lint (doc-governance) | — (code ล้วน — กติกา §12 ของ standalone framework; ที่มา: RCA--GOVERNANCE-FRAMEWORK-DRIFT Phase B) | `doc_lint.py`: frontmatter/status/`b`-suffix/changelog schema + doc↔code tier contract (SPEC H tiers ⊆ `planner.mjs` H_TIERS) + warn bump-cluster ไร้ reviewer | `governance_lint.json` (ผ่าน meta-guard) | fixture H6 ใน SPEC ที่ H_TIERS ไม่มี → exit 1 (self-test ในตัว guard พิสูจน์ทุก check) |
 
 ---
 
