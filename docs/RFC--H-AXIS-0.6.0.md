@@ -1,8 +1,8 @@
 ---
-version: "0.1.0b"
+version: "0.1.0"
 created_at: "2026-07-10T00:00:00+07:00,ClaudeFable,pending"
-last_update: "2026-07-10T00:00:00+07:00,ClaudeFable"
-status: "draft"
+last_update: "2026-07-10T00:00:00+07:00,Boss"
+status: "active"
 superseded_by: null
 attributes:
   domain: "agent-governance"
@@ -121,4 +121,5 @@ Canonical residence of the axis definition: the origin framework family (`cognit
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.0 | 2026-07-10 | active | D1-D6 approved in full by the owner; `b` suffix dropped per SPEC §12 (the approval act). 0.6.0a applied to the SPEC in the same commit. | pending | Boss (approver) |
 | 0.1.0b | 2026-07-10 | draft | Initial RFC: 5-tier access scale (drop H5/H6), un-fuse access/radius/budget per UCF, standard k-hop vocabulary, derived hop ceiling as health lint, W owns coupling, upstream sync plan. | pending | ClaudeFable |

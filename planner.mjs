@@ -70,8 +70,11 @@ Return ONLY a JSON array (no prose, no markdown fence) of tasks. Each task objec
 Rules: 3-7 tasks for a normal request; one concern per task; "accept" must be verifiable (a command, a test, an observable behaviour); order by dependency via "deps" (ids). Output the JSON array only.`;
 
 // ── H-tier planning (algo--planner-tiering): H is tool access-control, not a model picker ──
-// WBS rungs, lowest sufficient tier first. H0 = one bounded file; H5 = masterplan; H6 = full-network ceiling.
-const H_TIERS = ["H0", "H1", "H2", "H3", "H4", "H5", "H6"];
+// Access-scope tiers (RFC--H-AXIS-0.6.0 D1): five capability sets, lowest sufficient first.
+// H0 = one bounded file … H4 = full set (network) + approval. H5/H6 removed in 0.6.0a
+// (they granted nothing H4 does not); a legacy explicit "H5"/"H6" is an unknown tier and
+// falls back safe-low via the rung default below — fail-closed, guarded by doc_lint X1.
+const H_TIERS = ["H0", "H1", "H2", "H3", "H4"];
 // map an atom's WBS rung (type/hierarchy noun) → tier index. Lowest tier that suffices.
 const RUNG_TIER = {
   subtask: 0, atom: 0,
@@ -79,7 +82,7 @@ const RUNG_TIER = {
   feature: 2, story: 2,
   epic: 3,
   initiative: 4, capability: 4,
-  masterplan: 5, program: 5,
+  masterplan: 4, program: 4,
 };
 
 export function assignTier(atom = {}, { nearCap = false } = {}) {

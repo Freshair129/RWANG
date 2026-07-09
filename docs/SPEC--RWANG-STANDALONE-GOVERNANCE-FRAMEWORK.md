@@ -1,7 +1,7 @@
 ---
-version: "0.5.0b"
+version: "0.6.0b"
 created_at: "2026-07-01T00:00:00+07:00,ATHER,pending"
-last_update: "2026-07-09T00:00:00+07:00,ClaudeFable"
+last_update: "2026-07-10T00:00:00+07:00,ClaudeFable"
 status: "candidate"
 superseded_by: null
 attributes:
@@ -28,7 +28,7 @@ Choose the minimum process that preserves correctness, safety, maintainability, 
 Every non-trivial task must declare:
 
 - Complexity level: `C-0` to `C-3`
-- Context-hop tier: `H0` to `H6`
+- Access scope: `H0` to `H4` — defaults from C (`C-0`→`H0`, `C-1`→`H1`, `C-2`→`H2`, `C-3`→`H3`; `H4` by declaration + approval); declare explicitly only to override upward
 - Dispatch tier: `T-local` / `T-cloud` / `T-human` / `T-a2a`
 - Fan-out scale: `W2` to `W4`
 - Risk: `LOW`, `MEDIUM`, or `HIGH` — defaults from C (`C-0`/`C-1` = LOW, `C-2` = MEDIUM, `C-3` = HIGH); declare explicitly only to override upward, never downward
@@ -55,7 +55,7 @@ RWANG uses five independent axes. Do not overload one axis to mean another.
 | Axis | Name | Meaning | Direction |
 | --- | --- | --- | --- |
 | `C` | Complexity | Process depth required before execution | Higher C = more review and artifacts |
-| `H` | Context-Hop | Retrieval radius and tool-access scope | Higher H = wider context and higher cost |
+| `H` | Access Scope | Tool/permission ceiling of the executor (formerly Context-Hop) | Higher H = wider tool access; the top tier requires approval |
 | `D` | Compaction Depth | Abstraction height of the artifact — its layer in the document stack | Higher D = more abstract, closer to intent; lower D = closer to code |
 | `T` | Dispatch Tier | Execution/model/provider class | Depends on provider registry |
 | `W` | Fan-out Scale | Branching width / peer connection count | Higher W = more coupling risk |
@@ -67,7 +67,7 @@ RWANG uses five independent axes. Do not overload one axis to mean another.
 | `C-0` | Trivial | Text -> Code | Typo, comment, tiny config, isolated copy change | `H0` |
 | `C-1` | Direct | Text -> Code | Small clear task, single-file bug fix, low-risk behavior | `H1` |
 | `C-2` | Doc-Driven | Text -> Doc -> Code | Feature work, multi-file work, public behavior, medium risk | `H2` |
-| `C-3` | Architecture-Driven | Text -> Doc -> Diagram -> Code | Architecture, governance, security, cross-system, platform-level work | `H3` (`H4`-`H6` by declaration) |
+| `C-3` | Architecture-Driven | Text -> Doc -> Diagram -> Code | Architecture, governance, security, cross-system, platform-level work | `H3` (`H4` by declaration) |
 
 Rules:
 
@@ -75,29 +75,28 @@ Rules:
 - C-3 requires architecture review and owner approval before implementation.
 - Do not downgrade complexity after approval without a recorded reason.
 
-## 5. H Axis: Context-Hop / Access Scope
+## 5. H Axis: Access Scope
 
-`H` controls how far an agent may retrieve context, inspect files, and request tool access.
+`H` is the executor's tool/permission ceiling — which capabilities an agent may use while executing its task. Each tier is defined by an enforceable capability set, one-to-one with the runtime's tool allow-sets. (Historically named "Context-Hop"; the graph-distance reading returns as a separate, measured retrieval concern per RFC--H-AXIS-0.6.0 D3 — binding text does not use hop language until hops are computed.)
 
-| H Tier | Scope | Typical Work | Runtime intent |
+| H Tier | Capability set | Scope reading | Extra requirement |
 | --- | --- | --- | --- |
-| `H0` | Atom/subtask only | Tiny local edit, patch, config value | No broad search; atom-local context only |
-| `H1` | Task/component | Component assembly, immediate imports/exports | Local neighborhood only |
-| `H2` | Story/feature | Feature folder, nearby types, data contracts | Feature-level context |
-| `H3` | Epic/module | Cross-module surface, integration, API/event contracts | Module-level context |
-| `H4` | Phase/architecture | Architecture, governance, security, access control | Architecture scan, approval required |
-| `H5` | Masterplan/roadmap | Platform direction, operating model | Whole-product context, owner approval required |
-| `H6` | Full-network ceiling | Systemic coupling analysis, recovery, emergency audit | Rare escalation ceiling |
+| `H0` | read (single bounded file) | atom/subtask | — |
+| `H1` | + glob, grep | task/component neighborhood | — |
+| `H2` | + write, multi-file | story/feature | — |
+| `H3` | + shell | epic/module | — |
+| `H4` | + network (full set) | architecture / cross-system / platform | approval before implementation |
 
 Hard rules:
 
 - `H` is not compaction depth.
 - `H` is not model quality.
-- Higher `H` increases token cost and review burden.
-- `H4` requires approval by the Architecture gate owner (Architect, Section 7.2); `H5`-`H6` require owner approval (`T-human`) before implementation.
+- `H` is not retrieval relevance and not budget: relevance is a retrieval-scoring concern (RFC--H-AXIS-0.6.0 D2/D3) and spend is governed by the cost caps — `H` never duplicates either.
+- Higher `H` increases blast radius and review burden.
+- `H4` requires approval before implementation; the grantor derives from C (Section 10): `C-2` scope — the Architecture gate owner (Architect, Section 7.2); `C-3` scope — the owner (`T-human`).
 - If an agent needs a higher H than the task allows, trigger Brief Here or request approval.
 - **Budget Control:** If a task's context volume exceeds its token/cost budget while staying within its allowed H tier, the agent may delegate part of the work to a peer/sub-agent instead of expanding its own context. A delegate inherits the parent task's approved H ceiling; delegation never widens H scope without approval.
-- **Ceiling Limit:** If a task already at `H6` still cannot resolve its required context, the agent must halt and trigger Brief Here; the owner (`T-human`) decides how to proceed.
+- **Ceiling Limit:** If a task already at `H4` still cannot resolve its required context, the agent must halt and trigger Brief Here; the owner (`T-human`) decides how to proceed.
 
 ## 6. D Axis: Compaction Depth
 
@@ -223,8 +222,8 @@ Use W-scale for task decomposition breadth, graph node degree, roadmap branching
 | `C-0/H0` | Change note or task comment | tiny fix note, command output |
 | `C-1/H1` | Task spec or issue note | local bug report, component contract |
 | `C-2/H2` | Feature spec, runbook, or test plan | feature spec, API contract, acceptance criteria |
-| `C-3/H3-H4` | SDD, ADR, architecture standard, threat model | module design, access model, migration plan |
-| `C-3/H5-H6` | PRD, roadmap, operating model, systemic audit | masterplan, platform governance, recovery brief |
+| `C-3/H3` | SDD, ADR, architecture standard, threat model | module design, access model, migration plan |
+| `C-3/H4` | PRD, roadmap, operating model, systemic audit | masterplan, platform governance, recovery brief |
 
 Row selection: if a task's `C` and `H` point to different rows, the row further down the table (the stricter one) applies; `C-3`'s two rows are distinguished by the task's `H`.
 
@@ -232,7 +231,7 @@ Row selection: if a task's `C` and `H` point to different rows, the row further 
 
 For `C-2` and `C-3`, implementation must be backed by an approved human-readable artifact.
 
-A document or artifact is **approved** iff its frontmatter version carries no `b` suffix AND its status is `active` (Section 12); removing the suffix and setting status `active` is the approval act, recorded in the document's changelog row with the approver. Approval authority (total over C and H): `C-2` documents at any H, and any document at `H4` scope — the Architecture gate owner (Architect, Section 7.2); `C-3` documents at any H, and any document at `H5`-`H6` scope — the owner (`T-human`); when both clauses match, `T-human` wins.
+A document or artifact is **approved** iff its frontmatter version carries no `b` suffix AND its status is `active` (Section 12); removing the suffix and setting status `active` is the approval act, recorded in the document's changelog row with the approver. Approval authority (total over C): `C-2` documents (any H) — the Architecture gate owner (Architect, Section 7.2); `C-3` documents (any H) — the owner (`T-human`). Implementation approval for `H4` scope follows the same C-derived grantor (Section 5).
 
 Required trace:
 
@@ -299,7 +298,7 @@ RWANG runtime should eventually enforce:
 
 - task cannot dispatch if its required doc gate is missing;
 - task cannot exceed allowed `H` without approval;
-- `H4-H6` triggers architecture approval;
+- `H4` triggers approval (grantor per Section 5);
 - `C-2/C-3` requires doc approval before implementation;
 - unresolved Brief Here holds (Section 11) block dispatch;
 - governance gates cannot be bypassed by UI, CLI, daemon, MCP, or A2A;
@@ -314,7 +313,7 @@ Every non-trivial agent task must output:
 
 ```markdown
 **Complexity:** C-X
-**Context-Hop:** HY (one of H0-H6)
+**Access Scope:** HY (one of H0-H4; omit when equal to the C default)
 **Dispatch Tier:** T-local / T-cloud / T-human / T-a2a
 **Model Level:** Frontier / Mid-tier / SLM / Edge / N/A
 **W-Scale:** W2 / W3 / W4
@@ -341,6 +340,7 @@ Model Level is copied from the provider-registry resolution (Section 7.1), not c
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.6.0b | 2026-07-10 | candidate | 0.6.0a per RFC--H-AXIS-0.6.0 (D1-D6 approved by Boss 2026-07-10): H redefined as Access Scope with five capability-defined tiers (H5/H6 removed — no atom used them; they granted nothing the top tier does not), approval grantor derives from C, H defaults from C with upward-only override, artifact table rekeyed, hop language removed from binding text pending measurement (D3). Major bump: rules removed/renamed. | pending | ClaudeFable |
 | 0.5.0b | 2026-07-09 | candidate | Applied 25 adversarially-verified review fixes (see REVIEW--GOVERNANCE-FRAMEWORK-2026-07-09): added Safety Invariants (2.1) and scope/precedence vs SPEC--AGENT-RUNTIME-GOVERNANCE; repaired 7.2 gate ownership, Leader flow, failure semantics, C-scaled applicability, Worker-only coding + Hotfix definition, read-only gate roles, hybrid-injection authorization, runtime role binding; defined Verify Gate, approval, Brief Packet, non-trivial, Risk defaults; totalized W and artifact tables; fixed D direction and Budget/Ceiling rules; delegated model names to the provider registry; removed per-task D; tightened status enum and MUST language; post-apply consistency pass (verify-gate force scoping, approval-authority totality, hotfix ownership without a Leader, template notation, escalation order). | pending | ClaudeFable |
 | 0.4.0b | 2026-07-09 | candidate | Added Gate-Driven Execution model (section 7.2) with role-to-gate mapping and hybrid injection rules. | pending | Antigravity |
 | 0.3.0b | 2026-07-09 | candidate | Added Budget Control and Ceiling Limit rules to the H Axis section. | pending | Antigravity |
