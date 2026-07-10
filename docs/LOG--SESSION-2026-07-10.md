@@ -66,6 +66,14 @@
 
 Smoke ที่ engine จริง: `WORKER perm=full` · `REVIEWER perm=read` (write tools ถอดครบ) → **Matrix 18/18 enforced** · Rwang `b01638b` · G-Maiden `12d56112`
 
+## 4c. §8 W4 super-hub gate (Matrix 20/20)
+
+§8 มาร์ก W4 (≥9 connections) ว่า "block until decomposed or approved" ตั้งแต่ 0.1.0b แต่มีแค่การวัด (hop_metrics ชี้ hub) **ไม่มี gate** — รูปเดียวกับ §7.2 ก่อน B3. Fix แบบ reuse ไม่ประดิษฐ์: `fanoutDegree` (undirected = deps ตัวเอง + task ที่ขึ้นกับมัน, **ตรงกับ hop_metrics เป๊ะ**) + `isW4`(≥9) เข้า `needsConfirm()` → W4 ผ่านประตู confirm เดิม (approved=confirm, decomposed=ลด degree<9). guard `w4_gate_check.py` G1–G4 (threshold=9 ตรง SPEC, undirected degree, needsConfirm wiring, SPEC §8 doc side).
+
+Smoke ที่ engine จริง: `H deg9 → BLOCKED "W4 super-hub (degree 9 ≥ 9) — decompose or approve"` · `M deg8 → ไม่โดน W4` · `confirm แล้วเคลียร์` — ตรงกับ super-hub จริง (`G0.1` deg9). **Matrix 20/20 enforced** · Rwang `e52afb6` · G-Maiden `600bad51`
+
+หมายเหตุ process: W4 commit ฝั่ง Rwang ลง main ตรง (ลืมสร้าง branch — ต่างจาก feature อื่นในวัน); เนื้อหาถูก lint ผ่าน 20/20, ไม่ reset เพราะ destructive ceremony เพื่อผลเท่าเดิม
+
 ## 5. ตัวเลขของวัน
 
 - Multi-agent runs: 14 + 31 + 2 + 2 agents (~3.7M subagent tokens) — design study, adversarial review, verification passes
