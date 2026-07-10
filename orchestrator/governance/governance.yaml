@@ -148,6 +148,24 @@ policies:
     audit_event: "*"
     gp: GP6
 
+  - policy: w4-superhub-gate
+    status: enforced   # GP11 — smoke-proven ที่ G-Maiden (2026-07-10): task H deg 9 ถูกปฏิเสธที่
+                       # dispatch ด้วย "W4 super-hub (degree 9 ≥ 9) — decompose or approve"; task M
+                       # deg 8 ไม่โดน W4; confirm H แล้ว gate เคลียร์. ตรงกับ hop_metrics (G0.1 deg9).
+                       # SPEC §8: W4 (>=9 sibling/peer connections) = "block high-risk
+                       # deployment until decomposed or approved". §8 เคยมีแค่การวัด (hop_metrics
+                       # ชี้ super-hub) แต่ไม่มี gate — รูปเดียวกับ §7.2 ก่อน B3. Fix: fanoutDegree
+                       # (undirected = deps ตัวเอง + task ที่ขึ้นกับมัน ตรงกับ hop_metrics) + isW4
+                       # เข้า needsConfirm() → W4 ผ่านประตู confirm เดิม (approved=confirm,
+                       # decomposed=ลด degree<9). ไม่สร้าง gate ใหม่. flip เป็น enforced หลัง e2e
+                       # smoke: task deg 9 ถูกปฏิเสธที่ dispatch จนกว่าจะ confirm, deg 8 ผ่าน
+    intent: ""   # code ล้วน — gate อยู่ที่ dispatch ผ่าน needsConfirm
+    guard: orchestrator/governance/w4_gate_check.py
+    guard_test: "python orchestrator/governance/w4_gate_check.py"
+    check: structural
+    audit_event: blocked
+    gp: GP11
+
   - policy: graph-health-metrics
     status: enforced   # GP10 (RCA Phase D): RFC--H-AXIS D3/D4 ถอดคำว่า "hop" ออกจากข้อความบังคับ
                        # พร้อมสัญญาว่าจะกลับมาเมื่อ "วัดได้" — นี่คือเครื่องวัดนั้น. deterministic,
