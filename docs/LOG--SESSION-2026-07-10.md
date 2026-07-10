@@ -56,6 +56,16 @@
 | `governance.required=true` ใน config G-Maiden เมื่อพร้อม fail-closed | Boss | ตอนนี้ warn-path โดยตั้งใจ |
 | ~~0.6.1(→0.7.0): H0/H1 read-only ชนกับ C-0/C-1 default~~ **แก้แล้ว** — SPEC **0.7.0 active** (อนุมัติโดย Boss) (Rwang `58c4968`, branch `fix/h-tier-write-coherence`) + mirror G-Maiden (`15ac880f` on main): H คุม *reach* อย่างเดียว, `write` ไม่ถูก gate ด้วย tier (read-only เป็นเรื่อง ROLE §7.2), profile ใหม่ `bounded` (H0), guard **A5** ห้าม tier ไหน map ไป read-only. Smoke 6/6 ที่ engine จริง | **เสร็จ** — approved + merged | เป็นการใช้ RFC D2 (un-fuse) อีกชั้น ไม่ใช่ decision ใหม่ |
 
+## 4b. Phase B3 — gate owner อ่านอย่างเดียว (เพิ่มหลัง 0.7.0)
+
+พบช่องโหว่ที่**รั่วอยู่จริง** (ไม่ใช่ latent): `runReview()` เรียก `runProvider()` โดยไม่ส่ง opts → reviewer ตกไปได้ `defaultPermission` (`safe` = acceptEdits) แปลว่า **agent ที่ถูก spawn มา gate ชิ้นงาน มีสิทธิ์แก้ชิ้นงานที่ตัวเองกำลังตัดสิน** ทุกครั้งที่ review รัน — §7.2 เป็นกฎหมายมาตั้งแต่ 0.5.0b แต่ไม่เคยมี guard
+
+แก้: `permissionFor(t,{role})` รับ **bound ที่สาม** (type / H tier / role) แล้วคืนค่าที่เข้มที่สุด — reviewer เหนือ task H4 ก็ยัง read-only; profile `read` กลายเป็น role profile จริง (`acceptEdits --disallowedTools Edit Write MultiEdit NotebookEdit Bash` — ถอด tool ดีกว่าใช้ plan mode ที่จะเปลี่ยนรูปผลลัพธ์จน `parseVerdict` พัง); guard `role_readonly_check.py` R1–R4 (R4 ห้ามเรียก `runProvider` แบบไม่ส่ง opts ซ้ำอีก)
+
+ขอบเขตตั้งใจ: กดเฉพาะ agent ที่ spawn มา **gate** — architect ที่เขียนเอกสารของตัวเองไม่ถูกกด · Hotfix exception (§7.2) ยังไม่ implement (ไม่มี role Leader ใน engine)
+
+Smoke ที่ engine จริง: `WORKER perm=full` · `REVIEWER perm=read` (write tools ถอดครบ) → **Matrix 18/18 enforced** · Rwang `b01638b` · G-Maiden `12d56112`
+
 ## 5. ตัวเลขของวัน
 
 - Multi-agent runs: 14 + 31 + 2 + 2 agents (~3.7M subagent tokens) — design study, adversarial review, verification passes
