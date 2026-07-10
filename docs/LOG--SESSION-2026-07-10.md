@@ -71,4 +71,4 @@ Smoke ที่ engine จริง: `WORKER perm=full` · `REVIEWER perm=read` 
 - Multi-agent runs: 14 + 31 + 2 + 2 agents (~3.7M subagent tokens) — design study, adversarial review, verification passes
 - Findings: 45 doc fixes (25 verified + 20 consistency) + 1 code bug + 11 fresh-eyes + 9 round-2
 - Matrix: 13 → **17 enforced policies** (doc-governance, access-scope, engine-interlock + smoke)
-- Commits: Rwang ×11 · govibe ×3 (+merge) · G-Maiden ×1 (+merge) — push ครบสาม remote
+- Commits: Rwang ×15 · govibe ×3 (+merge) · G-Maiden ×4 — Rwang/G-Maiden push ครบ; **govibe ยังค้าง 3 commits ไม่ได้ push** (STD 2.3.0+ga, GVDOC-1003 1.4.0, POC 0.1.1 — sign-off แล้วแต่ยังไม่ขึ้น remote)
