@@ -98,8 +98,11 @@ export function assignTier(atom = {}, { nearCap = false } = {}) {
   return H_TIERS[Math.min(idx, H_TIERS.length - 1)];
 }
 
-// tierTools: capability allow-set per tier. H0 forbids glob (single bounded file, no repo-wide sweep);
-// each higher tier is a superset that progressively unlocks read→glob→multiFile→shell.
+// tierTools: capability allow-set per tier. H bounds REACH, never write authority (SPEC §5 hard
+// rule; whether an agent may write at all is a ROLE question — §7.2: Worker writes, gate-owning
+// roles are read-only). So `write` is unconditional here and every tier may edit the file(s) it
+// was handed; what climbs is discovery and blast radius: glob/grep → multiFile → shell → network.
+// H0 = one bounded file, no repo-wide sweep (the origin's "0 hop": hotfix/typo/unit-test).
 export function tierTools(tier = "H0") {
   const idx = Math.max(0, H_TIERS.indexOf(String(tier).toUpperCase()));
   return {
@@ -107,7 +110,7 @@ export function tierTools(tier = "H0") {
     glob: idx >= 1,
     grep: idx >= 1,
     multiFile: idx >= 2,
-    write: idx >= 2,
+    write: true,
     shell: idx >= 3,
     network: idx >= 4,
   };
