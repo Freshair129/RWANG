@@ -54,7 +54,7 @@
 | G-Maiden `orchestration/` stack เก่ากว่า Rwang มาก (ไม่มี cost-mode/multi-account; providers ต่าง ~246 บรรทัด) — วันนี้ port เฉพาะ B2 แบบ surgical | ตัดสินใจภายหลัง | full sync เป็นงานแยก |
 | FLIGHT UX Phase 1 build (Tauri shell + Big Board + Poll Board + Trace Drawer) | รอ Boss เปิดงาน | spec §11 มี build plan สามเฟส |
 | `governance.required=true` ใน config G-Maiden เมื่อพร้อม fail-closed | Boss | ตอนนี้ warn-path โดยตั้งใจ |
-| ~~0.6.1: H0/H1 read-only ชนกับ C-0/C-1 default~~ **แก้แล้ว** — SPEC **0.6.1b candidate** (Rwang `58c4968`, branch `fix/h-tier-write-coherence`) + mirror G-Maiden (`15ac880f` on main): H คุม *reach* อย่างเดียว, `write` ไม่ถูก gate ด้วย tier (read-only เป็นเรื่อง ROLE §7.2), profile ใหม่ `bounded` (H0), guard **A5** ห้าม tier ไหน map ไป read-only. Smoke 6/6 ที่ engine จริง | **รอ Boss sign-off** (ถอด `b` → merge) | เป็นการใช้ RFC D2 (un-fuse) อีกชั้น ไม่ใช่ decision ใหม่ |
+| ~~0.6.1(→0.7.0): H0/H1 read-only ชนกับ C-0/C-1 default~~ **แก้แล้ว** — SPEC **0.7.0b candidate** (Rwang `58c4968`, branch `fix/h-tier-write-coherence`) + mirror G-Maiden (`15ac880f` on main): H คุม *reach* อย่างเดียว, `write` ไม่ถูก gate ด้วย tier (read-only เป็นเรื่อง ROLE §7.2), profile ใหม่ `bounded` (H0), guard **A5** ห้าม tier ไหน map ไป read-only. Smoke 6/6 ที่ engine จริง | **รอ Boss sign-off** (ถอด `b` → merge) | เป็นการใช้ RFC D2 (un-fuse) อีกชั้น ไม่ใช่ decision ใหม่ |
 
 ## 5. ตัวเลขของวัน
 
