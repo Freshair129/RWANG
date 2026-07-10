@@ -1,5 +1,5 @@
 ---
-version: "0.6.0"
+version: "0.7.0"
 created_at: "2026-07-01T00:00:00+07:00,ATHER,pending"
 last_update: "2026-07-10T00:00:00+07:00,Boss"
 status: "active"
@@ -81,9 +81,9 @@ Rules:
 
 | H Tier | Capability set | Scope reading | Extra requirement |
 | --- | --- | --- | --- |
-| `H0` | read (single bounded file) | atom/subtask | — |
-| `H1` | + glob, grep | task/component neighborhood | — |
-| `H2` | + write, multi-file | story/feature | — |
+| `H0` | edit the artifact(s) it was handed; no search | atom/subtask — hotfix, typo, unit test | — |
+| `H1` | + search (glob, grep) | task/component neighborhood | — |
+| `H2` | + multi-file | story/feature | — |
 | `H3` | + shell | epic/module | — |
 | `H4` | + network (full set) | architecture / cross-system / platform | approval before implementation |
 
@@ -92,6 +92,7 @@ Hard rules:
 - `H` is not compaction depth.
 - `H` is not model quality.
 - `H` is not retrieval relevance and not budget: relevance is a retrieval-scoring concern (RFC--H-AXIS-0.6.0 D2/D3) and spend is governed by the cost caps — `H` never duplicates either.
+- `H` is not write authority. Every tier may edit the artifacts it was handed; what climbs the ladder is **reach** — discovery (search), blast radius (multi-file), and escape hatches (shell, network). Whether an agent may write **at all** is a role question (Section 7.2: write is exclusive to the assigned Worker; gate-owning roles are read-only). A tier granting no write would paralyze every task routed to it, so no tier may map to a read-only execution profile.
 - Higher `H` increases blast radius and review burden.
 - `H4` requires approval before implementation; the grantor derives from C (Section 10): `C-2` scope — the Architecture gate owner (Architect, Section 7.2); `C-3` scope — the owner (`T-human`).
 - If an agent needs a higher H than the task allows, trigger Brief Here or request approval.
@@ -340,6 +341,7 @@ Model Level is copied from the provider-registry resolution (Section 7.1), not c
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.7.0 | 2026-07-10 | active | **Approved by Boss (CEO), owner / `T-human`** — the Section 10 authority for a `C-3` governance document; `b` suffix dropped, status `active` (the approval act, Section 12). **Minor bump per Section 12** (a new hard rule is added — first drafted as patch `0.6.1b`, reclassified: the bump table says "New rule → minor", and downgrading one's own change is exactly what Section 4 forbids). Coherence repair (defect found post-0.6.0, latent — no atom declares a tier today): the §5 capability column gated *write* at `H2` while §4 defaults route `C-0`→`H0` (typo fix) and `C-1`→`H1` (single-file bug fix), and the router maps coding rungs to `H1` — so a task declaring its own routed tier could not write. Root cause is the same fusion RFC D2 forbids: read-only-ness is a **role** property (§7.2), not an access-scope property. Fix: `H` bounds reach only (write unconditional; search/multi-file/shell/network climb), new hard rule added, no tier may map to a read-only profile (lint-enforced as A5). Ceiling still never raises; legacy undeclared tasks unchanged. | pending | ClaudeFable |
 | 0.6.0 | 2026-07-10 | active | Approved: upstream disposition recorded (STD-Execution-Governance 2.3.0+ga stable, GVDOC-1003 1.4.0 active — signed off and merged in govibe); `b` suffix dropped per Section 12 — the approval act. | pending | Boss (approver) |
 | 0.6.0b | 2026-07-10 | candidate | 0.6.0a per RFC--H-AXIS-0.6.0 (D1-D6 approved by Boss 2026-07-10): H redefined as Access Scope with five capability-defined tiers (H5/H6 removed — no atom used them; they granted nothing the top tier does not), approval grantor derives from C, H defaults from C with upward-only override, artifact table rekeyed, hop language removed from binding text pending measurement (D3). Major bump: rules removed/renamed. | pending | ClaudeFable |
 | 0.5.0b | 2026-07-09 | candidate | Applied 25 adversarially-verified review fixes (see REVIEW--GOVERNANCE-FRAMEWORK-2026-07-09): added Safety Invariants (2.1) and scope/precedence vs SPEC--AGENT-RUNTIME-GOVERNANCE; repaired 7.2 gate ownership, Leader flow, failure semantics, C-scaled applicability, Worker-only coding + Hotfix definition, read-only gate roles, hybrid-injection authorization, runtime role binding; defined Verify Gate, approval, Brief Packet, non-trivial, Risk defaults; totalized W and artifact tables; fixed D direction and Budget/Ceiling rules; delegated model names to the provider registry; removed per-task D; tightened status enum and MUST language; post-apply consistency pass (verify-gate force scoping, approval-authority totality, hotfix ownership without a Leader, template notation, escalation order). | pending | ClaudeFable |

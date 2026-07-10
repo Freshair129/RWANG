@@ -401,7 +401,7 @@ const FULL_PERM_TYPES = new Set(["code", "eval", "guard"]);
 // matrix policy `access-scope-enforcement`): an atom that DECLARES its H tier gets that tier
 // as a permission CEILING — it can lower the type-derived profile, never raise it. Atoms with
 // no declared tier keep the legacy type defaults verbatim, so nothing regresses.
-const PERM_RANK = { read: 0, safe: 1, shell: 2, full: 3 };
+const PERM_RANK = { read: 0, bounded: 1, safe: 2, shell: 3, full: 4 };
 function permissionFor(t) {
   const typePerm = FULL_PERM_TYPES.has(t.type) ? "full" : (CONFIG.providers?.claude?.defaultPermission || "safe");
   const tier = typeof t.tier === "string" ? t.tier.toUpperCase() : null;

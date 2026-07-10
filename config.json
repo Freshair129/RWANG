@@ -29,7 +29,7 @@
           "--permission-mode",
           "bypassPermissions"
         ],
-        "_comment": "read=plan mode (อ่านอย่างเดียว), safe=แก้ไฟล์ได้แต่ Bash ถูก block, shell=แก้ไฟล์+Bash, full=ทำได้ทุกอย่าง (bypass) — บน CLI executor: shell เปิด network โดยปริยายผ่าน curl ดังนั้น H3/H4 ต่างกันที่ bypassPermissions + approval gate",
+        "_comment": "read=plan (ROLE profile: gate-owning roles §7.2 — ห้าม tier ไหน map มาที่นี่), bounded=แก้ไฟล์ที่ได้รับได้ แต่ห้ามค้นหา/shell (H0 \"0 hop\"), safe=แก้ไฟล์ + ค้นหาได้ Bash ถูก block, shell=+Bash, full=bypass ทั้งหมด. ข้อจำกัด: --disallowedTools เป็น variadic ต้องอยู่ท้ายสุดของ permArgs เสมอ (extraArgs ต้องว่าง)",
         "read": [
           "--permission-mode",
           "plan"
@@ -38,6 +38,14 @@
           "--permission-mode",
           "acceptEdits",
           "--allowedTools",
+          "Bash"
+        ],
+        "bounded": [
+          "--permission-mode",
+          "acceptEdits",
+          "--disallowedTools",
+          "Glob",
+          "Grep",
           "Bash"
         ]
       },
@@ -61,12 +69,12 @@
         "haiku": "haiku"
       },
       "tierPermissions": {
-        "H0": "read",
-        "H1": "read",
+        "H0": "bounded",
+        "H1": "safe",
         "H2": "safe",
         "H3": "shell",
         "H4": "full",
-        "_comment": "Access Scope ceiling (SPEC 0.6.0 §5): atom ที่ประกาศ tier จะถูก \"กด\" profile ลงตามเพดานนี้ ไม่มีการยกขึ้น; atom ไม่ประกาศ tier = พฤติกรรมเดิม (FULL_PERM_TYPES/defaultPermission) — mapping นี้ lint-lock โดย access_scope_check.py แก้ที่นี่ต้องแก้ EXPECTED ใน guard พร้อมกัน"
+        "_comment": "Access Scope ceiling (SPEC §5): H คุม REACH เท่านั้น — ไม่มี tier ไหน map มาที่ read เพราะ read-only เป็นเรื่องของ ROLE (§7.2 Worker เขียน / gate-owning roles อ่านอย่างเดียว). H1 กับ H2 ใช้ profile เดียวกันที่ชั้น CLI (CLI แยก \"กี่ไฟล์\" ไม่ได้) — ความต่างอยู่ที่ tierTools.multiFile + prompt scope. lint-locked โดย access_scope_check.py: แก้ที่นี่ ต้องแก้ EXPECTED ใน guard ใน commit เดียวกัน"
       }
     },
     "ollama": {

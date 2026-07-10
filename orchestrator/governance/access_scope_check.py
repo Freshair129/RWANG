@@ -7,14 +7,19 @@ while dispatch ran binary safe/full. This guard proves the wiring EXISTS and sta
 
   A1  config.json providers.claude.tierPermissions covers exactly H0..H4 (ignoring _keys),
       every value names a real providers.claude.permissionModes profile, and the profile
-      rank is non-decreasing from H0 to H4 (rank: read < safe < shell < full)
+      rank is non-decreasing from H0 to H4 (rank: read < bounded < safe < shell < full)
   A2  the mapping equals the lint-locked EXPECTED table below — changing the ceiling map is
       a deliberate act: edit config.json and this tuple in the same commit (same pattern as
       governance_lint.REQUIRED_ENFORCED)
   A3  engine.mjs permissionFor() consumes tierPermissions with ceiling semantics (PERM_RANK
       comparison present) — not just any mention somewhere in the file
-  A4  planner.mjs tierTools unlock thresholds stay consistent with the profile map
-      (write unlocks at index 2 ↔ H0/H1 are read-tier; shell at 3 ↔ H3; network at 4 ↔ H4)
+  A4  planner.mjs tierTools bounds REACH, not write authority: `write` is unconditional, while
+      multiFile/shell/network keep their climb thresholds (2/3/4)
+  A5  no access-scope tier maps to a read-only profile. H bounds reach; whether an agent may
+      write at all is a ROLE question (SPEC §7.2 — Worker writes, gate-owning roles are
+      read-only). This is the check that catches the H1→read trap: the router assigns coding
+      rungs to H1 (planner RUNG_TIER `code: 1`), so a read-only H1 makes the router's own
+      output unusable — a paralyzed worker that cannot perform the task it was routed.
 
 Structural check: proves the mechanism is present and coherent, not an e2e spawn test —
 the e2e smoke belongs to the engine's runnable origin before the policy flips to enforced.
@@ -36,10 +41,12 @@ for _s in (sys.stdout, sys.stderr):
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 
-RANK = {"read": 0, "safe": 1, "shell": 2, "full": 3}
+RANK = {"read": 0, "bounded": 1, "safe": 2, "shell": 3, "full": 4}
 TIERS = ["H0", "H1", "H2", "H3", "H4"]
+# Profiles that cannot write. Reserved for ROLE-scoped use (SPEC §7.2); no H tier may map here (A5).
+READ_ONLY_PROFILES = {"read"}
 # Lint-locked ceiling map (A2). Edit together with config.json, never one side alone.
-EXPECTED = {"H0": "read", "H1": "read", "H2": "safe", "H3": "shell", "H4": "full"}
+EXPECTED = {"H0": "bounded", "H1": "safe", "H2": "safe", "H3": "shell", "H4": "full"}
 
 
 def check(config_text, engine_text, planner_text):
@@ -66,6 +73,12 @@ def check(config_text, engine_text, planner_text):
         if tp and tp != EXPECTED:
             errors.append(f"A2 ceiling map diverges from the lint-locked EXPECTED table: {tp} != {EXPECTED} "
                           "(edit config.json and this guard's EXPECTED in the same commit)")
+        # A5 — H bounds reach, never write authority (SPEC §5 hard rule / §7.2 role read-only)
+        for t in TIERS:
+            if tp.get(t) in READ_ONLY_PROFILES:
+                errors.append(f"A5 tierPermissions[{t}]={tp[t]!r} is a read-only profile — H bounds reach, "
+                              "not write authority; read-only is granted by ROLE (SPEC §7.2), never by tier. "
+                              "A read-only tier paralyzes every task the router assigns to it.")
     # A3 — engine consumes the map with ceiling semantics
     m = re.search(r"function permissionFor\s*\([^)]*\)\s*\{(.*?)\n\}", engine_text, re.DOTALL)
     if not m:
@@ -82,7 +95,10 @@ def check(config_text, engine_text, planner_text):
         errors.append("A4 planner.mjs: tierTools() not found")
     else:
         body = tt.group(1)
-        for cap, idx in (("write", 2), ("shell", 3), ("network", 4)):
+        if not re.search(r"write:\s*true\b", body):
+            errors.append("A4 planner.mjs tierTools: `write` must be unconditional (`write: true`) — H bounds "
+                          "reach, not write authority (SPEC §5); a tier-gated write paralyzes routed tasks")
+        for cap, idx in (("multiFile", 2), ("shell", 3), ("network", 4)):
             if not re.search(rf"{cap}:\s*idx\s*>=\s*{idx}\b", body):
                 errors.append(f"A4 planner.mjs tierTools: expected `{cap}: idx >= {idx}` — capability "
                               "unlock thresholds drifted from the H0..H4 profile map")
@@ -91,14 +107,14 @@ def check(config_text, engine_text, planner_text):
 
 def self_test():
     good_cfg = json.dumps({"providers": {"claude": {
-        "permissionModes": {"read": [], "safe": [], "shell": [], "full": []},
+        "permissionModes": {"read": [], "bounded": [], "safe": [], "shell": [], "full": []},
         "tierPermissions": dict(EXPECTED, _comment="x")}}})
     good_eng = ("const PERM_RANK = { read: 0 };\n"
                 "function permissionFor(t) {\n  const x = CONFIG.providers?.claude?.tierPermissions;\n"
                 "  return PERM_RANK[x] ? 1 : 2;\n}\n")
     good_pln = ("function tierTools(tier) {\n  const idx = 0;\n"
                 "  return { read: true, glob: idx >= 1, grep: idx >= 1, multiFile: idx >= 2,\n"
-                "    write: idx >= 2, shell: idx >= 3, network: idx >= 4 };\n}\n")
+                "    write: true, shell: idx >= 3, network: idx >= 4 };\n}\n")
     fails = []
 
     def expect(label, cfg, eng, pln, want):
@@ -112,8 +128,8 @@ def self_test():
 
     expect("good", good_cfg, good_eng, good_pln, None)
     bad_missing = json.dumps({"providers": {"claude": {
-        "permissionModes": {"read": [], "safe": [], "shell": [], "full": []},
-        "tierPermissions": {"H0": "read", "H1": "read", "H2": "safe", "H3": "shell"}}}})
+        "permissionModes": {"read": [], "bounded": [], "safe": [], "shell": [], "full": []},
+        "tierPermissions": {"H0": "bounded", "H1": "safe", "H2": "safe", "H3": "shell"}}}})
     expect("missing H4", bad_missing, good_eng, good_pln, "A1")
     bad_map = good_cfg.replace('"H3": "shell"', '"H3": "full"').replace('"H4": "full"', '"H4": "shell"')
     expect("non-monotonic / diverged", bad_map, good_eng, good_pln, "A1")
@@ -125,6 +141,12 @@ def self_test():
            good_pln, "A3")
     expect("drifted thresholds", good_cfg, good_eng,
            good_pln.replace("shell: idx >= 3", "shell: idx >= 1"), "A4")
+    # A4 regression: the pre-0.6.1 tier-gated write (the bug this guard now forbids)
+    expect("tier-gated write", good_cfg, good_eng,
+           good_pln.replace("write: true", "write: idx >= 2"), "A4")
+    # A5: a read-only tier paralyzes every task the router assigns to it (the H1->read trap)
+    expect("read-only tier H1", good_cfg.replace('"H1": "safe"', '"H1": "read"'), good_eng, good_pln, "A5")
+    expect("read-only tier H0", good_cfg.replace('"H0": "bounded"', '"H0": "read"'), good_eng, good_pln, "A5")
     return fails
 
 
