@@ -29,10 +29,16 @@
           "--permission-mode",
           "bypassPermissions"
         ],
-        "_comment": "read=plan (ROLE profile: gate-owning roles §7.2 — ห้าม tier ไหน map มาที่นี่), bounded=แก้ไฟล์ที่ได้รับได้ แต่ห้ามค้นหา/shell (H0 \"0 hop\"), safe=แก้ไฟล์ + ค้นหาได้ Bash ถูก block, shell=+Bash, full=bypass ทั้งหมด. ข้อจำกัด: --disallowedTools เป็น variadic ต้องอยู่ท้ายสุดของ permArgs เสมอ (extraArgs ต้องว่าง)",
+        "_comment": "read=ROLE read-only (§7.2): อ่าน/ค้นได้ แต่ Edit/Write/MultiEdit/NotebookEdit/Bash ถูกถอด — ห้าม tier ไหน map มาที่นี่ (guard A5); bounded=แก้ไฟล์ที่ได้รับได้ ห้ามค้นหา/shell (H0); safe=แก้ไฟล์+ค้นหา Bash block; shell=+Bash; full=bypass. --disallowedTools/--allowedTools เป็น variadic ต้องอยู่ท้ายสุดของ permArgs เสมอ",
         "read": [
           "--permission-mode",
-          "plan"
+          "acceptEdits",
+          "--disallowedTools",
+          "Edit",
+          "Write",
+          "MultiEdit",
+          "NotebookEdit",
+          "Bash"
         ],
         "shell": [
           "--permission-mode",
@@ -75,6 +81,10 @@
         "H3": "shell",
         "H4": "full",
         "_comment": "Access Scope ceiling (SPEC §5): H คุม REACH เท่านั้น — ไม่มี tier ไหน map มาที่ read เพราะ read-only เป็นเรื่องของ ROLE (§7.2 Worker เขียน / gate-owning roles อ่านอย่างเดียว). H1 กับ H2 ใช้ profile เดียวกันที่ชั้น CLI (CLI แยก \"กี่ไฟล์\" ไม่ได้) — ความต่างอยู่ที่ tierTools.multiFile + prompt scope. lint-locked โดย access_scope_check.py: แก้ที่นี่ ต้องแก้ EXPECTED ใน guard ใน commit เดียวกัน"
+      },
+      "rolePermissions": {
+        "reviewer": "read",
+        "_comment": "§7.2 gate-owning roles อ่านอย่างเดียวต่อ artifact ที่ตัวเอง GATE. บังคับที่จุด gate: agent ที่ถูก spawn มา review. ไม่เหมารวม role architect เพราะงาน design/plan คือการ \"เขียนเอกสารของตัวเอง\" ไม่ใช่การ gate ของคนอื่น. Hotfix exception (§7.2) ยังไม่ implement (Leader ไม่มีใน engine). lint-locked โดย role_readonly_check.py"
       }
     },
     "ollama": {

@@ -402,12 +402,18 @@ const FULL_PERM_TYPES = new Set(["code", "eval", "guard"]);
 // as a permission CEILING — it can lower the type-derived profile, never raise it. Atoms with
 // no declared tier keep the legacy type defaults verbatim, so nothing regresses.
 const PERM_RANK = { read: 0, bounded: 1, safe: 2, shell: 3, full: 4 };
-function permissionFor(t) {
+// The spawn permission is the MOST RESTRICTIVE of three independent bounds — each may lower it,
+// none may raise it: task TYPE (legacy default) · declared H tier (access scope, §5) · the spawning
+// ROLE (§7.2 — an agent spawned to GATE an artifact is read-only over it; matrix `role-readonly-gate`).
+function permissionFor(t, { role = null } = {}) {
   const typePerm = FULL_PERM_TYPES.has(t.type) ? "full" : (CONFIG.providers?.claude?.defaultPermission || "safe");
+  const bounds = [typePerm];
   const tier = typeof t.tier === "string" ? t.tier.toUpperCase() : null;
   const tierPerm = tier ? CONFIG.providers?.claude?.tierPermissions?.[tier] : null;
-  if (!tierPerm || !(tierPerm in PERM_RANK)) return typePerm;
-  return PERM_RANK[tierPerm] < (PERM_RANK[typePerm] ?? 9) ? tierPerm : typePerm;
+  if (tierPerm && tierPerm in PERM_RANK) bounds.push(tierPerm);
+  const rolePerm = role ? CONFIG.providers?.claude?.rolePermissions?.[role] : null;
+  if (rolePerm && rolePerm in PERM_RANK) bounds.push(rolePerm);
+  return bounds.reduce((lo, p) => (PERM_RANK[p] < (PERM_RANK[lo] ?? 9) ? p : lo));
 }
 
 // ---------- governance interlock (engine-lint-interlock — RCA Phase B2 #2) ----------
@@ -698,7 +704,11 @@ async function runReview(t, workerModel, worker) {
     CONFIG.providers.claude.auth.mode = getAuthMode();
   }
   const reviewTask = { ...t, id: `${t.id}#review` };
-  const r = await runProvider(parsed.provider, reviewTask, parsed.model, `${worker}.review`, prompt, CONFIG, PATHS);
+  // §7.2: the reviewer GATES this artifact, so it spawns read-only over it. Without an explicit
+  // permissionMode this call fell back to defaultPermission ("safe" = acceptEdits) and the gate
+  // owner could silently modify the very output it was judging.
+  const provOpts = { permissionMode: permissionFor(reviewTask, { role: "reviewer" }) };
+  const r = await runProvider(parsed.provider, reviewTask, parsed.model, `${worker}.review`, prompt, CONFIG, PATHS, provOpts);
   const u = r.usage || {};
   recordUsage({ id: t.id + "#review", model: reviewerFull, mode: r.provider || parsed.provider, cost: u.cost || 0, inTok: u.inTok || 0, outTok: u.outTok || 0, cache: u.cache || 0 });
   if (!r.ok && !r.logFile) return { ran: false };

@@ -163,8 +163,9 @@ policies:
 
   - policy: access-scope-enforcement
     status: enforced   # GP8 — smoke-proven ที่ runnable origin (G-Maiden de1c6c94, 2026-07-10):
-                       # argv จริงผ่านเส้น runAgent→runProvider→spawn 5/5 เคส — H2+code ถูกกดเหลือ
-                       # acceptEdits (จาก full), H0→plan (read-only), H3→acceptEdits+allowedTools Bash,
+                       # argv จริงผ่านเส้น runAgent→runProvider→spawn (re-smoked 6/6 หลัง SPEC 0.7.0):
+                       # H1+code เขียนได้ (กับดักเดิม), H0→bounded (แก้ไฟล์เดียว ห้าม Glob/Grep/Bash),
+                       # H2+code ถูกกดเหลือ acceptEdits จาก full, H3→+allowedTools Bash,
                        # legacy ไม่ประกาศ tier = bypassPermissions เดิมเป๊ะ, H4+docs ไม่ถูกยกขึ้น;
                        # guard ที่นี่เป็น structural (ceiling map lint-locked + engine consumption)
     intent: ""   # code ล้วน — เพดานอยู่ที่ spawn args ไม่ใช่ prompt
@@ -173,6 +174,25 @@ policies:
     check: structural
     audit_event: blocked
     gp: GP8
+
+  - policy: role-readonly-gate
+    status: enforced   # GP9 — smoke-proven ที่ G-Maiden (2026-07-10): reviewer ถูก spawn ด้วย
+                       # --disallowedTools Edit Write MultiEdit NotebookEdit Bash (perm=read)
+                       # ส่วน worker ยัง full เหมือนเดิม. ที่มา: SPEC §7.2 "gate-owning roles อ่านอย่างเดียว
+                       # ต่อ artifact ที่ตัวเอง gate" เป็นกฎหมายตั้งแต่ 0.5.0b แต่ไม่เคยมี guard —
+                       # runReview() เรียก runProvider() โดยไม่ส่ง opts → reviewer ตกไปได้
+                       # defaultPermission (safe=acceptEdits) และแก้ชิ้นงานที่ตัวเองตัดสินได้
+                       # (ช่องโหว่ที่รั่วอยู่จริง ไม่ใช่ latent). Fix: permissionFor รับ role เป็น
+                       # bound ที่สามและกดต่ำสุดเสมอ; profile `read` ถอด Edit/Write/MultiEdit/
+                       # NotebookEdit/Bash. ขอบเขต: เฉพาะ agent ที่ spawn มา GATE (reviewer) —
+                       # architect ที่เขียนเอกสารของตัวเองไม่ถูกกด. flip เป็น enforced หลัง e2e
+                       # smoke พิสูจน์ argv ของ reviewer ที่ runnable origin
+    intent: ""   # code ล้วน — เพดานอยู่ที่ spawn args
+    guard: orchestrator/governance/role_readonly_check.py
+    guard_test: "python orchestrator/governance/role_readonly_check.py"
+    check: structural
+    audit_event: blocked
+    gp: GP9
 
   - policy: engine-lint-interlock
     status: enforced   # GP8 — smoke-proven ที่ G-Maiden (de1c6c94, 2026-07-10): lint exit 1 →
