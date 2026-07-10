@@ -148,6 +148,19 @@ policies:
     audit_event: "*"
     gp: GP6
 
+  - policy: graph-health-metrics
+    status: enforced   # GP10 (RCA Phase D): RFC--H-AXIS D3/D4 ถอดคำว่า "hop" ออกจากข้อความบังคับ
+                       # พร้อมสัญญาว่าจะกลับมาเมื่อ "วัดได้" — นี่คือเครื่องวัดนั้น. deterministic,
+                       # stdlib, BFS; guard_test พิสูจน์เลขคณิตกราฟกับ fixture ที่คำนวณมือได้
+                       # (P5/triangle/star/cycle). เป็น HEALTH REPORT ไม่ใช่ gate: node ที่เกิน
+                       # เพดานไม่เคยบล็อก agent (D4) — มันแปลว่ากราฟขาด hub หรือ task ใหญ่เกิน
+    intent: ""   # code ล้วน — วัดจากกราฟจริง (atom wikilinks + backlog deps)
+    guard: orchestrator/governance/hop_metrics.py
+    guard_test: "python orchestrator/governance/hop_metrics.py --self-test"
+    check: full
+    audit_event: "*"
+    gp: GP10
+
   - policy: doc-governance
     status: enforced   # GP7 (RCA--GOVERNANCE-FRAMEWORK-DRIFT §6 Phase B): เอกสารที่ gate ทุกอย่าง
                        # ต้องถูก gate เอง — canonical docs (SPEC §12 format) ต้องผ่าน lint และ

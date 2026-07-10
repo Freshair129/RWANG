@@ -1,5 +1,5 @@
 ---
-version: "0.1.0"
+version: "0.1.1"
 created_at: "2026-07-10T00:00:00+07:00,ClaudeFable,pending"
 last_update: "2026-07-10T00:00:00+07:00,Boss"
 status: "active"
@@ -25,7 +25,7 @@ Split the current H scalar into the three things it actually is — an **access 
 
 1. The declared per-task `H` becomes a **5-tier access scale `H0`–`H4`**, defined 1:1 by the capability sets `planner.mjs tierTools` actually enforces. `H5`/`H6` are removed (they grant nothing `H4` does not).
 2. **Hops become measurable or unspoken**: the word "hop" leaves binding text until it is computed on a real graph; when the traceability graph ships, `Hk` is defined as the standard **k-hop ego graph** of the task's anchor node, and hop distance feeds retrieval as a *decay term*, not a fence.
-3. The famous **6 becomes a derived parameter**: `hop_ceiling ≈ 2 × hierarchy_depth(graph)` (6 for a 4-layer hierarchy), enforced as an architecture-health lint, not an agent permission.
+3. The famous **6 becomes a derived parameter**: `hop_ceiling ≈ 2 × (hierarchy_depth(graph) − 1)` (6 for a 4-layer hierarchy: up 3, back down 3), enforced as an architecture-health lint, not an agent permission.
 
 ## 2. Motivation — evidence, not taste
 
@@ -52,6 +52,8 @@ Split the current H scalar into the three things it actually is — an **access 
 
 `H5`/`H6` are **removed from the access scale**. The approval *grantor* no longer rides on extra H rungs; it derives from C (0.5.0b §10 rule generalized): `C-2` scope → Architecture gate owner; `C-3` scope → owner (`T-human`).
 
+> **Superseded by SPEC 0.7.0 (recorded, not rewritten):** the capability column above gates `write` at `H2`. That was a defect — `H` bounds **reach**, never write authority (read-only is a role property, §7.2). The live table is SPEC §5: `H0` edits its artifact without search · `H1` +search · `H2` +multi-file · `H3` +shell · `H4` +network. This RFC keeps its original text as the decision record; the law is the SPEC.
+
 ### D2 — Un-fused surfaces (restores the UCF layering)
 
 | Concern | Mechanism | Status |
@@ -68,7 +70,7 @@ Binding text stops saying "hop" until hops are computed. When the traceability g
 
 ### D4 — The ceiling is derived, and it is a health gate, not a permission
 
-`hop_ceiling ≈ 2 × hierarchy_depth(graph)` — for the current 4-layer GKS hierarchy that is 6, which is why 6 always "felt right". Measured per graph, stored in config, re-derived when the hierarchy changes. Enforcement: a **lint warning** ("task context closure needed k > ceiling hops → add an intermediate summary node or decompose the task"), never an agent block. Coupling/spaghetti detection stays with **W** (fan-out), whose reading is direction-correct.
+`hop_ceiling ≈ 2 × (hierarchy_depth(graph) − 1)` — walking up a `depth`-layer hierarchy and back down costs `2 × (depth − 1)`; for a 4-layer GKS hierarchy that is 6, which is why 6 always "felt right". Measured per graph, stored in config, re-derived when the hierarchy changes. Enforcement: a **lint warning** ("task context closure needed k > ceiling hops → add an intermediate summary node or decompose the task"), never an agent block. Coupling/spaghetti detection stays with **W** (fan-out), whose reading is direction-correct.
 
 ### D5 — Defaults: declare only overrides
 
@@ -121,5 +123,6 @@ Canonical residence of the axis definition: the origin framework family (`cognit
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.1 | 2026-07-10 | active | Patch (§12 clarification/typo): (a) D4's ceiling formula read `2 × hierarchy_depth` while its own parenthetical said "6 for a 4-layer hierarchy" (2×4=8) — corrected to `2 × (depth − 1)`, which the parenthetical, GVDOC-1003 §3 and `hop_metrics.py` all already implement (found by the first real measurement, AUDIT--GRAPH-HEALTH-2026-07-10 D-1); (b) D1's capability column marked superseded by SPEC 0.7.0 (H bounds reach, not write authority) so two active documents no longer disagree. No decision changed. | pending | ClaudeFable |
 | 0.1.0 | 2026-07-10 | active | D1-D6 approved in full by the owner; `b` suffix dropped per SPEC §12 (the approval act). 0.6.0a applied to the SPEC in the same commit. | pending | Boss (approver) |
 | 0.1.0b | 2026-07-10 | draft | Initial RFC: 5-tier access scale (drop H5/H6), un-fuse access/radius/budget per UCF, standard k-hop vocabulary, derived hop ceiling as health lint, W owns coupling, upstream sync plan. | pending | ClaudeFable |
