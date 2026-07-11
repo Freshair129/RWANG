@@ -88,7 +88,7 @@ Smoke ที่ engine จริง: `W3 deg6 +requireReview:false +ollama → r
 
 `hop_metrics.py` เสริมให้รายงาน in/out + จำแนกทุก hub (self-test พิสูจน์ว่าแยก star `hub→leaves`=god-object จาก inverted `leaves→hub`=anchor). ผล: **ทั้ง 4 hub = ANCHOR** — `entity--atom-schema` in10/out0 (1.00), `feature--atom-store` (0.78), `algo--knowledge-adapter` (0.75), `G0.1` scaffold (0.67). แนะนำ approve ทั้งหมด decompose ศูนย์ (decompose schema/store = แตก single source of truth = fusion mistake เดิม).
 
-[DECISION--SUPERHUB-2026-07-10.md](docs/DECISION--SUPERHUB-2026-07-10.md) candidate — **รอ Boss sign-off** (T-human, §8 escape / §10). Standing rule ใหม่: classify by in/out ก่อนตัดสิน tool พิมพ์ให้ทุก run.
+[DECISION--SUPERHUB-2026-07-10.md](docs/DECISION--SUPERHUB-2026-07-10.md) candidate — **approved by Boss** — active (T-human, §8/§10). Standing rule ใหม่: classify by in/out ก่อนตัดสิน tool พิมพ์ให้ทุก run.
 
 ## 5. ตัวเลขของวัน
 

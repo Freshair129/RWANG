@@ -1,8 +1,8 @@
 ---
-version: "0.1.0b"
+version: "0.1.0"
 created_at: "2026-07-10T00:00:00+07:00,ClaudeFable,pending"
-last_update: "2026-07-10T00:00:00+07:00,ClaudeFable"
-status: "candidate"
+last_update: "2026-07-10T00:00:00+07:00,Boss"
+status: "active"
 superseded_by: null
 attributes:
   domain: "agent-governance"
@@ -69,4 +69,5 @@ For future super-hubs: **classify by in/out before deciding.** `in_ratio ≥ 0.7
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.0 | 2026-07-10 | active | **Approved by Boss (CEO), owner / `T-human`** (SPEC §8 escape / §10 authority): all four hubs approved as anchors, none decomposed; `b` dropped, status `active` (the approval act, §12). `entity--atom-schema`, `feature--atom-store`, `algo--knowledge-adapter`, `G0.1` are on record as legitimate anchors — future `hop_metrics` runs surfacing them are expected, not action items. | pending | Boss (approver) |
 | 0.1.0b | 2026-07-10 | candidate | Super-hub decision for the four measured W4/W3 hubs: all anchors (in_ratio 0.67–1.00), recommend approve none-decompose. `hop_metrics.py` gains the in/out anchor/god-object classifier (self-test proves star vs inverted-star). Awaiting owner sign-off. | pending | ClaudeFable |
