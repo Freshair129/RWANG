@@ -164,12 +164,14 @@ const AUTO_GATE_TYPES = new Set(["safety", "guard", "audit"]);
 // (own deps + tasks depending on this one), matching hop_metrics.py so the gate blocks
 // exactly the W4 the audit reports. Matrix policy `w4-superhub-gate`.
 const W4_MIN = 9;
+const W3_MIN = 6;   // SPEC §8: W3 (6-8 connections) = "lead review required" — review cannot be skipped
 export function fanoutDegree(t) {
   const out = (t.deps || []).length;
   const inc = BACKLOG.reduce((n, x) => n + ((x.deps || []).includes(t.id) ? 1 : 0), 0);
   return out + inc;
 }
 export function isW4(t) { return fanoutDegree(t) >= W4_MIN; }
+export function isW3(t) { const d = fanoutDegree(t); return d >= W3_MIN && d < W4_MIN; }
 export function needsConfirm(t) {
   if (t.requiresConfirm) return true;
   // auto-gate by original atom type (encoded in id prefix: "guard--foo" → "guard")
@@ -662,6 +664,13 @@ function reviewerModelFor(_workerModel) {
   return resolved ? `${resolved.provider}:${resolved.model}` : "claude:sonnet";
 }
 export function requireReviewFor(t) {
+  // SPEC §8: a W3+ task (>=6 sibling/peer connections) requires review — coupling that broad
+  // must not dodge the gate by being routed to a draft model or opting out. This forces review
+  // ON above every skip below (per-task requireReview:false, skipForDraft, requireReviewDefault).
+  // Matrix policy `w3-lead-review`; "lead" = the review gate runs by the reviewer role (§7.2),
+  // read-only per role-readonly-gate. (Escalating W3 to an architect-tier reviewer is NOT done —
+  // that would be a separate decision; here "required" means "unskippable".)
+  if (fanoutDegree(t) >= W3_MIN) return true;
   if (!CONFIG.review?.enabled) return false;
   if (typeof t.requireReview === "boolean") return t.requireReview;
   if (CONFIG.review?.skipForDraft) {

@@ -148,6 +148,25 @@ policies:
     audit_event: "*"
     gp: GP6
 
+  - policy: w3-lead-review
+    status: enforced   # GP12 — smoke-proven ที่ G-Maiden (2026-07-10): W3 (deg6) ตั้ง
+                       # requireReview:false + route ไป ollama ยังถูกบังคับ review=true; W2 (deg2)
+                       # opt-out ยังเคารพ (พฤติกรรมเดิม). ตรงกับ hop_metrics (G3.4 deg6).
+                       # SPEC §8: W3 (6-8 connections) = "lead review required". ช่องว่าง:
+                       # requireReviewFor มี 3 ทางลัดข้าม review (global off / requireReview:false /
+                       # skipForDraft สำหรับ local model) → task W3 หลบ review ได้ด้วยการถูก route
+                       # ไป draft model หรือตั้ง opt-out. Fix: fanoutDegree>=6 บังคับ review=true
+                       # เหนือทุก skip (reuse review machinery เดิม ไม่สร้าง gate ใหม่).
+                       # "lead" = review gate รันโดย reviewer role (§7.2 read-only) ห้ามข้าม —
+                       # ไม่ escalate เป็น architect-tier (แยก decision). flip หลัง smoke: W3+draft
+                       # ยังถูกบังคับ review, W2 พฤติกรรมเดิม
+    intent: ""   # code ล้วน — force อยู่ใน requireReviewFor
+    guard: orchestrator/governance/w3_review_check.py
+    guard_test: "python orchestrator/governance/w3_review_check.py"
+    check: structural
+    audit_event: verify
+    gp: GP12
+
   - policy: w4-superhub-gate
     status: enforced   # GP11 — smoke-proven ที่ G-Maiden (2026-07-10): task H deg 9 ถูกปฏิเสธที่
                        # dispatch ด้วย "W4 super-hub (degree 9 ≥ 9) — decompose or approve"; task M
