@@ -82,6 +82,14 @@ Fix แบบ reuse (ไม่สร้าง gate ใหม่): `fanoutDegree>
 
 Smoke ที่ engine จริง: `W3 deg6 +requireReview:false +ollama → review FORCED` · `W2 deg2 opt-out → เคารพเดิม` — ตรงกับ `G3.4` deg6 ที่ hop_metrics ชี้. **Matrix 21/21 enforced** · Rwang `1cc9d65` · G-Maiden `c8a8e153`. (คราวนี้ทำ branch ใน Rwang ถูก hygiene แล้ว)
 
+## 4e. §8 super-hub decision (in/out classifier)
+
+§8 บังคับให้ **ตัดสิน** ต่อ super-hub: decompose หรือ approve. ข้อค้นพบที่ทำให้ตัดสินได้: **degree อย่างเดียวแยก anchor จาก god-object ไม่ได้ — in/out ratio ต่างหาก** (edge a→b = a พึ่ง b). Anchor = in สูง out ต่ำ (ทุกอย่างพึ่งมัน — schema/store/scaffold) → approve; god-object = out สูง (มันพึ่งทุกอย่าง) → decompose.
+
+`hop_metrics.py` เสริมให้รายงาน in/out + จำแนกทุก hub (self-test พิสูจน์ว่าแยก star `hub→leaves`=god-object จาก inverted `leaves→hub`=anchor). ผล: **ทั้ง 4 hub = ANCHOR** — `entity--atom-schema` in10/out0 (1.00), `feature--atom-store` (0.78), `algo--knowledge-adapter` (0.75), `G0.1` scaffold (0.67). แนะนำ approve ทั้งหมด decompose ศูนย์ (decompose schema/store = แตก single source of truth = fusion mistake เดิม).
+
+[DECISION--SUPERHUB-2026-07-10.md](docs/DECISION--SUPERHUB-2026-07-10.md) candidate — **รอ Boss sign-off** (T-human, §8 escape / §10). Standing rule ใหม่: classify by in/out ก่อนตัดสิน tool พิมพ์ให้ทุก run.
+
 ## 5. ตัวเลขของวัน
 
 - Multi-agent runs: 14 + 31 + 2 + 2 agents (~3.7M subagent tokens) — design study, adversarial review, verification passes
