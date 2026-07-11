@@ -74,6 +74,14 @@ Smoke ที่ engine จริง: `H deg9 → BLOCKED "W4 super-hub (degree 9
 
 หมายเหตุ process: W4 commit ฝั่ง Rwang ลง main ตรง (ลืมสร้าง branch — ต่างจาก feature อื่นในวัน); เนื้อหาถูก lint ผ่าน 20/20, ไม่ reset เพราะ destructive ceremony เพื่อผลเท่าเดิม
 
+## 4d. §8 W3 lead-review gate (Matrix 21/21)
+
+§8 บรรทัดสุดท้ายที่ยังไม่บังคับ: W3 (6-8 connections) = "lead review required". `requireReviewFor` มี 3 ทางลัดข้าม review (global off / `requireReview:false` / `skipForDraft` สำหรับ local model) → task W3 หลบ review ได้ด้วยการถูก route ไป draft model หรือตั้ง opt-out.
+
+Fix แบบ reuse (ไม่สร้าง gate ใหม่): `fanoutDegree>=6` บังคับ `requireReviewFor=true` **เหนือทุก skip** — coupling 6-8 หลบ review ไม่ได้. guard `w3_review_check.py` V1–V4 (V2 พิสูจน์ว่า force ถูกวางก่อน skip ไม่งั้น skip ชนะ). "lead" = review gate รันโดย reviewer role (§7.2 read-only) ห้ามข้าม; ไม่ escalate เป็น architect-tier (แยก decision, ระบุไว้ไม่เลือกเงียบ).
+
+Smoke ที่ engine จริง: `W3 deg6 +requireReview:false +ollama → review FORCED` · `W2 deg2 opt-out → เคารพเดิม` — ตรงกับ `G3.4` deg6 ที่ hop_metrics ชี้. **Matrix 21/21 enforced** · Rwang `1cc9d65` · G-Maiden `c8a8e153`. (คราวนี้ทำ branch ใน Rwang ถูก hygiene แล้ว)
+
 ## 5. ตัวเลขของวัน
 
 - Multi-agent runs: 14 + 31 + 2 + 2 agents (~3.7M subagent tokens) — design study, adversarial review, verification passes
