@@ -24,7 +24,8 @@
 //   never breaks execution — it just drops the run to hop-only scoring.
 //
 // CLI (mirrors how run.js shells out to the Python core)
-//   node store/knowledge.mjs ingest [--atoms DIR] [--limit N] [--dry-run]  # populate the store
+//   node store/knowledge.mjs ingest [--atoms DIR] [--limit N] [--dry-run] [--force]
+//       populate the store; idempotent via a content-hash manifest (unchanged atoms skip)
 //   node store/knowledge.mjs query "<text>" [--k 12] [--alpha 0.5] [--json]
 //   node store/knowledge.mjs embed "<text>"          # prints the vector dim (debug)
 //   node store/knowledge.mjs status                  # open + statusSync
@@ -35,6 +36,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute } from "node:path";
 import { mkdirSync, existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -359,24 +361,55 @@ function parseAtom(path, fname) {
   };
 }
 
+function ingestManifestPath(CONFIG) {
+  return join(resolveDbPath(gks(CONFIG).cfg), "ingest-manifest.json");
+}
+function loadManifest(CONFIG) {
+  const p = ingestManifestPath(CONFIG);
+  try { return existsSync(p) ? JSON.parse(readFileSync(p, "utf-8")) : {}; }
+  catch { return {}; }
+}
+function atomHash(a) {
+  // Content identity for idempotency: text + deps. Unchanged hash => skip re-ingest.
+  return createHash("sha1").update(a.text + "\n" + a.deps.join(",")).digest("hex").slice(0, 16);
+}
+
+// IDEMPOTENCY (why the manifest exists): GenesisDB `addNode` on an existing id APPENDS a
+// new vector version (it does not upsert-in-place) — so a naive re-ingest doubles the
+// collection's vector count every run, bloating storage and polluting the HNSW index with
+// stale duplicates. hybridSearch dedupes by node id so QUERY results stay correct, but the
+// growth is unbounded. The manifest records each atom's content hash; an unchanged atom is
+// SKIPPED, making a repeat ingest a true no-op. `--force` bypasses it (full re-add).
 async function cliIngest(argv) {
-  let atomsFlag = null, limit = Infinity, dryRun = false;
+  let atomsFlag = null, limit = Infinity, dryRun = false, force = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--atoms") atomsFlag = argv[++i];
     else if (argv[i] === "--limit") limit = parseInt(argv[++i], 10);
     else if (argv[i] === "--dry-run") dryRun = true;
+    else if (argv[i] === "--force") force = true;
   }
   const CONFIG = loadConfig();
   const dir = resolveAtomDir(CONFIG, atomsFlag);
   if (!dir) { process.stderr.write("ingest: no atom dir found (pass --atoms DIR)\n"); return 2; }
   const files = readdirSync(dir).filter((f) => f.endsWith(".md")).slice(0, limit);
-  process.stderr.write(`ingest: ${files.length} atom(s) from ${dir}${dryRun ? "  [DRY RUN]" : ""}\n`);
 
-  const atoms = files.map((f) => parseAtom(join(dir, f), f));
+  const parsed = files.map((f) => parseAtom(join(dir, f), f));
+  const manifest = force ? {} : loadManifest(CONFIG);
+  const atoms = parsed.filter((a) => manifest[a.id] !== atomHash(a));   // new or changed only
+  const skipped = parsed.length - atoms.length;
+  process.stderr.write(`ingest: ${parsed.length} atom(s) from ${dir}` +
+    `${dryRun ? "  [DRY RUN]" : ""}${force ? "  [FORCE]" : ""}  ` +
+    `(${atoms.length} new/changed, ${skipped} unchanged -> skipped)\n`);
+
   if (dryRun) {
     const edges = atoms.reduce((s, a) => s + a.deps.length, 0);
-    process.stderr.write(`ingest DRY: would write ${atoms.length} nodes, ${edges} edges. ` +
-      `sample: ${atoms.slice(0, 3).map((a) => `${a.id}[${a.type}]→${a.deps.length}`).join(", ")}\n`);
+    process.stderr.write(`ingest DRY: would write ${atoms.length} nodes, up to ${edges} edges. ` +
+      `sample: ${atoms.slice(0, 3).map((a) => `${a.id}[${a.type}]→${a.deps.length}`).join(", ") || "(none)"}\n`);
+    return 0;
+  }
+  if (atoms.length === 0) {
+    process.stderr.write("ingest: nothing to do — store already up to date (idempotent no-op).\n");
+    process.stdout.write(JSON.stringify({ nodes: 0, skipped, edges: 0, dir, up_to_date: true }, null, 2) + "\n");
     return 0;
   }
   if (!openDb(CONFIG)) { process.stderr.write("ingest: store unavailable (check bindingPath/Ollama)\n"); return 1; }
@@ -388,27 +421,33 @@ async function cliIngest(argv) {
     try {
       await writeNode(CONFIG, { id: a.id, labels: ["Atom", a.type], text: a.text, props: a.props });
       ingested.add(a.id);
+      manifest[a.id] = atomHash(a);                 // record only on success
     } catch (e) {
       nodeFail++;
       if (process.env.RWANG_STORE_DEBUG) console.error(`[ingest] node ${a.id}:`, e.message);
     }
   }
-  // Pass 2: dependency edges (only where BOTH endpoints ingested — skip dangling refs).
+  // Pass 2: dependency edges. Endpoints may live in a prior ingest, so accept a target
+  // that is either freshly ingested OR already recorded in the manifest.
+  const known = (id) => ingested.has(id) || manifest[id] !== undefined;
   let edgeOk = 0, edgeSkip = 0;
   for (const a of atoms) {
+    if (!ingested.has(a.id)) continue;
     for (const dep of a.deps) {
-      if (!ingested.has(a.id) || !ingested.has(dep)) { edgeSkip++; continue; }
+      if (!known(dep)) { edgeSkip++; continue; }
       try { await writeEdge(CONFIG, { from: a.id, to: dep, rel: "depends_on" }); edgeOk++; }
       catch { edgeSkip++; }
     }
   }
   try { await openDb(CONFIG).flushIndex(); } catch { /* index catches up async */ }
+  try { writeFileSync(ingestManifestPath(CONFIG), JSON.stringify(manifest, null, 0)); }
+  catch (e) { if (process.env.RWANG_STORE_DEBUG) console.error("[ingest] manifest write:", e.message); }
 
-  process.stderr.write(`ingest DONE: ${ingested.size} node(s) (${nodeFail} failed), ` +
-    `${edgeOk} edge(s) (${edgeSkip} skipped). Store is now searchable — try:\n` +
-    `  node store/knowledge.mjs query "<text>" --json\n`);
+  process.stderr.write(`ingest DONE: ${ingested.size} node(s) written (${nodeFail} failed, ${skipped} skipped), ` +
+    `${edgeOk} edge(s) (${edgeSkip} skipped). Store searchable — try:\n` +
+    `  node store/knowledge.mjs query "<text>" --json --out hits.json\n`);
   process.stdout.write(JSON.stringify({ nodes: ingested.size, node_failures: nodeFail,
-    edges: edgeOk, edges_skipped: edgeSkip, dir }, null, 2) + "\n");
+    skipped, edges: edgeOk, edges_skipped: edgeSkip, dir }, null, 2) + "\n");
   return nodeFail === atoms.length ? 1 : 0;
 }
 

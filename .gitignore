@@ -7,5 +7,6 @@ node_modules/
 # local audit — none of it belongs in git
 orchestrator/governance/approvals/
 # GenesisBlockDB knowledge store — runtime WAL + peer identity (store/knowledge.mjs
-# ingest populates it); a local rebuildable cache, never source
-.knowledge/
+# ingest populates it); a local rebuildable cache, never source. The glob also covers
+# reversible reset backups (.knowledge.bak-*), since the governance guard blocks rm -rf.
+.knowledge*
