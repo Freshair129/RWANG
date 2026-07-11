@@ -155,6 +155,28 @@ def analyze(name, nodes, edges):
     w4 = sorted(n for n in nodes if deg[n] >= W4_MIN)
     w3 = sorted(n for n in nodes if W3_MIN <= deg[n] < W4_MIN)
 
+    # Directed in/out split for every W3+ hub. Degree alone flags a super-hub but cannot tell an
+    # anchor (schema/store/scaffold everything DEPENDS ON — high in, low out) from a god-object
+    # (something that DEPENDS ON everything — high out). §8's "decompose or approve" decision keys
+    # on exactly this: an anchor is approved, a god-object is decomposed. edge (a,b) = a depends on b.
+    outd = defaultdict(int)
+    ind = defaultdict(int)
+    for a, b in edges:
+        if a == b:
+            continue
+        outd[a] += 1
+        ind[b] += 1
+
+    def classify(n):
+        i, o = ind[n], outd[n]
+        tot = i + o
+        ratio = i / tot if tot else 0.0
+        verdict = ("anchor" if ratio >= 0.7 else
+                   "god-object" if ratio <= 0.3 else "bidirectional-hub")
+        return {"node": n, "in": i, "out": o, "in_ratio": round(ratio, 2), "verdict": verdict}
+
+    hub_analysis = [classify(n) for n in sorted(set(w3) | set(w4), key=lambda x: -deg[x])]
+
     return {
         "graph": name,
         "nodes": len(nodes), "edges": len(edges),
@@ -164,6 +186,7 @@ def analyze(name, nodes, edges):
         "clustering": round(_clustering(adj, nodes), 3),
         "degree_max": max(deg.values()), "degree_mean": round(sum(deg.values()) / len(nodes), 2),
         "w3_warning": w3, "w4_superhub": w4,
+        "hub_analysis": hub_analysis,
         "over_ceiling": over,
         "small_world_hint": round(apl, 3) <= ceiling and _clustering(adj, nodes) > (sum(deg.values()) / len(nodes)) / len(nodes),
     }
@@ -216,6 +239,12 @@ def render(r):
             w(f"      {n}\n")
     if r["w3_warning"]:
         w(f"  W3 warning ({W3_MIN}-{W4_MIN - 1} deg — lead review): {', '.join(r['w3_warning'])}\n")
+    if r.get("hub_analysis"):
+        w("  HUB in/out split (anchor = approve · god-object = decompose — SPEC §8 decision):\n")
+        for h in r["hub_analysis"]:
+            tag = {"anchor": "ANCHOR → approve", "god-object": "GOD-OBJECT → decompose",
+                   "bidirectional-hub": "bidirectional hub → review"}[h["verdict"]]
+            w(f"      {h['node']:<28} in {h['in']:>2} / out {h['out']:>2}  ratio {h['in_ratio']:.2f}  {tag}\n")
     if r["over_ceiling"]:
         w(f"  OVER DERIVED CEILING ({len(r['over_ceiling'])} node(s) need > {r['derived_ceiling']} hops):\n")
         w("      a missing hub/summary node, or a task scoped too wide — NOT evidence of spaghetti\n")
@@ -309,12 +338,21 @@ def self_test():
     check("triangle clustering", tri["clustering"], 1.0)
     check("triangle diameter", tri["diameter"], 1)
 
-    # star with 9 leaves: hub degree 9 → W4; diameter 2
+    # star with 9 leaves, edges hub→leaf (hub DEPENDS ON 9) → god-object (out 9, in 0)
     star_n = ["hub"] + [f"l{i}" for i in range(9)]
     star = analyze("star", star_n, [("hub", f"l{i}") for i in range(9)])
     check("star W4", star["w4_superhub"], ["hub"])
     check("star diameter", star["diameter"], 2)
     check("star degree_max", star["degree_max"], 9)
+    star_hub = next(h for h in star["hub_analysis"] if h["node"] == "hub")
+    check("star hub god-object", star_hub["verdict"], "god-object")
+    check("star hub out", star_hub["out"], 9)
+
+    # inverted star: edges leaf→hub (9 leaves DEPEND ON hub) → anchor (in 9, out 0)
+    anch = analyze("anchor", star_n, [(f"l{i}", "hub") for i in range(9)])
+    anch_hub = next(h for h in anch["hub_analysis"] if h["node"] == "hub")
+    check("anchor hub verdict", anch_hub["verdict"], "anchor")
+    check("anchor hub in", anch_hub["in"], 9)
 
     # star with 7 leaves → W3 warning, no W4
     s7 = analyze("s7", ["h"] + [f"x{i}" for i in range(7)], [("h", f"x{i}") for i in range(7)])
