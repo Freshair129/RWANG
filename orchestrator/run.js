@@ -178,6 +178,11 @@ function executePrompt(task, tier, model, runDir, attemptNo, prevFail) {
     `CONTEXT BRIEF: ${runDir}/context.md — verified facts about the target repo (build/`,
     `test commands, layout, constraints). Read it FIRST instead of re-exploring the`,
     `repo. If it is missing or contradicts the live repo, trust the repo.`,
+    `The brief may be GRADED (RFC--RESOLUTION-GRADIENT, Phase 1): the most relevant`,
+    `context is inlined at FULL; a "## MENTION index" at the end lists lower-scored`,
+    `atoms as "id — source path". If you need a MENTION in full, read its source path`,
+    `directly — that IS expand(); note which atom you expanded in your summary so it`,
+    `stays auditable (RFC D5). Never expand past your tier's read scope.`,
     `Task "${task.id}" at tier ${tier} (attempt #${attemptNo}${prevFail ? ", ESCALATED" : ""}).`,
     `Task: ${task.description}`,
     `verify_command: ${task.verify_command ? task.verify_command : "(none)"}`,
@@ -458,11 +463,21 @@ async function phaseRoute() {
   // pay N explorations). This is NOT conversation context: executors stay
   // self-contained (Author-gate), they just share a verified map. Skipped for
   // tiny runs where one exploration cannot pay for itself.
+  //
+  // RESOLUTION GRADIENT (RFC--RESOLUTION-GRADIENT-CONTEXT-BRIEF, Phase 1): when a
+  // knowledge graph is available for this run, the brief is ASSEMBLED graded — the
+  // most relevant atoms inlined at FULL, the rest as a MENTION index — via the
+  // deterministic core helper resolution_gradient.py (it owns the sim-free Layer-4/5
+  // math; the sim term is a model call and stays here in the agent). D7: when no
+  // knowledge store is wired (sim unavailable) the agent uses hop-only scoring, and
+  // when no relevant atom graph exists at all it falls back to the prose brief below.
+  // The prose facts are ALWAYS written — the graded index is additive, never a regression.
   if (n >= 3) {
     await agent(
       [
         `RWANG CONTEXT BRIEF — write the file ${runDir}/context.md: a SHORT,`,
-        `facts-only reference for this run's executor agents. HARD CAP: 60 lines.`,
+        `facts-only reference for this run's executor agents. HARD CAP: 60 lines`,
+        `of prose facts (the graded MENTION index below does not count toward the cap).`,
         ``,
         `Sources (verify every line — never guess):`,
         `1) The spec at ${specPath} — copy the goal and the constraints list`,
@@ -474,11 +489,38 @@ async function phaseRoute() {
         `   - conventions visible in the code (naming, error handling, lint/format setup)`,
         ``,
         `RULES: verifiable facts only — commands, paths, verbatim constraints. NO design`,
-        `opinions, NO interpretation, NO per-task advice. If unsure about a line, leave`,
-        `it out. End the file with this exact line:`,
+        `opinions, NO interpretation, NO per-task advice. If unsure about a line, leave it out.`,
+        ``,
+        `GRADED ASSEMBLY (RFC--RESOLUTION-GRADIENT, Phase 1) — do this ONLY IF a knowledge`,
+        `graph of atoms relevant to this run exists (e.g. a GKS atom dir, or a wired`,
+        `store.knowledge in G:/Rwang/config.json). If none exists, SKIP this and just write`,
+        `the prose facts above. When it does exist:`,
+        `  a) Get similarity-ranked candidates from the knowledge store (the sim term):`,
+        `       node store/knowledge.mjs query "<epic goal + task keywords>" --k 12 \\`,
+        `         --json --out ${runDir}/sim_hits.json`,
+        `     (Use --out to a FILE, then READ that file — the native engine prints a "Gossip:"`,
+        `     line to stdout, so do NOT pipe stdout.) The file holds [{id, sim, ...}] (bge-m3`,
+        `     cosine via GenesisDB hybridSearch). If it is [] (store empty / not wired / Ollama`,
+        `     down), OMIT "sim" from every atom — that selects hop-only scoring (RFC D7). Use`,
+        `     the top hit's id as the anchor. For each candidate record: id, tokens_full`,
+        `     (estimate = chars/4), and the "sim" from the file (omit it in the hop-only case).`,
+        `  b) Write a request JSON {budget_tokens, anchor, atoms:[...]} to`,
+        `     ${runDir}/context_atoms.json (budget_tokens = the spec's scope.budgetTokens if`,
+        `     present, else 1500), then from G:/Rwang run:`,
+        `       python orchestrator/governance/resolution_gradient.py plan \\`,
+        `         ${runDir}/context_atoms.json --atoms <atom-dir> --anchor <anchor-id> --json \\`,
+        `         > ${runDir}/context_plan.json`,
+        `  c) Per the plan: inline each FULL atom's body under a "## Context (FULL)" heading,`,
+        `     and list every MENTION as "- <id> — <source path>" under a "## MENTION index"`,
+        `     heading (executors expand() a MENTION by reading its source path directly).`,
+        `  Do NOT hand-assign tiers or trim by hand — the helper is the single source of that`,
+        `  math (deterministic). If it errors, note that and fall back to the prose brief.`,
+        ``,
+        `End the file with this exact line:`,
         `  "Facts frozen at Route time — if the live repo disagrees, trust the repo."`,
         ``,
-        `Return a one-line confirmation with the final line count.`,
+        `Return a one-line confirmation: prose line count, and whether a graded index was`,
+        `assembled (mode sim|hop-only|none).`,
       ].join("\n"),
       { label: "context-brief", phase: "Route", model: "sonnet" }
     );
