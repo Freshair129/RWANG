@@ -178,11 +178,12 @@ function executePrompt(task, tier, model, runDir, attemptNo, prevFail) {
     `CONTEXT BRIEF: ${runDir}/context.md — verified facts about the target repo (build/`,
     `test commands, layout, constraints). Read it FIRST instead of re-exploring the`,
     `repo. If it is missing or contradicts the live repo, trust the repo.`,
-    `The brief may be GRADED (RFC--RESOLUTION-GRADIENT, Phase 1): the most relevant`,
-    `context is inlined at FULL; a "## MENTION index" at the end lists lower-scored`,
-    `atoms as "id — source path". If you need a MENTION in full, read its source path`,
-    `directly — that IS expand(); note which atom you expanded in your summary so it`,
-    `stays auditable (RFC D5). Never expand past your tier's read scope.`,
+    `The brief may be GRADED (RFC--RESOLUTION-GRADIENT, Phase 1+2): the most relevant`,
+    `context is inlined at FULL, then SUMMARY, then SKELETON as relevance/budget tighten;`,
+    `a "## MENTION index" at the end lists the lowest-scored atoms as "id — source path".`,
+    `If a SUMMARY/SKELETON/MENTION isn't enough, read its source path directly — that IS`,
+    `expand(); note which atom you expanded in your summary so it stays auditable (RFC D5).`,
+    `Never expand past your tier's read scope.`,
     `Task "${task.id}" at tier ${tier} (attempt #${attemptNo}${prevFail ? ", ESCALATED" : ""}).`,
     `Task: ${task.description}`,
     `verify_command: ${task.verify_command ? task.verify_command : "(none)"}`,
@@ -464,14 +465,15 @@ async function phaseRoute() {
   // self-contained (Author-gate), they just share a verified map. Skipped for
   // tiny runs where one exploration cannot pay for itself.
   //
-  // RESOLUTION GRADIENT (RFC--RESOLUTION-GRADIENT-CONTEXT-BRIEF, Phase 1): when a
-  // knowledge graph is available for this run, the brief is ASSEMBLED graded — the
-  // most relevant atoms inlined at FULL, the rest as a MENTION index — via the
+  // RESOLUTION GRADIENT (RFC--RESOLUTION-GRADIENT-CONTEXT-BRIEF, Phase 1+2): when a
+  // knowledge graph is available for this run, the brief is ASSEMBLED graded across all
+  // four tiers — FULL / SUMMARY / SKELETON inlined, the rest as a MENTION index — via the
   // deterministic core helper resolution_gradient.py (it owns the sim-free Layer-4/5
-  // math; the sim term is a model call and stays here in the agent). D7: when no
-  // knowledge store is wired (sim unavailable) the agent uses hop-only scoring, and
-  // when no relevant atom graph exists at all it falls back to the prose brief below.
-  // The prose facts are ALWAYS written — the graded index is additive, never a regression.
+  // math AND the sim-free SUMMARY/SKELETON renderers; the sim term is a model call and
+  // stays here in the agent). D7: when no knowledge store is wired (sim unavailable) the
+  // agent uses hop-only scoring, and when no relevant atom graph exists at all it falls
+  // back to the prose brief below. The prose facts are ALWAYS written — the graded index
+  // is additive, never a regression.
   if (n >= 3) {
     await agent(
       [
@@ -510,11 +512,17 @@ async function phaseRoute() {
         `       python orchestrator/governance/resolution_gradient.py plan \\`,
         `         ${runDir}/context_atoms.json --atoms <atom-dir> --anchor <anchor-id> --json \\`,
         `         > ${runDir}/context_plan.json`,
-        `  c) Per the plan: inline each FULL atom's body under a "## Context (FULL)" heading,`,
-        `     and list every MENTION as "- <id> — <source path>" under a "## MENTION index"`,
-        `     heading (executors expand() a MENTION by reading its source path directly).`,
-        `  Do NOT hand-assign tiers or trim by hand — the helper is the single source of that`,
-        `  math (deterministic). If it errors, note that and fall back to the prose brief.`,
+        `  c) Per the plan, render each atom at ITS assigned tier and place it under the matching`,
+        `     heading, in the plan's atoms[] order:`,
+        `       FULL     -> inline the full atom body under "## Context (FULL)"`,
+        `       SUMMARY  -> python orchestrator/governance/resolution_gradient.py render SUMMARY`,
+        `                   <source path>, inline the output under "## Context (SUMMARY)"`,
+        `       SKELETON -> same but "render SKELETON", under "## Context (SKELETON)"`,
+        `       MENTION  -> list as "- <id> — <source path>" under "## MENTION index"`,
+        `     (executors expand() any non-FULL atom by reading its source path directly).`,
+        `  Do NOT hand-assign tiers, hand-render SUMMARY/SKELETON text, or trim by hand — the`,
+        `  helper is the single source of both (deterministic, self-tested). If it errors,`,
+        `  note that and fall back to the prose brief.`,
         ``,
         `End the file with this exact line:`,
         `  "Facts frozen at Route time — if the live repo disagrees, trust the repo."`,
