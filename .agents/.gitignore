@@ -1,0 +1,17 @@
+# .agents — track the durable mind, ignore volatile intake, outputs, and any secret.
+
+# Unvetted intake — never commit until promoted to knowledge-block via CI + FACT check.
+*/.brain/inbound/*
+!*/.brain/inbound/.gitkeep
+
+# Produced artifacts — local unless explicitly force-added.
+*/asset/artifact/*
+!*/asset/artifact/.gitkeep
+
+# Secrets — never, in any form.
+**/.credentials.json
+**/*.secret
+**/secrets.*
+
+# Tracked (for clarity, not ignored): AGENTS.md, MEMORY.md, config.yaml, agt-registry.md,
+# knowledge-block/, memory/, rca/, session/, tool/, asset/template/, asset/script/.
