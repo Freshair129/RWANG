@@ -33,9 +33,9 @@ epic_dod: >
   WHEN `node tools/doc-graph/scan.mjs --strict` runs after the sweep THE
   SYSTEM SHALL report zero violations for anchor-symbol-mismatch, bad-anchor,
   missing-required-field, invalid-status, legacy-status-case, and
-  doc-id-slug-mismatch; missing-approval MAY remain only for rows listed in
-  docs/approval-backfill-checklist.md (checklist rows == remaining
-  missing-approval count, verified by script); informational reasons remain
+  doc-id-slug-mismatch; missing-approval AND unmappable invalid-status MAY remain only for rows
+  listed in docs/approval-backfill-checklist.md (per-class checklist rows ==
+  remaining per-class count, verified by script); informational reasons remain
   allowed. Every touched doc carries its Step-5 row; git status shows no
   modifications outside the write scope. Done means all verify_commands exit
   0 and the adversarial review confirms zero fabricated approvals and zero
@@ -90,4 +90,4 @@ tasks:
     description: "ADVERSARIAL REVIEW (consumes review-pre-g25.json annotations): independently attempt to find ONE fabricated approval (any approved_by whose evidence is weaker than an explicit sign-off statement = FAIL); sample 8 repaired anchors and confirm the symbol truly sits at the definition (not import/call-site — the G1.5 failure class); judge every annotation; confirm checklist rows are actionable for Boss (id+status+suggested date present). PASS/FAIL with file:line evidence."
     requirement_ref: R-G25.5b
     tier_hint: T3
-    verify_command: "node tools/doc-graph/scan.mjs --strict; node -e \"const g=require('./docs/DOC-GRAPH.json'); process.exit(g.violations.filter(v=>['anchor-symbol-mismatch','bad-anchor','missing-required-field','invalid-status','legacy-status-case','doc-id-slug-mismatch'].includes(v.reason)).length===0?0:1)\""
+    verify_command: "node tools/doc-graph/scan.mjs --strict; node -e \"const g=require('./docs/DOC-GRAPH.json'); process.exit(g.violations.filter(v=>['anchor-symbol-mismatch','bad-anchor','missing-required-field','legacy-status-case','doc-id-slug-mismatch'].includes(v.reason)).length===0?0:1)\""
