@@ -1,0 +1,102 @@
+# G1.5 — G-Maiden doc-graph violations sweep + symbol-link coverage + aligner gate.
+# Follow-up WRITE epic that G1 (read-only scanner) explicitly anticipated: the first
+# real scan found 169 violations (119 blocking: 57 collision, 34 unresolved wikilink,
+# 14 bad-anchor, 11 missing-changelog, 3 version-changelog-mismatch). This epic fixes
+# them with LOCAL-FIRST casting (Boss: idle ollama = the sweeper), extends doc<->code
+# symbol-link coverage, and wires the codedoc-aligner skill (Mellum2 local SLM) as the
+# semantic diff gate over every doc this run touches.
+#
+# RECOMMENDED AUTONOMY: supervised. DEPENDS ON G1 (tools/doc-graph on the run branch).
+
+goal: >
+  Drive G-Maiden's docs/ to a clean scanner run: fix every blocking violation
+  class from docs/DOC-GRAPH-REPORT.md (or prove the rule wrong and fix the
+  scanner instead), extend symbol-link coverage where docs name real code
+  entities without links, and gate every touched doc through the
+  codedoc-aligner local-SLM semantic check — ending with
+  `node tools/doc-graph/scan.mjs` exit 0.
+
+target_repo: "G:/G-Maiden"
+
+autonomy: supervised
+
+constraints:
+  - "DEPENDS ON G1: work on/extend the G1 run branch (rwang/g1-doc-graph-20260719) or its successor; tools/doc-graph/*.mjs must be present. The 2026-07-19 design-audit doc edits (STAGE-LOCK banners) must be committed on the branch BEFORE the sweep so the scanner sees final text."
+  - "Dirty-tree rule is SCOPE-AWARE (as G1): dirty files under docs/** or tools/** not created by this run = stop and report; elsewhere tolerated, recorded, never staged. NEVER `git add -A`; stage by name."
+  - "EDIT DISCIPLINE — link/metadata surgery only: fixes may change wikilink slugs, symbol-link URLs/anchors, add changelog tables/rows, and bump frontmatter versions per the Step-5 SOP (format-only = patch). ZERO changes to prose meaning, claims, or code. docs/audits/** and docs/rca/** stay untouched (point-in-time exemption) unless a violation is a pure broken link."
+  - "Every touched doc gets its Step-5 treatment: version patch-bump + changelog row 'link/metadata sweep (G1.5)' + frontmatter/header consistency."
+  - "The 47 'no-metadata' informational findings are NOT in scope — lazy migration policy stands; do not add frontmatter to docs this run does not otherwise touch."
+  - "codedoc-aligner contract (semantic gate): run `python .agents/skills/codedoc-aligner/scripts/chunk_and_align.py --code-file <code> --doc-file <doc>` per pair. Exit 0 = aligned; exit 1 = findings -> RECORD verbatim in the run report, do NOT auto-fix semantic drift (human/lead work); exit 2 = infra fail -> halt the task, never treat as aligned. Model env defaults are already correct on this machine."
+  - "Scanner-rule challenges: if a violation class is judged a false positive (candidate: 'collision' at 57 hits — linking the same target repeatedly may be legitimate), the fix is in tools/doc-graph/ WITH updated tests proving both the old false-positive and the new correct behavior; spec-of-truth for slug rules remains G1's constraints + docs/README.md."
+  - "Windows realities as G1: BOM, space paths, CRLF; python for aligner runs is available on PATH."
+
+epic_dod: >
+  WHEN `node tools/doc-graph/scan.mjs` runs at repo root after the sweep
+  THE SYSTEM SHALL exit 0 with zero blocking violations (informational
+  no-metadata/glob-slug may remain), AND every doc modified by this epic
+  SHALL carry a Step-5 changelog row and a consistent version, AND the
+  codedoc-aligner SHALL have run on every touched doc-code pair with no
+  exit-2 results and all exit-1 findings recorded verbatim in the run
+  report, AND `git status` SHALL show no modifications outside docs/**,
+  tools/doc-graph/**, and the scan artifacts. Done means all task
+  verify_commands exit 0 and the adversarial review confirms no prose
+  meaning changed anywhere.
+
+phase_gates:
+  Verify-gate: >
+    Machine-checkable per task: scanner reason-counts must hit zero for the
+    class each task owns (checked via docs/DOC-GRAPH.json), aligner exit
+    codes captured from real runs.
+  Author-gate: >
+    Executors receive the violation list for their class (from
+    DOC-GRAPH.json) + the edit-discipline constraints only; no executor may
+    fix outside its assigned class.
+  Review-gate: >
+    T3 diffs every touched doc for meaning-preservation (link/metadata-only),
+    re-runs the scanner, spot-checks 5 fixed links resolve to real targets,
+    and verifies aligner findings were recorded not silently fixed.
+  Assemble-gate: >
+    Run branch only; human owns the merge. Never push.
+
+tasks:
+  - id: G15-T1
+    description: "Analyze the 57 'collision' violations in docs/DOC-GRAPH.json: determine whether the scanner's collision rule is a false-positive class (e.g. flagging every repeated use of a valid slug, or counting README-disambiguation as duplicates) or whether real duplicate-basename docs exist. If the rule is wrong: fix tools/doc-graph/slugmap.mjs or wikilinks.mjs so only true ambiguity (two distinct non-README files sharing one slug) violates, add regression tests covering the false-positive case, and document the corrected rule in a code comment. If real collisions exist: list them with the rename each needs, but do NOT rename files — report for human decision. Verify: after the fix, scan.mjs reports collision count == count of genuinely ambiguous slug pairs (expected small or zero), and all doc-graph tests pass."
+    requirement_ref: R-G15.1
+    tier_hint: T2
+    verify_command: "node --test \"tools/doc-graph/*.test.mjs\""
+
+  - id: G15-T2
+    description: "Fix all 'unresolved' wikilink violations (34 at scan time; re-read the live list from docs/DOC-GRAPH.json first). For each: if the intended target exists under a different slug (e.g. [[architecture/design-system]] vs the actual slug for docs/architecture/design-system.md per slugmap rules), correct the slug in place keeping any |label. If the target is a directory or non-doc asset (e.g. design-system/assets), convert the wikilink to plain backtick path text. If the target genuinely does not exist, convert to backtick text and add it to a 'dangling references' section in the run report. Apply Step-5 patch-bump+changelog to every touched doc. Verify: rerun scan.mjs and assert unresolved == 0 via docs/DOC-GRAPH.json."
+    requirement_ref: R-G15.2
+    tier_hint: T1
+    verify_command: "node tools/doc-graph/scan.mjs; node -e \"const g=require('./docs/DOC-GRAPH.json'); process.exit(g.violations.filter(v=>v.reason==='unresolved').length===0?0:1)\""
+
+  - id: G15-T3
+    description: "Fix all 'bad-anchor' symbol-link violations (14 at scan time; re-read live list). For each: open the link's target file, locate the referenced symbol (the backticked identifier in the link text) with exact-match search, and update #L<n> to the symbol's current line. If the symbol no longer exists in the file, drop the #L anchor (keep the file link) and record it in the run report. Step-5 treatment per touched doc. Verify: rerun scan.mjs, assert bad-anchor == 0."
+    requirement_ref: R-G15.3
+    tier_hint: T1
+    verify_command: "node tools/doc-graph/scan.mjs; node -e \"const g=require('./docs/DOC-GRAPH.json'); process.exit(g.violations.filter(v=>v.reason==='bad-anchor').length===0?0:1)\""
+
+  - id: G15-T4
+    description: "Fix 'missing-changelog' (11) and 'version-changelog-mismatch' (3) violations (re-read live list). missing-changelog: append a '## Changelog' table at doc tail with one row matching the current frontmatter version (Summary: 'changelog table added per Step-5 SOP (G1.5)'). version-changelog-mismatch: reconcile by adding a changelog row for the current frontmatter version describing the drift closure — never rewrite existing rows. Exempt paths stay untouched. Verify: rerun scan.mjs, assert both reasons == 0."
+    requirement_ref: R-G15.4
+    tier_hint: T1
+    verify_command: "node tools/doc-graph/scan.mjs; node -e \"const g=require('./docs/DOC-GRAPH.json'); process.exit(g.violations.filter(v=>['missing-changelog','version-changelog-mismatch'].includes(v.reason)).length===0?0:1)\""
+
+  - id: G15-T5
+    description: "Symbol-link coverage extension (doc->code): for the 20 highest-traffic docs by edge count in docs/DOC-GRAPH.json (excluding audits/rca), find backticked code-entity mentions (`*.rs`, `*.ts`, `*.tsx`, `*.mjs` filenames, and function/struct identifiers) that are NOT already markdown links; verify each candidate exists in the repo (exact filename match under src/, src-tauri/src/, tools/; identifier via exact-match grep in the named file) and wrap verified mentions as [`name`](file:///g:/G-Maiden/<path>) links, with #L<n> only when grep pins a unique definition line. NEVER link a mention you could not verify; skip prose that names planned/unbuilt code. Cap: max 15 new links per doc. Step-5 treatment per touched doc. Verify: rerun scan.mjs asserting zero NEW violations introduced (blocking count must not increase; symbol-link edges count in DOC-GRAPH.json must increase)."
+    requirement_ref: R-G15.5
+    tier_hint: T2
+    verify_command: "node tools/doc-graph/scan.mjs; node -e \"const g=require('./docs/DOC-GRAPH.json'); const b=g.violations.filter(v=>!['no-metadata','glob-slug'].includes(v.reason)).length; process.exit(b===0?0:1)\""
+
+  - id: G15-T6
+    description: "codedoc-aligner semantic gate over the sweep: collect every doc touched by T2-T5 (git diff --name-only on the run branch, docs/** only). For each touched doc that has symbol-link edges to code files in DOC-GRAPH.json, pick its top code pair (most-linked code file) and run `python .agents/skills/codedoc-aligner/scripts/chunk_and_align.py --code-file <code> --doc-file <doc>`. Record every run's exit code + full stdout verbatim into the run report section 'aligner-findings'. Exit 2 anywhere = this task fails (infra problem, do not proceed). Exit 1 findings are RECORDED ONLY — no semantic edits (out of this epic's discipline). Verify: a summary JSON at tools/doc-graph/aligner-summary.json {pairs, exit0, exit1, exit2} with exit2 == 0."
+    requirement_ref: R-G15.6
+    tier_hint: T1
+    verify_command: "node -e \"const s=require('./tools/doc-graph/aligner-summary.json'); process.exit(s.exit2===0 && s.pairs>0 ? 0 : 1)\""
+
+  - id: G15-T7
+    description: "Adversarial review (Review-gate): (1) diff every touched doc and confirm changes are link/metadata-only — flag ANY prose-meaning change as FAIL with the exact hunk; (2) re-run the full scanner asserting exit 0 (blocking == 0); (3) spot-check 5 random fixed wikilinks and 3 fixed anchors resolve to real targets at the stated lines; (4) confirm every touched doc has its Step-5 changelog row; (5) confirm aligner-summary exists, exit2==0, and exit-1 findings appear verbatim in the report (not fixed). Return PASS/FAIL with file:line evidence."
+    requirement_ref: R-G15.7
+    tier_hint: T3
+    verify_command: "node tools/doc-graph/scan.mjs"
