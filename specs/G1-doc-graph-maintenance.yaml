@@ -1,0 +1,106 @@
+# G1 — G-Maiden doc-graph maintenance (PILOT-1 of the RWANG→G-Maiden pipeline).
+# First real run against the product repo, per ADR-17 D6/D7 (G:/G-Maiden/docs/
+# architecture/adr/ADR-17-dev-runtime-governance-split.md): deterministic
+# validators over the docs knowledge-graph — the layer beneath codedoc-aligner.
+# Everything here is machine-checkable, so it is the ideal proving run for
+# local-first routing (Boss: idle ollama VRAM = the worker; escalate only on
+# verify fail). Blast radius is docs-artifacts only — the safest possible pilot.
+#
+# RECOMMENDED AUTONOMY: supervised — first run against G-Maiden; pause at
+# phase boundaries. Casting: T1/local-first for the mechanical modules,
+# review task is T3-gated.
+
+goal: >
+  Give G-Maiden a deterministic doc-graph scanner at tools/doc-graph/: a
+  slug-map builder, wikilink validator, symbol-link validator, and
+  frontmatter/version-changelog validator, composed into one CLI that emits
+  docs/DOC-GRAPH.json (nodes+edges) and docs/DOC-GRAPH-REPORT.md — so broken
+  links and metadata drift are caught by exit code, not by a human rereading
+  83 files. This is the evidence layer that codedoc-aligner (LLM drift gate)
+  and future RWANG:scan runs sit on top of.
+
+target_repo: "G:/G-Maiden"
+
+autonomy: supervised
+
+constraints:
+  - "PRECONDITION: a parallel Claude session is often active in this repo with dirty files — branch from a clean fetched HEAD (git stash is NOT allowed; if the tree is dirty, stop and report). NEVER `git add -A` in this repo; stage files by name."
+  - "Read-only over docs/**: the ONLY files this epic may create/modify are tools/doc-graph/** and the two artifacts docs/DOC-GRAPH.json + docs/DOC-GRAPH-REPORT.md. Zero edits to existing .md files — fixing violations is a separate follow-up epic."
+  - "Do not touch src/, src-tauri/, .agents/, .govibe/, orchestration/ (orchestration/docs is OUT of pilot scope — its .md are partly derived from gks/atoms*.json per docs/README.md SSOT rules)."
+  - "Node ESM, zero new dependencies, tests via node --test (match the G:/Rwang house style). Node >=20 is available in the repo toolchain."
+  - "Slug rules MUST match the convention already used across docs/ wikilinks: slug = basename without .md; README.md files disambiguate as '<parent-path>/README' (e.g. design-system/README, features/README, docs/README); a wikilink may carry a display label ([[slug|label]])."
+  - "Frontmatter rules come from G:/G-Maiden/docs/README.md section 'มาตรฐาน metadata หัวเอกสาร': YAML frontmatter docs must have version: matching the LAST row of the trailing '## Changelog' table; docs using the legacy blockquote header (> **เวอร์ชัน:** x.y.z) are valid but reported as 'legacy-header'; docs/audits/** and docs/rca/** are exempt (point-in-time records); docs with neither are reported 'no-metadata' (informational, not an error — migration is lazy)."
+  - "Symbol links are markdown links whose target starts with file:///g:/G-Maiden/ (case-insensitive drive); an optional #L<n> anchor must satisfy n >= 1 and n <= line count of the target file."
+  - "Windows realities: paths may contain spaces ('docs/change request/'); files may start with a UTF-8 BOM; read with utf-8 and strip BOM before parsing (a silent parse failure must surface in the report, never vanish)."
+
+epic_dod: >
+  WHEN `node tools/doc-graph/scan.mjs` runs at the G-Maiden repo root
+  THE SYSTEM SHALL write docs/DOC-GRAPH.json (nodes: every docs/**/*.md and
+  every symbol-link target file; edges: wikilink + symbol-link with source
+  line numbers) and docs/DOC-GRAPH-REPORT.md (counts + per-violation list),
+  AND exit 0 when no violations exist, exit 1 when any broken wikilink,
+  broken symbol link, bad line anchor, or version/changelog mismatch exists,
+  AND `git status` shows no modified files outside tools/doc-graph/ and the
+  two artifacts. Done means: all task verify_commands exit 0 on a real run,
+  seeded-broken fixtures are caught by the tests, and the adversarial review
+  confirms the read-only guarantee from the diff.
+
+phase_gates:
+  Verify-gate: >
+    Every task carries an executable verify_command (node --test) that exits
+    0; a pass is claimed only from a real run. The e2e task additionally runs
+    against the real docs/ tree and must complete in under 30 seconds.
+  Author-gate: >
+    Each executor gets only its self-contained task description plus this
+    spec's constraints block; slug/frontmatter rules are read from
+    docs/README.md, not guessed from memory.
+  Review-gate: >
+    T3 re-runs all tests, greps the diff for any write path touching docs/**
+    other than the two artifacts, checks BOM/space-path handling against the
+    fixtures, and returns PASS/FAIL with evidence.
+  Assemble-gate: >
+    All changes land on a run branch of G:/G-Maiden; the human (Boss/lead
+    session) owns the merge into main — never merge or push from this run.
+
+tasks:
+  - id: G1-T1
+    description: "Create tools/doc-graph/slugmap.mjs: export buildSlugMap(docsDir) -> Map<slug, relPath> scanning docs/**/*.md recursively (skip nothing; handle 'change request' space dir). Slug = basename minus .md; README.md disambiguates as '<parentDirName>/README' with the special case docs/README.md -> 'docs/README'. Also export collisions(map-building) reporting duplicate slugs (two non-README files sharing a basename) as a violation list. Include slugmap.test.mjs (node:test) with a fixture tree covering: normal file, README in nested dir, space-in-dirname, duplicate-basename collision, BOM-prefixed file."
+    requirement_ref: R-G1.1
+    tier_hint: T1
+    verify_command: "node --test tools/doc-graph/slugmap.test.mjs"
+
+  - id: G1-T2
+    description: "Create tools/doc-graph/wikilinks.mjs: export extractWikilinks(mdText) -> [{slug, label|null, line}] parsing [[slug]] and [[slug|label]] outside fenced code blocks (``` fences) and inline code spans, and validateWikilinks(links, slugMap) -> violations [{slug, line, reason: 'unresolved'|'collision'}]. Wildcard-style slugs containing '*' (e.g. [[FEAT-G-*]]) are skipped as intentional globs, reported informationally. Include wikilinks.test.mjs with fixtures: plain link, labeled link, link inside a code fence (must be ignored), unresolved slug, glob slug."
+    requirement_ref: R-G1.2
+    tier_hint: T1
+    verify_command: "node --test tools/doc-graph/wikilinks.test.mjs"
+
+  - id: G1-T3
+    description: "Create tools/doc-graph/symlinks.mjs (symbol links, not filesystem symlinks): export extractSymbolLinks(mdText) -> [{target, anchorLine|null, line}] for markdown links whose URL starts with file:///g:/G-Maiden/ (accept file:///G:/ too), URL-decoding %20, and validateSymbolLinks(links, repoRoot) -> violations [{target, line, reason: 'missing-file'|'bad-anchor'}] where bad-anchor means #L<n> exceeds the target's line count or n<1. Directory targets are valid if the directory exists. Include symlinks.test.mjs with fixtures: valid file link, valid dir link, missing file, valid #L anchor, out-of-range #L anchor, %20-encoded path."
+    requirement_ref: R-G1.3
+    tier_hint: T1
+    verify_command: "node --test tools/doc-graph/symlinks.test.mjs"
+
+  - id: G1-T4
+    description: "Create tools/doc-graph/metadata.mjs: export checkMetadata(mdText, relPath) -> {kind: 'frontmatter'|'legacy-header'|'none'|'exempt', violations: []} implementing the frontmatter rules from the constraints block: YAML frontmatter (--- fenced at byte 0 after optional BOM) with a version: field must match the Version cell of the LAST data row of the trailing '## Changelog' markdown table (violation reason 'version-changelog-mismatch'; frontmatter without any changelog table -> 'missing-changelog'); blockquote-header docs (a line starting '> ' containing '**เวอร์ชัน:**' or 'version') classify as legacy-header, no violation; docs/audits/** and docs/rca/** classify exempt regardless of content. Include metadata.test.mjs with fixtures for each kind plus both violation reasons."
+    requirement_ref: R-G1.4
+    tier_hint: T2
+    verify_command: "node --test tools/doc-graph/metadata.test.mjs"
+
+  - id: G1-T5
+    description: "Create tools/doc-graph/scan.mjs composing T1-T4 into a CLI: walk docs/**/*.md, build the slug map, run all validators per file, then write (1) docs/DOC-GRAPH.json {generatedAt: from --now arg or file mtime-max (no Date.now in library code paths that tests assert on), nodes: [{id, type: 'doc'|'code', path}], edges: [{from, to, type: 'wikilink'|'symbol', line}], violations: [...]} and (2) docs/DOC-GRAPH-REPORT.md (Thai+English summary table: totals per violation reason, then per-file violation list with line numbers). Exit 0 iff violations excluding informational kinds ('no-metadata', glob slugs) is empty, else exit 1. Include scan.test.mjs running the CLI against a self-contained fixture repo (temp dir) with one seeded violation of every reason, asserting exit code 1 and report content; plus a clean fixture asserting exit 0."
+    requirement_ref: R-G1.5
+    tier_hint: T2
+    verify_command: "node --test tools/doc-graph/scan.test.mjs"
+
+  - id: G1-T6
+    description: "E2E against the real repo: run `node tools/doc-graph/scan.mjs` at G:/G-Maiden root. It must complete without throwing, write both artifacts, and finish in <30s. Capture the exit code and the report's violation totals into the task output verbatim (the CURRENT real tree may legitimately contain violations — exit 1 on the real tree is NOT a task failure; a crash or missing artifact is). Then run `git status --porcelain` and assert no modified files outside tools/doc-graph/, docs/DOC-GRAPH.json, docs/DOC-GRAPH-REPORT.md."
+    requirement_ref: R-G1.6
+    tier_hint: T2
+    verify_command: "node tools/doc-graph/e2e-check.mjs"
+
+  - id: G1-T7
+    description: "Adversarial review (Review-gate): re-run all five test suites; grep the full diff for fs write calls (writeFile|appendFile|rm|rename|mkdir) and verify every write path resolves inside tools/doc-graph/ or is one of the two declared artifacts; verify BOM and space-path fixtures actually exercise the code (not skipped); verify scan.mjs exit-code contract matches epic_dod. Return PASS/FAIL with file:line evidence for every claim."
+    requirement_ref: R-G1.7
+    tier_hint: T3
+    verify_command: "node --test tools/doc-graph/"
