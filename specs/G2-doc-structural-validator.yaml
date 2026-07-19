@@ -96,8 +96,15 @@ tasks:
     tier_hint: T2
     verify_command: "node tools/doc-graph/e2e-check-g2.mjs"
 
-  - id: G2-T7
-    description: "Adversarial review (Review-gate): re-run all suites; diff-grep for out-of-scope writes; verify the hardcoded rulebook against G:/G-Maiden/docs/README.md v0.4.0 enum table and approval rules line-by-line (any divergence = FAIL with the exact line); verify fts.mjs credits its origin file; verify --strict default-off preserves G1 behavior byte-identically on the non-strict fixture. Return PASS/FAIL with file:line evidence."
-    requirement_ref: R-G2.7
+  - id: G2-R-pre
+    description: "PRE-REVIEW (veto-only, per docs/SPEC--REVIEW-CASCADE.md): (a) re-run every prior task's verify_command and record exit codes; (b) git-diff scope check — any write outside tools/doc-graph/** and the three declared artifacts is a veto; (c) mechanical checklist lifted from the adversarial review: fts.mjs header credits its origin file (grep), --strict flag exists and defaults off (grep scan.mjs), non-strict fixture rerun passes; (d) write tools/doc-graph/review-pre.json {vetoes: [], annotations: []} — anything suspicious but not judgeable goes in annotations, never silently dropped. ANY veto = this task FAILS (fail-fast; the adversarial review never runs). Zero vetoes = PASS meaning 'no objection found, escalate' — NEVER 'approved'."
+    requirement_ref: R-G2.7a
+    tier_hint: T1
+    verify_command: "node --test \"tools/doc-graph/*.test.mjs\" && node -e \"const r=require('./tools/doc-graph/review-pre.json'); process.exit(Array.isArray(r.vetoes)&&r.vetoes.length===0?0:1)\""
+
+  - id: G2-R-adv
+    depends_on: [G2-R-pre]
+    description: "ADVERSARIAL REVIEW (judgment layer — consumes tools/doc-graph/review-pre.json annotations): verify the hardcoded rulebook against G:/G-Maiden/docs/README.md v0.4.0 enum table and approval rules line-by-line (any divergence = FAIL with the exact line); attempt to construct inputs where --strict changes non-strict behavior (must be impossible); judge every annotation from R-pre. Mechanical items R-pre covered are not re-litigated unless annotated. Return PASS/FAIL with file:line evidence."
+    requirement_ref: R-G2.7b
     tier_hint: T3
-    verify_command: "node --test "tools/doc-graph/*.test.mjs""
+    verify_command: "node --test \"tools/doc-graph/*.test.mjs\""

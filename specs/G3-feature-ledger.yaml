@@ -89,8 +89,15 @@ tasks:
     tier_hint: T2
     verify_command: "node tools/doc-graph/e2e-check-g3.mjs"
 
-  - id: G3-T6
-    description: "Adversarial review (Review-gate): re-run all suites; sample 10 manifest rows and verify every ref exists on disk exactly as written (invented ref = FAIL); attempt to construct a manifest row that reaches 'verified' without --run-tests evidence — if possible, FAIL with the rule gap; verify generated files carry the GENERATED header and that the manifest carries none; verify the DOC-GRAPH.json merge preserved all pre-existing keys byte-compatibly. PASS/FAIL with file:line evidence."
-    requirement_ref: R-G3.6
+  - id: G3-R-pre
+    description: "PRE-REVIEW (veto-only, per docs/SPEC--REVIEW-CASCADE.md): (a) re-run every prior task's verify_command; (b) git-diff scope check per the write-scope constraint; (c) mechanical checklist lifted from the adversarial review: generated files carry the GENERATED header (grep), the manifest carries none, script-sample 10 manifest rows and verify every ref path exists on disk exactly as written (missing = veto); (d) write tools/doc-graph/review-pre-g3.json {vetoes: [], annotations: []}. ANY veto = FAIL fast. Zero vetoes = escalate, never approve."
+    requirement_ref: R-G3.6a
+    tier_hint: T1
+    verify_command: "node --test \"tools/doc-graph/*.test.mjs\" && node -e \"const r=require('./tools/doc-graph/review-pre-g3.json'); process.exit(Array.isArray(r.vetoes)&&r.vetoes.length===0?0:1)\""
+
+  - id: G3-R-adv
+    depends_on: [G3-R-pre]
+    description: "ADVERSARIAL REVIEW (judgment layer — consumes review-pre-g3.json annotations): attempt to construct a manifest row that reaches 'verified' without --run-tests evidence — if possible, FAIL with the rule gap; verify the DOC-GRAPH.json merge preserved all pre-existing keys byte-compatibly; judge extraction honesty on 5 sampled bootstrap rows (claimed_status mapping faithful to the source badge, no invented refs beyond what R-pre's existence check covers — i.e. refs that exist but are IRRELEVANT to the feature). PASS/FAIL with file:line evidence."
+    requirement_ref: R-G3.6b
     tier_hint: T3
     verify_command: "node --test \"tools/doc-graph/*.test.mjs\""
