@@ -36,7 +36,9 @@ constraints:
 
 epic_dod: >
   WHEN `node tools/doc-graph/scan.mjs --strict` runs at repo root THE SYSTEM
-  SHALL additionally validate frontmatter per the v0.4.0 standard and include
+  SHALL additionally validate frontmatter per the v0.4.0 standard AND
+  anchor-integrity (anchored symbol present within +-2 lines of #L<n>,
+  reason 'anchor-symbol-mismatch') and include
   those violations in DOC-GRAPH-REPORT.md and the exit code; WHEN
   `node tools/doc-graph/diff-gate.mjs origin/main...HEAD` runs it SHALL exit
   per the diff-gate semantics; WHEN `node tools/doc-graph/fts.mjs "<query>"`
@@ -71,6 +73,12 @@ tasks:
     requirement_ref: R-G2.2
     tier_hint: T2
     verify_command: "node --test tools/doc-graph/scan.test.mjs"
+
+  - id: G2-T7
+    description: "Anchor-integrity checker (born from the G1.5 T7 incident: a repair script pinned App.tsx anchors to plausible in-bounds lines whose symbols had moved out of the facade — the bounds-only rule passed them, only the T3 adversarial review caught it). Extend tools/doc-graph/symlinks.mjs with validateAnchorIntegrity(links, repoRoot): for each symbol link carrying a #L<n> anchor whose backticked label is NOT simply the target's basename (i.e. the link names a symbol, not just the file), read the target and require the symbol token (label minus trailing '()', last '::' / '.' segment) to appear within lines [n-2, n+2]; absence = violation 'anchor-symbol-mismatch' with {file, line, target, anchor, symbol}. Filename-labeled links and anchorless links are exempt. Wire into scan.mjs under --strict as a BLOCKING reason (non-strict unchanged). Include tests: symbol on the exact anchored line (pass), symbol within the ±2 window (pass), symbol absent from the window but present elsewhere in the file (violation), symbol absent entirely (violation), filename-label link (exempt), anchorless link (exempt)."
+    requirement_ref: R-G2.8
+    tier_hint: T2
+    verify_command: "node --test tools/doc-graph/symlinks.test.mjs"
 
   - id: G2-T3
     description: "Create tools/doc-graph/diff-gate.mjs: CLI taking a git range arg (default origin/main...HEAD). Use `git diff --name-only <range>` (spawn git, no deps). Rule: any change under src/ or src-tauri/src/ with zero changes under docs/ -> exit 1 printing the offending files; if any commit message in the range contains [no-doc-impact] -> print warning, exit 0. Renames/deletes count as changes. Include diff-gate.test.mjs using a throwaway fixture git repo built in a temp dir (git init, seeded commits) covering: code+doc change (pass), code-only (fail), code-only with [no-doc-impact] (warn-pass), docs-only (pass)."
