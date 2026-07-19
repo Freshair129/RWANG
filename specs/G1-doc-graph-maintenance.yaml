@@ -103,4 +103,4 @@ tasks:
     description: "Adversarial review (Review-gate): re-run all five test suites; grep the full diff for fs write calls (writeFile|appendFile|rm|rename|mkdir) and verify every write path resolves inside tools/doc-graph/ or is one of the two declared artifacts; verify BOM and space-path fixtures actually exercise the code (not skipped); verify scan.mjs exit-code contract matches epic_dod. Return PASS/FAIL with file:line evidence for every claim."
     requirement_ref: R-G1.7
     tier_hint: T3
-    verify_command: "node --test tools/doc-graph/"
+    verify_command: "node --test "tools/doc-graph/*.test.mjs""

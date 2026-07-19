@@ -100,4 +100,4 @@ tasks:
     description: "Adversarial review (Review-gate): re-run all suites; diff-grep for out-of-scope writes; verify the hardcoded rulebook against G:/G-Maiden/docs/README.md v0.4.0 enum table and approval rules line-by-line (any divergence = FAIL with the exact line); verify fts.mjs credits its origin file; verify --strict default-off preserves G1 behavior byte-identically on the non-strict fixture. Return PASS/FAIL with file:line evidence."
     requirement_ref: R-G2.7
     tier_hint: T3
-    verify_command: "node --test tools/doc-graph/"
+    verify_command: "node --test "tools/doc-graph/*.test.mjs""
