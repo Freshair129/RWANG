@@ -1,0 +1,103 @@
+# G2 — G-Maiden structural doc validator + retrieval layer (PILOT-2, depends on G1).
+# Unification Mechanical #3 + #6 per G-Maiden docs/research/
+# 2026-07-19-govibe-gmaiden-governance-comparison.md: the GoVibe lesson is that
+# "what keeps versions honest is the VALIDATOR, not the registry" — this epic
+# ports that lesson onto G-Maiden's in-doc SSOT (frontmatter <-> changelog),
+# adds the code<->doc structural diff gate beneath codedoc-aligner's semantic
+# gate, ports GoVibe's proven pure-Node FTS layer, and emits atomic_index.jsonl
+# so brain/docs retrieval stops re-reading 500-line files.
+#
+# RECOMMENDED AUTONOMY: supervised. Casting mirrors G1: T1/local-first for
+# mechanical modules, T3 review gate. DO NOT start before G1 has merged —
+# G2 builds inside tools/doc-graph/ created by G1.
+
+goal: >
+  Extend G-Maiden's tools/doc-graph/ with (a) a structural frontmatter
+  validator enforcing docs/README.md's declared standard (schema fields,
+  lowercase status enum, version == last changelog row, approved_by rules),
+  (b) a git diff gate that fails when src changes ship without doc changes,
+  (c) a ported pure-Node FTS module over docs/ + .govibe/.brain/, and
+  (d) an atomic_index.jsonl emitter (one line per doc/brain file: path, slug,
+  title, status, version, headings, outbound links) — all exit-code gated.
+
+target_repo: "G:/G-Maiden"
+
+autonomy: supervised
+
+constraints:
+  - "DEPENDS ON G1: tools/doc-graph/{slugmap,wikilinks,symlinks,metadata,scan}.mjs must exist on the target branch before starting; reuse their exports, do not duplicate parsing logic."
+  - "PRECONDITION: branch from a clean fetched HEAD; a parallel session is often active — if the tree is dirty, stop and report. NEVER `git add -A`; stage files by name."
+  - "Write scope: tools/doc-graph/** plus the emitted artifacts docs/DOC-GRAPH.json, docs/DOC-GRAPH-REPORT.md, docs/atomic_index.jsonl. Zero edits to existing .md files — violations get REPORTED, fixing them is human/lead work."
+  - "The validator's rulebook is G:/G-Maiden/docs/README.md sections 'มาตรฐาน metadata หัวเอกสาร' + status-enum table (v0.4.0) — read at runtime? No: hardcode the v0.4.0 rules with a comment pinning the source version; a rules drift between README and validator must fail loudly in review, not silently diverge."
+  - "Status enum (lowercase): draft|active|accepted|stable|superseded|historical. Legacy capitalized values (e.g. 'Accepted') are a WARNING (lazy-migration rule), not an error. accepted/stable REQUIRE approved_by+approved_date (error if missing). docs/audits/** + docs/rca/** exempt from all frontmatter requirements."
+  - "Node ESM, zero new dependencies, node --test. The FTS port source is G:/cognitive_system/packages/msp/src/cognitive/fts.ts (pure-Node substring + token-overlap scoring) — port to .mjs, keep the algorithm, strip TS types; credit the origin in a header comment."
+  - "Diff gate semantics: given a git range (default origin/main...HEAD), if any file under src/ or src-tauri/src/ changed AND zero files under docs/ changed, exit 1 with the changed-file list. Escape hatch: commit message containing [no-doc-impact] downgrades to warning. Never inspect content — this is the structural layer; semantic judgment stays codedoc-aligner's job."
+  - "Windows realities: UTF-8 BOM, space-in-dirname paths ('docs/change request/'), CRLF tolerance — fixtures must cover all three (G1's traps apply here too)."
+
+epic_dod: >
+  WHEN `node tools/doc-graph/scan.mjs --strict` runs at repo root THE SYSTEM
+  SHALL additionally validate frontmatter per the v0.4.0 standard and include
+  those violations in DOC-GRAPH-REPORT.md and the exit code; WHEN
+  `node tools/doc-graph/diff-gate.mjs origin/main...HEAD` runs it SHALL exit
+  per the diff-gate semantics; WHEN `node tools/doc-graph/fts.mjs "<query>"`
+  runs it SHALL print ranked doc/brain hits with path+line; AND scan SHALL
+  emit docs/atomic_index.jsonl with one valid-JSON line per markdown file.
+  Done means: all verify_commands exit 0, the real-tree e2e completes <45s,
+  and adversarial review confirms zero writes outside the declared scope.
+
+phase_gates:
+  Verify-gate: >
+    Executable verify_command per task, real runs only. Fixture-seeded
+    violations of every rule must be caught by tests.
+  Author-gate: >
+    Each executor receives its task + this constraints block only; the
+    frontmatter rulebook version is pinned (README v0.4.0) and cited.
+  Review-gate: >
+    T3 re-runs all suites, greps the diff for write paths outside scope,
+    verifies the enum/approval rules against docs/README.md v0.4.0 line by
+    line, and confirms the FTS port credits its origin. PASS/FAIL + evidence.
+  Assemble-gate: >
+    Run branch only; human owns the merge. Never push.
+
+tasks:
+  - id: G2-T1
+    description: "Create tools/doc-graph/frontmatter-rules.mjs: export validateFrontmatter(parsedDoc, relPath) implementing the pinned v0.4.0 rulebook — required fields (title, doc_id, status, version, updated, owner) for frontmatter docs; lowercase status enum draft|active|accepted|stable|superseded|historical (capitalized legacy = warning 'legacy-status-case'); accepted|stable without approved_by+approved_date = error 'missing-approval'; doc_id must equal the file's slug per G1 slugmap rules = error 'doc-id-slug-mismatch'; version must equal the last changelog row (reuse G1 metadata.mjs extraction) = error 'version-changelog-mismatch'. Exempt docs/audits/** and docs/rca/**. Include frontmatter-rules.test.mjs with a fixture per rule (violating + passing pair each)."
+    requirement_ref: R-G2.1
+    tier_hint: T1
+    verify_command: "node --test tools/doc-graph/frontmatter-rules.test.mjs"
+
+  - id: G2-T2
+    description: "Wire frontmatter-rules into scan.mjs behind a --strict flag (default off so G1 behavior is unchanged): strict adds the new violations to DOC-GRAPH.json violations[] and the report, and folds them into the exit-code rule (errors gate, warnings informational). Update scan.test.mjs: existing non-strict fixtures still pass byte-identical; new strict fixtures assert each new violation reason appears and gates."
+    requirement_ref: R-G2.2
+    tier_hint: T2
+    verify_command: "node --test tools/doc-graph/scan.test.mjs"
+
+  - id: G2-T3
+    description: "Create tools/doc-graph/diff-gate.mjs: CLI taking a git range arg (default origin/main...HEAD). Use `git diff --name-only <range>` (spawn git, no deps). Rule: any change under src/ or src-tauri/src/ with zero changes under docs/ -> exit 1 printing the offending files; if any commit message in the range contains [no-doc-impact] -> print warning, exit 0. Renames/deletes count as changes. Include diff-gate.test.mjs using a throwaway fixture git repo built in a temp dir (git init, seeded commits) covering: code+doc change (pass), code-only (fail), code-only with [no-doc-impact] (warn-pass), docs-only (pass)."
+    requirement_ref: R-G2.3
+    tier_hint: T2
+    verify_command: "node --test tools/doc-graph/diff-gate.test.mjs"
+
+  - id: G2-T4
+    description: "Port GoVibe's FTS layer: read G:/cognitive_system/packages/msp/src/cognitive/fts.ts, port the substring + token-overlap scoring to tools/doc-graph/fts.mjs (pure Node ESM, no deps, origin credited in header). Index sources: docs/**/*.md + .govibe/.brain/**/*.md. CLI: `node tools/doc-graph/fts.mjs \"query\"` prints top-10 hits as path:line score snippet. Include fts.test.mjs with a small fixture corpus asserting ranking (exact-phrase hit outranks scattered-token hit) and Thai-text matching (no whitespace-tokenization assumption — substring path must catch Thai queries)."
+    requirement_ref: R-G2.4
+    tier_hint: T2
+    verify_command: "node --test tools/doc-graph/fts.test.mjs"
+
+  - id: G2-T5
+    description: "Create tools/doc-graph/atomic-index.mjs: export buildIndex(roots) -> array of {path, slug, title (first h1), status|null, version|null, headings[], outbound: {wikilinks[], symbolLinks[]}} reusing G1 extractors; scan.mjs gains emission of docs/atomic_index.jsonl (one JSON line per file, stable key order, LF endings). Include atomic-index.test.mjs asserting: every fixture file gets exactly one line, JSON-parseable, slug matches slugmap, and the file is deterministic across two runs (byte-identical)."
+    requirement_ref: R-G2.5
+    tier_hint: T1
+    verify_command: "node --test tools/doc-graph/atomic-index.test.mjs"
+
+  - id: G2-T6
+    description: "E2E on the real repo: run `node tools/doc-graph/scan.mjs --strict` (capture exit code + violation totals verbatim — real-tree violations are FINDINGS not failures; crash/missing artifact is failure), `node tools/doc-graph/fts.mjs \"Belief Revision\"` (must return >=1 hit), and verify docs/atomic_index.jsonl exists with >80 lines, then `git status --porcelain` shows no modifications outside tools/doc-graph/ + the three artifacts. Whole run <45s."
+    requirement_ref: R-G2.6
+    tier_hint: T2
+    verify_command: "node tools/doc-graph/e2e-check-g2.mjs"
+
+  - id: G2-T7
+    description: "Adversarial review (Review-gate): re-run all suites; diff-grep for out-of-scope writes; verify the hardcoded rulebook against G:/G-Maiden/docs/README.md v0.4.0 enum table and approval rules line-by-line (any divergence = FAIL with the exact line); verify fts.mjs credits its origin file; verify --strict default-off preserves G1 behavior byte-identically on the non-strict fixture. Return PASS/FAIL with file:line evidence."
+    requirement_ref: R-G2.7
+    tier_hint: T3
+    verify_command: "node --test tools/doc-graph/"
