@@ -523,12 +523,21 @@ async function phaseRoute() {
         `  Do NOT hand-assign tiers, hand-render SUMMARY/SKELETON text, or trim by hand — the`,
         `  helper is the single source of both (deterministic, self-tested). If it errors,`,
         `  note that and fall back to the prose brief.`,
+        `  d) RFC Phase 3 (feed the live trim-order to a UI): if ${runDir}/context_plan.json`,
+        `     was written, log ONE note event so the run's event stream carries a pointer +`,
+        `     summary — a UI binds to this instead of polling the file. Read mode, used_tokens,`,
+        `     budget_tokens, overflow, and trim_order STRAIGHT OUT of that JSON (never`,
+        `     recompute or hand-summarize), then from G:/Rwang run:`,
+        `       python orchestrator/progress.py ${runDir} event --task "<run>" --status note \\`,
+        `         --note "context_plan=context_plan.json mode=<mode> <used>/<budget>tok` +
+          ` overflow=<bool> trim_order=<comma-joined ids>"`,
+        `     Skip this step entirely if no context_plan.json was produced (mode "none").`,
         ``,
         `End the file with this exact line:`,
         `  "Facts frozen at Route time — if the live repo disagrees, trust the repo."`,
         ``,
-        `Return a one-line confirmation: prose line count, and whether a graded index was`,
-        `assembled (mode sim|hop-only|none).`,
+        `Return a one-line confirmation: prose line count, whether a graded index was`,
+        `assembled (mode sim|hop-only|none), and whether the note event was logged.`,
       ].join("\n"),
       { label: "context-brief", phase: "Route", model: "sonnet" }
     );

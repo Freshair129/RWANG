@@ -123,9 +123,11 @@ When `store.knowledge = 'file'` (GenesisDB absent — the current broken-import 
 
 ## 5. Rollout
 
-1. **Phase 1 (MVP):** Layer-3 scoring (`0.7·sim + 0.3·1/(1+hops)`, hop-only fallback per D7) + FULL/MENTION tiers + `expand()` + `scope.budgetTokens` budget. Deterministic helper lands with self-tests; `run.js` assembly wired.
-2. **Phase 2 (four tiers):** SUMMARY + SKELETON renderers, gated on `expand()` telemetry ≥ 20% (D3). Additive — no re-architecture.
-3. **Phase 3 (UI live):** feed the FLIGHT Context Preview live trim-order from the assembled package (§5.5 data bindings).
+1. **Phase 1 (MVP) — shipped**, `main` @ `b8e5613`: Layer-3 scoring (`0.7·sim + 0.3·1/(1+hops)`, hop-only fallback per D7) + FULL/MENTION tiers + `expand()` + `scope.budgetTokens` budget. Deterministic helper lands with self-tests; `run.js` assembly wired.
+2. **Phase 2 (four tiers) — shipped**, `main` @ `423b9a0`: SUMMARY + SKELETON renderers, gated on `expand()` telemetry ≥ 20% (D3) but shipped anyway per D3's own note (additive, no re-architecture; the 20% figure remains a revisit signal, not a build-blocker).
+3. **Phase 3 (UI live) — backend half shipped, UI half deferred:** feed the FLIGHT Context Preview live trim-order from the assembled package (§5.5 data bindings). This RFC lives in Rwang (the control plane); the FLIGHT desktop app is a separate Tauri project (`DESIGN--RWANG-FLIGHT-DESKTOP-UX.md`, implemented outside this repo). Split accordingly:
+   - **Backend (this repo, shipped):** the context-brief agent ([run.js:530-538](../orchestrator/run.js)) logs one `note` event per run (`task="<run>"`) after writing `context_plan.json`, carrying `mode`, `used/budget` tokens, `overflow`, and `trim_order` in `--note` (free-text `detail`, per the sacred progress-schema contract — no new event fields). A UI binds to this event instead of polling the file, then reads `runs/<runId>/context_plan.json` (the exact `resolution_gradient.py assign()` output — `atoms[]`, `trim_order`, `used_tokens`/`budget_tokens`, `overflow`, `mode`) for the full package. Absence of the file/event means no graded assembly ran for that run (n<3 tasks, or no knowledge graph at all — D7's "none" case), which is the FLIGHT §5.5 "Empty"/no-brief state already.
+   - **UI (not this repo, not done):** the actual Context Preview panel — budget bar, live trim order, per-selected-task re-assembly — has no implementation yet in the FLIGHT Tauri app. The RFC's assembly today is one graded package per **run**, not per selected **task** as §5.5's mockup implies ("select an upcoming task → the exact ContextPackage assembles"); making it per-task would need a task-level `scope.budgetTokens` field (absent from today's spec schema — see `specs/_TEMPLATE.yaml`) and a per-task anchor/sim query. That redesign is out of scope here and belongs with whoever implements the FLIGHT panel.
 
 ## 6. Alternatives considered
 
