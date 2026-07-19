@@ -24,7 +24,7 @@ target_repo: "G:/G-Maiden"
 autonomy: supervised
 
 constraints:
-  - "PRECONDITION: a parallel Claude session is often active in this repo with dirty files — branch from a clean fetched HEAD (git stash is NOT allowed; if the tree is dirty, stop and report). NEVER `git add -A` in this repo; stage files by name."
+  - "PRECONDITION: a parallel Claude session is often active in this repo with dirty files — branch from current HEAD. Dirty-tree rule is SCOPE-AWARE: if any dirty file is under docs/** or tools/**, stop and report; dirty files elsewhere (e.g. orchestration/**, tests/**, src-tauri/**) are tolerated — record them verbatim in the run report, never stage or touch them. git stash is NOT allowed. NEVER `git add -A` in this repo; stage files by name."
   - "Read-only over docs/**: the ONLY files this epic may create/modify are tools/doc-graph/** and the two artifacts docs/DOC-GRAPH.json + docs/DOC-GRAPH-REPORT.md. Zero edits to existing .md files — fixing violations is a separate follow-up epic."
   - "Do not touch src/, src-tauri/, .agents/, .govibe/, orchestration/ (orchestration/docs is OUT of pilot scope — its .md are partly derived from gks/atoms*.json per docs/README.md SSOT rules)."
   - "Node ESM, zero new dependencies, tests via node --test (match the G:/Rwang house style). Node >=20 is available in the repo toolchain."
