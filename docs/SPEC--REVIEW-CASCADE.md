@@ -15,13 +15,37 @@ Review แบ่งเป็น 3 ชั้น เรียงจากถูก
 | Layer | ผู้ทำ | ต้นทุน | อำนาจ | งาน |
 | --- | --- | --- | --- | --- |
 | **L0** | script (deterministic) | ฟรี | VETO | re-run verify_command ทุก task · `git diff` grep หา write นอก scope · เช็ค artifact/changelog-row ที่ spec บังคับ · exit code ของ scanner/gates |
-| **L1** | local SLM (T1) | ฟรี | VETO + annotate | ไล่ review checklist เชิงโครงสร้าง; จุดที่น่าสงสัยแต่ตัดสินไม่ได้ → **annotate** เป็น structured findings ส่งต่อ (ห้ามสรุปว่า "ผ่าน") |
+| **L1** | **panel of narrow local checkers** (T1 ×3–5) | ฟรี | VETO + annotate | แต่ละ checker ตอบ**คำถามแคบเรื่องเดียว** — แตก judgment ให้กลายเป็น checklist ซึ่งเป็นโซนที่ local เชื่อถือได้; ผลรวม merge ด้วย script (ดู §1.1) |
 | **L2** | frontier (T3) | แพง | **PASS/FAIL ตัวจริง** | adversarial judgment ล้วน — semantic correctness, ของที่ "ดูถูกแต่ผิด", ครอบคลุมที่ L0/L1 มองไม่เห็น; ได้ annotations ของ L1 มาช่วยเล็ง |
 
 เหตุที่ห้าม L1 มีอำนาจ PASS: false-PASS ตอน review คือ error ที่แพงที่สุด (หลุดไป ship) และ
 local model คือ class เดียวกับผู้ผลิต false-confidence artifacts (tautology test = หลักฐานสด)
 — gate ที่ปฏิเสธได้อย่างเดียวจึงประหยัดโดย risk เพิ่ม**ศูนย์**: L1 บอก "ไม่เจอเหตุปฏิเสธ"
 ≠ "ผ่าน" แปลว่า "ส่งต่อ L2" เท่านั้น
+
+### 1.1 L1 = panel design (v0.2.0 — ตามทิศ Boss: "แยกกันตรวจทีละส่วนแล้วเอาผลมารวม")
+
+L1 ไม่ใช่ "ผู้รีวิว" หนึ่งตัว แต่เป็น **panel ของ checkers เฉพาะด้าน** ตัวละคำถามแคบเรื่องเดียว:
+
+| Checker (ตัวอย่างชุดสาย doc-graph) | คำถามแคบที่ตอบ |
+| --- | --- |
+| `scope-diff` | diff มี write นอก write-scope ของ spec ไหม |
+| `verify-rerun` | verify_command ทุก task ยัง exit 0 ไหม (จริง ๆ เป็น script/L0) |
+| `prose-meaning` (ต่อไฟล์) | old vs new ของไฟล์นี้ ความหมายเปลี่ยนไหม (link/format-only?) |
+| `link-spotcheck` | ลิงก์ที่แก้ N ตัวสุ่ม resolve ไปเป้าจริงไหม |
+| `test-vacuity` (ต่อ assertion ใหม่) | assertion นี้มีทาง FAIL ได้ไหม — ตัวจับ tautology โดยตรง |
+
+กติกา panel:
+1. **หนึ่ง checker = หนึ่งคำถาม** — การแตกแบบนี้คือ Narrow Rails ฝั่ง review: แปลง judgment
+   เป็น checklist ให้อยู่ในโซนที่ T1 เชื่อถือได้; คำถามที่เขียนให้แคบไม่ได้ = เป็นของ L2 ตั้งแต่ต้น
+2. **Independence** — checkers ไม่เห็น output กันเองก่อนรายงาน (กัน anchor bias);
+   ขนานเชิง logic (physical จะ serialize ตาม VRAM ก็ได้ ผลเท่ากัน)
+3. **Merge ด้วย script ไม่ใช่ LLM** — รวมเป็น `review-pre.json` เดียว:
+   `{vetoes: [{checker, ...}], annotations: [{checker, ...}]}` — veto จากตัวไหนก็ได้ = fail-fast
+4. **Union ของ checklist ≠ review** — ปัญหา cross-cutting อยู่ระหว่างด้าน
+   (vacuous test = "tests ผ่าน"✓+"scope ถูก"✓ แต่ผิด) → PASS ยังเป็นของ L2 เท่านั้น
+5. **ขนาด panel: 3–5 ด้าน** — ทุก checker มีต้นทุน checklist ที่ต้อง maintain; ซอยเกิน =
+   orchestration overhead โดย marginal catch ต่ำ (W-axis discipline)
 
 ## 2. Task template convention (ใช้ใน spec ตั้งแต่ G2/G3)
 
@@ -67,3 +91,4 @@ Review หนึ่งงานแตกเป็นสอง task:
 | Version | Date | Summary |
 | --- | --- | --- |
 | 0.1.0 | 2026-07-19 | ร่างแรก: 3-layer cascade, veto-not-pass rule, task template R-pre/R-adv, หลักฐานจาก G1 T7 ×3 + tautology incident |
+| 0.2.0 | 2026-07-19 | §1.1 L1 = **panel of narrow checkers** (ทิศ Boss): หนึ่ง checker หนึ่งคำถาม, independence, script-merge, union≠review, ขนาด 3–5 — เพิ่ม `test-vacuity` checker เป็นตัวจับ tautology ตรง ๆ |
