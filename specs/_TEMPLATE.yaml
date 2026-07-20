@@ -124,7 +124,15 @@ tasks:
                                      #   cheap-eligible. Use REAL commands:
                                      #   `cargo test --no-default-features --test foo`,
                                      #   a grep that must resolve, a `test -f`, a compile.
-    depends_on: []                   # tasks that must PASS first ([] = parallel fan-out)
+    depends_on: []                   # tasks that must PASS first ([] = parallel fan-out).
+                                     #   ⚠️ G3 lesson (2026-07-20): if T-N's verify_command
+                                     #   exercises another task's deliverable (an E2E over
+                                     #   T1-T4's files, a test importing T1's module), it
+                                     #   MUST list those tasks here — with [] the runner
+                                     #   may run/verify it before its inputs exist, and a
+                                     #   desperate executor will then write the missing
+                                     #   deliverables itself to make verify pass (scope
+                                     #   bleed that review has to unpick).
     review_gate: false               # true -> output must clear the adversarial Review
                                      #   phase before Assemble (author/design/perf
                                      #   tasks: true; trivial mechanical: false).
