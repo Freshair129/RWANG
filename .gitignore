@@ -10,3 +10,6 @@ orchestrator/governance/approvals/
 # ingest populates it); a local rebuildable cache, never source. The glob also covers
 # reversible reset backups (.knowledge.bak-*), since the governance guard blocks rm -rf.
 .knowledge*
+# External skill-distribution checkout; the harness records its immutable source in
+# adapters/host-skills/registry.json and must not track a nested checkout.
+/RWANG-PROMAX-skills/

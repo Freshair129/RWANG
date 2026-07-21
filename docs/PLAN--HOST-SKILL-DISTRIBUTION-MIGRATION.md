@@ -1,7 +1,7 @@
 ---
-version: "0.1.0b"
+version: "0.1.1b"
 created_at: "2026-07-22T03:25:00+07:00,ATHER,pending"
-last_update: "2026-07-22T03:25:00+07:00,ATHER"
+last_update: "2026-07-22T03:35:00+07:00,ATHER"
 status: "beta"
 superseded_by: null
 attributes:
@@ -14,7 +14,7 @@ attributes:
 
 ## Observed state
 
-`G:\Rwang` tracks `RWANG-PROMAX-skills` as gitlink `d1ea5caf0f263a4ca7692a8731c60d0bd0a56213`, but the parent has no `.gitmodules` mapping. `git submodule status` therefore fails. The child is a real separate checkout with remote `Freshair129/RWANG-PROMAX` and currently has owner changes; this plan does not modify it.
+`G:\Rwang` tracks `RWANG-PROMAX-skills` as gitlink `d1ea5caf0f263a4ca7692a8731c60d0bd0a56213`, but the parent has no `.gitmodules` mapping. `git submodule status` therefore fails. The child is a real separate checkout with remote `Freshair129/RWANG-PROMAX`.
 
 ## Decision
 
@@ -22,12 +22,11 @@ Treat the host-skill bundle as an external distribution source, not as a harness
 
 ## Migration sequence
 
-1. Preserve and independently commit or otherwise resolve the child checkout's existing owner changes. This is an explicit prerequisite.
-2. Add a harness-owned source registry entry pinned to a reviewed child commit and a validation record from the child repository.
-3. Add a host-skill adapter manifest that maps only supported capabilities; no skill is copied into the harness.
-4. Clone the harness into a clean temporary directory and verify that it has no missing-submodule error and no required working-tree child.
-5. Verify the pinned source checkout separately with its bundle validator and installation smoke tests.
-6. Only after steps 1-5 pass, remove the parent gitlink. Do not delete or move the external source repository.
+1. Preserve and independently commit the child checkout. Complete at `31a61d36728824f21d67d8b10e98664abc3ba763`.
+2. Add a harness-owned source registry entry pinned to that reviewed child commit and its validation record. Complete in `adapters/host-skills/registry.json`.
+3. Make the nested checkout ignored by the parent; no skill is copied into the harness.
+4. Remove the parent gitlink without deleting the external checkout.
+5. Verify parent Git topology and the registry test from a fresh clone.
 
 ## Acceptance criteria
 
@@ -39,10 +38,11 @@ Treat the host-skill bundle as an external distribution source, not as a harness
 
 ## Risk and boundary
 
-**HIGH / C-3.** This changes repository provenance and installation topology. The current child worktree is dirty, so implementation is intentionally blocked until that external work is preserved and a source commit is selected.
+**HIGH / C-3.** This changes repository provenance and installation topology. The child checkpoint and registry pin are now available; parent gitlink removal remains subject to fresh-clone verification.
 
 ## CHANGELOG
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.1b | 2026-07-22 | beta | Pinned validated external source after child checkpoint; ready to remove invalid parent gitlink. | pending | ATHER |
 | 0.1.0b | 2026-07-22 | beta | Initial reproducible external-source migration plan. | pending | ATHER |
