@@ -1,7 +1,7 @@
 ---
-version: "0.1.1b"
+version: "0.1.2b"
 created_at: "2026-07-22T02:00:00+07:00,ATHER,pending"
-last_update: "2026-07-22T02:20:00+07:00,ATHER"
+last_update: "2026-07-22T03:10:00+07:00,ATHER"
 status: "beta"
 superseded_by: null
 attributes:
@@ -54,9 +54,9 @@ This is the only permitted outbound payload from the experimental `rwang-motion-
 
 ## Current compatibility status
 
-The current Motion Lab implementation is **not a conforming producer**. It starts a loopback HTTP/WebSocket service at `127.0.0.1:8766` and publishes its legacy `GestureEvent` telemetry object. That object has no `schema_version` and includes fields outside this envelope, including motion, hand-visibility, assistant-hint, and dispatch-state data. It has no demonstrated harness consumer.
+The current Motion Lab implementation projects executable gestures into this envelope before it calls its loopback event service at `127.0.0.1:8766`. Its Rust boundary validates schema version, source, confidence range, policy result, and the command whitelist; non-executable gestures are not published. The Rust media dispatcher also rejects actions while its local command-mode policy state is disabled.
 
-This contract therefore does not authorize the existing loopback event bus as a harness adapter port. It remains experimental local telemetry until it is replaced or isolated behind a conforming projection.
+The loopback service has no demonstrated harness consumer and remains experimental local telemetry. It is not an enabled harness adapter port.
 
 ## Prohibited fields and future transport
 
@@ -76,5 +76,6 @@ This document defines the port but does not claim a working adapter integration.
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.2b | 2026-07-22 | beta | Motion Lab now projects and validates the envelope locally; no harness consumer or hardware proof is claimed. | pending | ATHER |
 | 0.1.1b | 2026-07-22 | beta | Recorded the non-conforming legacy loopback telemetry port and prohibited its use as an adapter port. | pending | ATHER |
 | 0.1.0b | 2026-07-22 | beta | Initial local-only, privacy-preserving command-intent contract. | pending | ATHER |
