@@ -1,7 +1,7 @@
 ---
-version: "0.1.3b"
+version: "0.1.4b"
 created_at: "2026-07-22T00:20:00+07:00,ATHER,pending"
-last_update: "2026-07-22T03:10:00+07:00,ATHER"
+last_update: "2026-07-22T03:25:00+07:00,ATHER"
 status: "beta"
 superseded_by: null
 attributes:
@@ -90,6 +90,7 @@ The motion adapter may be promoted only when all conditions below have evidence:
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.4b | 2026-07-22 | beta | Added external-source migration plan; child skill checkout remains protected until owner changes are preserved. | pending | ATHER |
 | 0.1.3b | 2026-07-22 | beta | Recorded local contract projection/validation and backend command-mode policy gate. | pending | ATHER |
 | 0.1.2b | 2026-07-22 | beta | Recorded reviewer finding: current loopback telemetry is not the approved adapter contract. | pending | ATHER |
 | 0.1.1b | 2026-07-22 | beta | Recorded verified harness import recovery, Motion Lab build/test evidence, and canonical adapter contract. | pending | ATHER |
