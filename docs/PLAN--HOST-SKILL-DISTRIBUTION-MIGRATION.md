@@ -1,7 +1,7 @@
 ---
-version: "0.1.1b"
+version: "0.1.2b"
 created_at: "2026-07-22T03:25:00+07:00,ATHER,pending"
-last_update: "2026-07-22T03:35:00+07:00,ATHER"
+last_update: "2026-07-22T03:50:00+07:00,ATHER"
 status: "beta"
 superseded_by: null
 attributes:
@@ -25,8 +25,8 @@ Treat the host-skill bundle as an external distribution source, not as a harness
 1. Preserve and independently commit the child checkout. Complete at `31a61d36728824f21d67d8b10e98664abc3ba763`.
 2. Add a harness-owned source registry entry pinned to that reviewed child commit and its validation record. Complete in `adapters/host-skills/registry.json`.
 3. Make the nested checkout ignored by the parent; no skill is copied into the harness.
-4. Remove the parent gitlink without deleting the external checkout.
-5. Verify parent Git topology and the registry test from a fresh clone.
+4. Remove the parent gitlink without deleting the external checkout. Complete.
+5. Verify parent Git topology and the registry test from a fresh clone. Complete: no nested checkout, no submodule error, registry test pass, and runtime-import test pass.
 
 ## Acceptance criteria
 
@@ -38,11 +38,12 @@ Treat the host-skill bundle as an external distribution source, not as a harness
 
 ## Risk and boundary
 
-**HIGH / C-3.** This changes repository provenance and installation topology. The child checkpoint and registry pin are now available; parent gitlink removal remains subject to fresh-clone verification.
+**HIGH / C-3.** This changed repository provenance and installation topology. The child checkpoint, registry pin, parent removal, and fresh-clone verification are complete.
 
 ## CHANGELOG
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.2b | 2026-07-22 | beta | Removed invalid gitlink and passed clean-clone topology/runtime verification. | pending | ATHER |
 | 0.1.1b | 2026-07-22 | beta | Pinned validated external source after child checkpoint; ready to remove invalid parent gitlink. | pending | ATHER |
 | 0.1.0b | 2026-07-22 | beta | Initial reproducible external-source migration plan. | pending | ATHER |
