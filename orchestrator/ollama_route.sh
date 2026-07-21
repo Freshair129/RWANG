@@ -14,6 +14,7 @@
 # ENV:
 #   OLLAMA_URL   default http://localhost:11434
 #   MODEL        default model tag if $1 not given
+#   OLLAMA_PROFILE profile from config.json; explicit value wins over modelProfiles
 #
 # EXIT: 0 on success; non-zero if MODEL/PROMPT missing, curl fails, or Ollama errors.
 #
@@ -31,9 +32,11 @@ set -eu
 
 OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
 
-# Resolve a Python interpreter: prefer python3, fall back to python (this Windows +
-# Git Bash host has only `python` on PATH, not `python3`). Empty -> use sed/grep fallback.
-PYBIN="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+# Resolve a Python interpreter. `py` is the Windows launcher available from Git Bash
+# on this host. Empty -> use sed/grep fallback, but profile settings cannot be applied.
+PYBIN="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || command -v py 2>/dev/null || true)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+CONFIG_PATH="${RWANG_CONFIG:-$SCRIPT_DIR/../config.json}"
 
 # --- resolve MODEL (arg 1 wins, else $MODEL env) -----------------------------
 MODEL="${1:-${MODEL:-}}"
@@ -71,8 +74,43 @@ json_escape() {
 
 PROMPT_JSON="$(json_escape "$PROMPT")"
 
-# --- build request body via here-doc -----------------------------------------
-BODY="$(cat <<EOF
+# --- resolve optional profile + build request body ---------------------------
+# Generic calls remain byte-for-byte compatible unless a profile is explicitly
+# requested or modelProfiles maps this exact model tag. This keeps Bonsai's
+# VRAM-safe settings from changing existing local models.
+PROFILE="${OLLAMA_PROFILE:-}"
+if [ -z "$PROFILE" ] && [ -n "$PYBIN" ] && [ -r "$CONFIG_PATH" ]; then
+  PROFILE="$(MODEL_NAME="$MODEL" CONFIG_PATH="$CONFIG_PATH" "$PYBIN" - <<'PY'
+import json, os
+with open(os.environ["CONFIG_PATH"], encoding="utf-8-sig") as f:
+    cfg = json.load(f)
+ollama = cfg.get("providers", {}).get("ollama", {})
+print(ollama.get("modelProfiles", {}).get(os.environ["MODEL_NAME"], ""))
+PY
+)"
+fi
+
+if [ -n "$PROFILE" ]; then
+  if [ -z "$PYBIN" ] || [ ! -r "$CONFIG_PATH" ]; then
+    echo "ollama_route.sh: cannot resolve profile '$PROFILE' (Python/config.json unavailable)" >&2
+    exit 2
+  fi
+  BODY="$(MODEL_NAME="$MODEL" PROMPT_RAW="$PROMPT" PROFILE_NAME="$PROFILE" CONFIG_PATH="$CONFIG_PATH" "$PYBIN" - <<'PY'
+import json, os, sys
+with open(os.environ["CONFIG_PATH"], encoding="utf-8-sig") as f:
+    cfg = json.load(f)
+ollama = cfg.get("providers", {}).get("ollama", {})
+profile = (ollama.get("profiles", {}) or {}).get(os.environ["PROFILE_NAME"])
+if not isinstance(profile, dict):
+    sys.stderr.write("ollama_route.sh: unknown OLLAMA_PROFILE: %s\\n" % os.environ["PROFILE_NAME"])
+    sys.exit(2)
+think = profile.get("think", ollama.get("think", False))
+options = {k: v for k, v in profile.items() if not k.startswith("_") and k != "think"}
+print(json.dumps({"model": os.environ["MODEL_NAME"], "prompt": os.environ["PROMPT_RAW"], "stream": False, "think": think, "options": options}))
+PY
+)" || exit $?
+else
+  BODY="$(cat <<EOF
 {
   "model": "${MODEL}",
   "prompt": ${PROMPT_JSON},
@@ -80,6 +118,7 @@ BODY="$(cat <<EOF
 }
 EOF
 )"
+fi
 
 # --- call Ollama -------------------------------------------------------------
 RESP="$(curl -fsS \

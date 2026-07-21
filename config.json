@@ -122,9 +122,30 @@
           "temperature": 0.3,
           "num_predict": 8192,
           "num_ctx": 16384
+        },
+        "bonsai-rwang-safe": {
+          "_comment": "Default for Bonsai Q1_0 on RTX 3060 12GB: compatibility smoke and normal RWANG dispatch. Keep ctx at 8192 because the measured cold-load peak reached 11.89 GiB with OLLAMA_GPU_OVERHEAD=3 GiB.",
+          "think": false,
+          "temperature": 0.4,
+          "top_p": 0.95,
+          "top_k": 20,
+          "num_predict": 4096,
+          "num_ctx": 8192
+        },
+        "bonsai-native": {
+          "_comment": "Explicit benchmark-only profile matching the publisher's sampling guidance. Do not make this the automatic routing default until full code/tool holdouts pass.",
+          "think": true,
+          "temperature": 0.7,
+          "top_p": 0.95,
+          "top_k": 20,
+          "num_predict": 4096,
+          "num_ctx": 8192
         }
       },
       "defaultToolsProfile": "tools",
+      "modelProfiles": {
+        "hf.co/prism-ml/Bonsai-27B-gguf:Q1_0": "bonsai-rwang-safe"
+      },
       "vram": {
         "serialize": true,
         "keepResidentPatterns": [],

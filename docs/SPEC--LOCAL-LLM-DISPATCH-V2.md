@@ -1,6 +1,7 @@
 # SPEC — Local-LLM Dispatch v2 (anti-error-loop, evidence-based)
 
 > **สถานะ:** DRAFT + P0 applied · 2026-07-03
+> **UPDATE (2026-07-21):** เพิ่ม Thinking-safe structured-review profile จาก RCA ที่ยืนยันกับ Mellum/Ollama; ขอบเขตนี้เป็น contract สำหรับงาน review ที่ต้องเชื่อถือผลลัพธ์ ไม่ได้แทน fallback ของ code-generation ใน FR-3 §5.1–5.2
 > **RESTORED:** ต้นฉบับเคยอยู่ `D:\G-Music\docs\` แบบ untracked และถูก git-clean กวาดทิ้ง — กู้กลับและย้ายบ้านมา `G:\Rwang\docs\` ใต้ git ของ orchestrator
 > **ERRATA (2026-07-03):** หลังเขียน spec นี้ session benchmark (74 dispatch) ได้เปลี่ยน model pool ไปแล้ว — `qwen3:latest` ถูกถอด (Ollama bug #14493 qwen tool renderer), `sushirl` ขึ้น default, `Ornith-1.0-9B` เป็น agentic อันดับ 1 (ดู `D:\G-Music\docs\RCA--LOCAL-LLM-DISPATCH.md` + `LOCAL_MODEL_LEDGER.md`) — **ชื่อโมเดลใน spec นี้เป็น historical example**; ตัวกลไก FR-1/FR-2 ออกแบบมารองรับ pool ที่เปลี่ยนโดยไม่ต้องแก้ spec อยู่แล้ว
 > **แทนที่:** SPEC--LOCAL-MODEL-ANTI-ERROR-LOOP (ไฟล์เดิมสูญหาย — สเปกนี้ self-contained)
@@ -188,6 +189,28 @@ structured output กับ thinking model อาจลดคุณภาพ cod
 - dispatch จริง 1 งานโหมด json → gate pass และไม่มีการเรียก regex fallback
 - ป้อน output ปนเปื้อน (prose + JSON) → fallback chain ทำงานตามลำดับ ไม่ crash
 
+### 5.4 Thinking-safe structured-review profile (2026-07-21)
+
+งาน review ที่ผล `pass` ถูกใช้เป็นหลักฐาน (เช่น code/doc alignment) ใช้ contract ที่เข้มกว่า
+code-generation: **ไม่มี fallback จาก schema ไป regex/fence** เพราะ output ที่ตีความคลุมเครือห้าม
+ถูกยกระดับเป็นผลตรวจผ่าน
+
+| Request / envelope field | Contract |
+|---|---|
+| `think` | ส่ง `false` เพื่อให้ final answer ไม่ถูกแยก/ใช้ budget กับ reasoning |
+| `format` | JSON Schema แบบ strict; ระบุ `required` และ `additionalProperties:false` |
+| `response` | ต้อง parse เป็น JSON และผ่าน schema เท่านั้น |
+| `thinking` | เป็น diagnostic presence เท่านั้น; ห้าม parse เป็น final result |
+| `done_reason` | `length` = review failure; ต้องไม่สรุป pass/fail จาก partial output |
+| diagnostics | เก็บเฉพาะ metadata ที่มีขอบเขต เช่น thinking-presence, done_reason, eval_count; ไม่ persist raw prompt/code/doc โดย default |
+
+**Exit contract:** schema-valid empty findings → `0`; schema-valid findings → `1`; final response
+ว่าง, prose, schema-invalid, Thinking-only, หรือ length-truncated → `2` (`INDETERMINATE`).
+
+**Minimum regression suite:** mocked valid empty array, valid finding, Thinking-only/empty final,
+length truncation, prose, และ schema-invalid object; จากนั้นรัน warmed live smoke อย่างน้อยหนึ่งครั้ง.
+Warm-up หรือ model-residency เป็น latency optimization เท่านั้น ไม่ใช่หลักฐานว่า output contract ถูกต้อง.
+
 ---
 
 ## 6. FR-4 — Ledger semantic retrieval (PAST MISTAKES อัตโนมัติ)
@@ -299,6 +322,7 @@ Acceptance: <call> -> <expected>. <call2> -> <expected2>.   ← ต้องเ�
 | `num_predict` | ≥ 2000 | เผื่อ `<think>` ของ thinking model |
 | `keep_alive` | `"30m"` | FR-5 |
 | `format` | JSON schema เฉพาะโมเดลที่ A/B ผ่าน | FR-3 §5.2 |
+| `think` | `false` สำหรับ structured-review profile | FR-3 §5.4 |
 | strip | `re.sub(r"<think>.*?</think>","",out,flags=S)` | fallback chain |
 | extract | `re.search(r"```(?:ts\|typescript)?\s*(.*?)```", out, S)` | fallback chain |
 
@@ -341,3 +365,11 @@ Acceptance: <call> -> <expected>. <call2> -> <expected2>.   ← ต้องเ�
 **คำถามเปิด (ตัดสินใจตอน execute):**
 1. ~~orchestration/ scripts อยู่ G-Music หรือ Rwang?~~ → คงที่ G-Music (target-specific — ต่างจาก governance ที่อยู่ Rwang) แต่**ต้อง commit เข้า git ของ G-Music** ไม่ปล่อย untracked (บทเรียนจากเอกสารชุดนี้โดน git-clean)
 2. threshold demote (0.6) และ score weight (0.1/10s) — ค่าตั้งต้นจากสามัญสำนึก ต้อง calibrate จากข้อมูลจริงหลัง P6 (ตอนนี้มี bench_results.jsonl 74 แถวเป็นวัตถุดิบแล้ว)
+
+---
+
+## CHANGELOG
+
+| Date | Status | Change |
+|---|---|---|
+| 2026-07-21 | updated | Added FR-3 §5.4 Thinking-safe structured-review profile: `think:false`, strict schema, final-envelope validation, fail-closed exits, bounded diagnostics, and mocked/live smoke regression requirements from confirmed Mellum/Ollama RCA. |
