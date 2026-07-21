@@ -1,7 +1,7 @@
 ---
-version: "0.1.5b"
+version: "0.1.6b"
 created_at: "2026-07-22T00:20:00+07:00,ATHER,pending"
-last_update: "2026-07-22T04:25:00+07:00,ATHER"
+last_update: "2026-07-22T04:40:00+07:00,ATHER"
 status: "beta"
 superseded_by: null
 attributes:
@@ -20,7 +20,7 @@ Approve the following repository boundaries before any rename, Git-history repai
 1. `G:\Rwang` remains the canonical RWANG harness/control-plane source.
 2. `D:\RWANG-PROMAX` is renamed to `rwang-motion-lab` and remains an experimental desktop interaction project.
 3. The experimental project is not branded or released as `RWANG-PROMAX` until the readiness criteria in this CR are met.
-4. `G:\Rwang\RWANG-PROMAX-skills` remains a separate skill-distribution concern until an approved adapter migration defines its replacement.
+4. Host-skill distribution remains external and is pinned through the harness registry; no nested tracked checkout is required.
 
 ## 2. Verified current state
 
@@ -28,7 +28,7 @@ Approve the following repository boundaries before any rename, Git-history repai
 |---|---|---|
 | `G:\Rwang` | Node/Python control plane for spec-driven orchestration, cost routing, governance, and run monitoring | Source-pinned runtime dependency closure and `backlog.json` were recovered; `node --test tests/runtime-import.test.mjs` passes. Broader runtime behavior is not yet claimed. |
 | `D:\rwang-motion-lab\app` | Tauri/React desktop app with MediaPipe hand tracking, webcam capture, gesture routing, and a Windows media-key dispatcher | Local intent projection test passes 2/2. Loopback telemetry publishes only the versioned envelope and Rust validates it plus the local policy state. Harness offline conformance is now covered; live consumption, real hardware, and depth-gesture proof remain incomplete. |
-| `G:\Rwang\RWANG-PROMAX-skills` | Installer and three-skill governance bundle | It is tracked by the parent as a gitlink without a `.gitmodules` mapping; the relationship is not reproducible. |
+| External host-skill bundle | Installer and three-skill governance bundle | Parent gitlink was removed and the validated immutable source is pinned in `adapters/host-skills/registry.json`; clean-clone verification passed. |
 
 ## 3. Target architecture
 
@@ -52,7 +52,7 @@ The desktop adapter MUST NOT send raw camera frames to the harness. It may emit 
 |---|---|---|
 | `D:\RWANG-PROMAX` | Experimental motion/gesture/command project | `rwang-motion-lab` |
 | `G:\Rwang` | Canonical harness source | `rwang` (product/repository identity when a rename is separately approved) |
-| `G:\Rwang\RWANG-PROMAX-skills` | Existing skill-distribution bundle | No rename or move in this CR |
+| External host-skill bundle | Existing skill-distribution bundle | Immutable registry pin; no nested tracked checkout |
 
 `RWANG-PROMAX` is reserved for a promoted release, not an experimental folder.
 
@@ -90,6 +90,7 @@ The motion adapter may be promoted only when all conditions below have evidence:
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.6b | 2026-07-22 | beta | Synced completed external skill-source migration into current-state and naming boundaries. | pending | ATHER |
 | 0.1.5b | 2026-07-22 | beta | Added two-repository offline conformance evidence; no transport or hardware promotion claim. | pending | ATHER |
 | 0.1.4b | 2026-07-22 | beta | Added external-source migration plan; child skill checkout remains protected until owner changes are preserved. | pending | ATHER |
 | 0.1.3b | 2026-07-22 | beta | Recorded local contract projection/validation and backend command-mode policy gate. | pending | ATHER |

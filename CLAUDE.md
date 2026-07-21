@@ -4,6 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Operating instructions for a Claude Code session working **in Rwang**. Read this before driving any run or editing the core.
 
+## Current repository boundaries (2026-07-22)
+
+- `G:\Rwang` is the canonical harness/control plane. Its adapter contract for the experimental desktop project is `adapters/desktop-motion/gesture-command-intent.mjs`; this validates and redacts intent records only. It does not open a live transport or dispatch OS input.
+- `D:\rwang-motion-lab` is a separate experimental Tauri/React checkout. It is **not** RWANG-PROMAX. Offline conformance exists, but real camera/media hardware evidence and depth-gesture proof are still required before any promotion claim.
+- Host skills are an external installable bundle pinned in `adapters/host-skills/registry.json`. Do not restore the old `RWANG-PROMAX-skills` gitlink; the parent intentionally has no nested tracked skill checkout.
+- For harness boundary work, run `node --test tests/runtime-import.test.mjs tests/gesture-command-intent.test.mjs tests/host-skill-registry.test.mjs`. Preserve unrelated dirty files and never push, merge, deploy, or add a remote intent transport without owner approval.
+
 ## What Rwang is
 
 Rwang is an **orchestrator / control plane**. It does **not** contain the code it builds. It drives **other repos** — the **target repo** is named *in the spec* (e.g. GenesisBlock at `G:/GenesisBlock_Dev/GenesisBlock`). Your job in this session is to read a spec, route its tasks, launch the runner, and supervise the autonomy policy — not to hand-edit the target yourself.
