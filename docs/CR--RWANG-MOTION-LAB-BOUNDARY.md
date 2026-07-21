@@ -1,7 +1,7 @@
 ---
-version: "0.1.4b"
+version: "0.1.5b"
 created_at: "2026-07-22T00:20:00+07:00,ATHER,pending"
-last_update: "2026-07-22T03:25:00+07:00,ATHER"
+last_update: "2026-07-22T04:25:00+07:00,ATHER"
 status: "beta"
 superseded_by: null
 attributes:
@@ -27,7 +27,7 @@ Approve the following repository boundaries before any rename, Git-history repai
 | Surface | Verified role | Evidence boundary |
 |---|---|---|
 | `G:\Rwang` | Node/Python control plane for spec-driven orchestration, cost routing, governance, and run monitoring | Source-pinned runtime dependency closure and `backlog.json` were recovered; `node --test tests/runtime-import.test.mjs` passes. Broader runtime behavior is not yet claimed. |
-| `D:\rwang-motion-lab\app` | Tauri/React desktop app with MediaPipe hand tracking, webcam capture, gesture routing, and a Windows media-key dispatcher | `npm test -- --reporter=verbose` exits cleanly with 22 tests passing and `npm run build` passes. Loopback telemetry now publishes only the versioned envelope and Rust validates it plus the local policy state. Harness consumption, real hardware, and depth-gesture proof remain incomplete. |
+| `D:\rwang-motion-lab\app` | Tauri/React desktop app with MediaPipe hand tracking, webcam capture, gesture routing, and a Windows media-key dispatcher | Local intent projection test passes 2/2. Loopback telemetry publishes only the versioned envelope and Rust validates it plus the local policy state. Harness offline conformance is now covered; live consumption, real hardware, and depth-gesture proof remain incomplete. |
 | `G:\Rwang\RWANG-PROMAX-skills` | Installer and three-skill governance bundle | It is tracked by the parent as a gitlink without a `.gitmodules` mapping; the relationship is not reproducible. |
 
 ## 3. Target architecture
@@ -90,6 +90,7 @@ The motion adapter may be promoted only when all conditions below have evidence:
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.5b | 2026-07-22 | beta | Added two-repository offline conformance evidence; no transport or hardware promotion claim. | pending | ATHER |
 | 0.1.4b | 2026-07-22 | beta | Added external-source migration plan; child skill checkout remains protected until owner changes are preserved. | pending | ATHER |
 | 0.1.3b | 2026-07-22 | beta | Recorded local contract projection/validation and backend command-mode policy gate. | pending | ATHER |
 | 0.1.2b | 2026-07-22 | beta | Recorded reviewer finding: current loopback telemetry is not the approved adapter contract. | pending | ATHER |

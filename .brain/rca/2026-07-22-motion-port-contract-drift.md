@@ -1,7 +1,7 @@
 ---
 version: "0.1.0b"
 created_at: "2026-07-22T02:20:00+07:00,ATHER,pending"
-last_update: "2026-07-22T03:10:00+07:00,ATHER"
+last_update: "2026-07-22T04:25:00+07:00,ATHER"
 status: "beta"
 superseded_by: null
 attributes:
@@ -37,11 +37,12 @@ Before adapter promotion, add a separate conformance layer that projects only th
 
 ## Status
 
-Remediated locally: Motion Lab now projects executable gestures to `gesture_command_intent/v1`, validates the envelope in Rust, and blocks media dispatch while its backend command-mode state is disabled. The loopback service still has no harness consumer, so no cross-repository integration or promotion claim is made.
+Remediated locally: Motion Lab now projects executable gestures to `gesture_command_intent/v1`, validates the envelope in Rust, and blocks media dispatch while its backend command-mode state is disabled. Harness and Motion Lab each have offline conformance tests. The loopback service still has no live harness consumer, so no transport or promotion claim is made.
 
 ## CHANGELOG
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.2b | 2026-07-22 | beta | Added offline two-repository conformance evidence without enabling transport. | pending | ATHER |
 | 0.1.1b | 2026-07-22 | beta | Recorded local contract projection and backend policy-gate remediation. | pending | ATHER |
 | 0.1.0b | 2026-07-22 | beta | Initial evidence-backed contract-drift RCA. | pending | ATHER |
