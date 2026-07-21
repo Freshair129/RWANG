@@ -1,7 +1,7 @@
 ---
-version: "0.1.2b"
+version: "0.1.3b"
 created_at: "2026-07-22T02:00:00+07:00,ATHER,pending"
-last_update: "2026-07-22T03:10:00+07:00,ATHER"
+last_update: "2026-07-22T04:10:00+07:00,ATHER"
 status: "beta"
 superseded_by: null
 attributes:
@@ -56,7 +56,7 @@ This is the only permitted outbound payload from the experimental `rwang-motion-
 
 The current Motion Lab implementation projects executable gestures into this envelope before it calls its loopback event service at `127.0.0.1:8766`. Its Rust boundary validates schema version, source, confidence range, policy result, and the command whitelist; non-executable gestures are not published. The Rust media dispatcher also rejects actions while its local command-mode policy state is disabled.
 
-The loopback service has no demonstrated harness consumer and remains experimental local telemetry. It is not an enabled harness adapter port.
+The harness now has an offline validator and redacted-record projection for this envelope. It is deliberately not a listener, dispatcher, or enabled harness adapter port.
 
 ## Prohibited fields and future transport
 
@@ -70,12 +70,13 @@ The harness must reject the entire payload when any invariant fails, record a re
 
 ## Verification gate
 
-This document defines the port but does not claim a working adapter integration. Promotion requires a contract conformance test in both repositories plus a local hardware E2E recording that proves only this envelope crosses the boundary.
+Both repositories now have offline contract conformance coverage. Promotion still requires a local hardware E2E recording that proves only this envelope crosses the boundary, plus an approved transport change if the harness is to consume it live.
 
 ## CHANGELOG
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---------|------|--------|---------|-------------|-------|
+| 0.1.3b | 2026-07-22 | beta | Added offline harness validation and redacted-record conformance coverage; no transport enabled. | pending | ATHER |
 | 0.1.2b | 2026-07-22 | beta | Motion Lab now projects and validates the envelope locally; no harness consumer or hardware proof is claimed. | pending | ATHER |
 | 0.1.1b | 2026-07-22 | beta | Recorded the non-conforming legacy loopback telemetry port and prohibited its use as an adapter port. | pending | ATHER |
 | 0.1.0b | 2026-07-22 | beta | Initial local-only, privacy-preserving command-intent contract. | pending | ATHER |
