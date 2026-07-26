@@ -1,0 +1,147 @@
+# =============================================================================
+# Rwang Spec — BLANK TEMPLATE
+# =============================================================================
+# A Rwang spec is the SINGLE SOURCE OF TRUTH the router reads to assign tiers.
+# Routing is DERIVED from this file — it is not a side-channel heuristic. Fill
+# every field; the deterministic scripts (route.py / check_evidence.py /
+# cost_estimate.py / cost_ledger.py) and the autonomous Workflow runner all
+# read this shape.
+#
+# Authoring order (compose, don't reinvent):
+#   1. Run spec-driven-development first to produce Requirements (EARS) ->
+#      Design -> Tasks. Then fill the routing fields below onto each task.
+#   2. tdd-workflow turns each task's verify_command (the RED test) GREEN at
+#      the routed tier.
+#
+# THE TWO-AXIS MODEL (capability tier  PERPENDICULAR-TO  role specialist):
+#   Capability tiers (Axis 1 — how strong a brain):
+#     T0   local-SLM        vibethinker-3b, chinda-qwen3-4b          ~$0
+#     T1   local-mid        aroow-rust-coder-9b, mellum2-12b-a2.5b   ~$0
+#     T1.5 cloud-open-wts   kimi-k2.7-code:cloud, deepseek-v4-pro:cloud  ~$0.1-0.5/M
+#     T2   Claude-mid       claude-sonnet-4-6                        $3 in / $15 out
+#     T3   Claude-frontier  claude-opus-4-8                          $5 in / $25 out
+#   Role specialists (Axis 2 — picked by TASK TYPE, never by difficulty):
+#     embed  = bge-m3              (engine-matched — mandatory; any other embedder
+#                                   breaks recall by living in a different metric space)
+#     rerank = bge-reranker-v2-m3
+#   The router is a ROLE, not a tier.
+#
+# HARD RULE (design invariant #3): a task with NO machine-checkable
+# verify_command is NOT cheap-eligible -> floor T2+. Local-first is allowed
+# ONLY behind the verify gate.
+#
+# FrugalGPT break-even: route cheap IFF p_fail < c_frontier_direct/c_frontier_fix.
+#
+# COST is two-way (token count x per-type price), metered on EVERY tier
+# including local (Ollama returns prompt_eval_count / eval_count). Claude
+# pricing is a 2026-06-04 snapshot carrying an UNCERTAINTY FLAG — re-verify
+# before billing.
+# =============================================================================
+
+goal: >
+  # One or two sentences. What this spec builds/fixes and the user-visible
+  # outcome — the "why". Plain language.
+
+target_repo: "G:/path/to/target/repo"
+  # The TARGET repo Rwang drives (Rwang itself is the orchestrator / control
+  # plane and is separate). Absolute path.
+
+autonomy: autonomous
+  # supervised | autonomous | unattended
+  #   supervised  : asks before each phase (Verify / Author / Review / Assemble).
+  #   autonomous  : drives end-to-end; STOPS only at (1) external write actions
+  #                 (git commit/push/PR/merge/deploy), (2) gate-exhaustion (a
+  #                 task fails even at T3), (3) any task flagged human_review.
+  #   unattended  : also auto-commits to a BRANCH but NEVER merges; a human merges.
+  # Safety invariants that NEVER yield to autonomy, at any level:
+  #   - no external write (push/PR/merge/deploy) without human approval
+  #   - no unverified cheap output crosses a phase boundary (verify gate = interlock)
+  #   - a task that exhausts the escalation ladder HALTS the run (never loops forever)
+  #   - every run is on a branch, never directly on the target default branch
+
+constraints:
+  # Hard boundaries the router and executors MUST respect. Be concrete and
+  # machine-relevant — these shape tier assignment and the review gates.
+  - "Language/domain: <e.g. Rust, src/lib.rs storage core; or TS, dashboard/>."
+  - "Must stay green: <the canonical test gate, e.g. `cargo test --no-default-features` / `npm test`>."
+  - "Engine alignment: <e.g. any embedding query MUST use bge-m3 — engine-matched>."
+  - "Lock order / concurrency invariant: <if any, e.g. meta -> arena -> sidecar>."
+  - "Platform: <e.g. Windows-safe positioned reads, no mmap; or cross-compile mobile feature set>."
+  - "NAPI+REST parity: <if the change adds an engine capability, it must be wired in BOTH src/lib.rs NAPI method AND src/router.rs REST route — check via napi-rest-parity skill>."
+  - "Human-in-the-loop: human owns commit/merge; Assemble + any external write requires approval."
+  - "Out of scope: <explicitly list what this change does NOT touch>."
+
+# --- Definition of Done — MULTI-LEVEL ----------------------------------------
+# Exactly: 1 epic DoD (human-owned) + 4 phase gates + N per-task ACs.
+# Rule of thumb: a checkpoint exists IFF a model is routed across it or a human
+# signs off at it. No sprint-level or per-agent DoDs.
+
+epic_dod: >
+  # EARS format — the contract the FINAL HUMAN REVIEW checks at Assemble.
+  #   WHEN <trigger/condition>
+  #   THE SYSTEM SHALL <observable, testable outcome>
+  #   AND <second clause ...>
+  #   Done means: <the whole change is complete — checked by a human at Assemble>.
+
+phase_gates:
+  # The four economic safety interlocks of the VERIFY -> AUTHOR -> REVIEW ->
+  # ASSEMBLE spine. No unverified cheap output crosses a boundary.
+  Verify-gate: >
+    # Every finding carries a resolving evidence command (grep / test / line-cite)
+    # that re-runs and resolves; >= N verifiers returned structured finding+evidence.
+    # (If the spec has a design gate, name it as the entry interlock here.)
+  Author-gate: >
+    # Author outputs reference ONLY findings that passed the Verify-gate; every
+    # claim traces to a verified finding id. Each executor gets only its
+    # self-contained task description (no conversation context).
+  Review-gate: >
+    # Adversarial reviewer (Opus 4.8) runs each task's verify_command + its
+    # review-gate checklist and returns PASS with no unresolved blocking objection.
+  Assemble-gate: >
+    # Files assembled on a branch; cross-task parity + full test sweep run; the
+    # epic DoD is re-checked by a HUMAN; external writes (commit/merge) approved.
+    # Autonomy HALTS here for the human write action.
+
+# --- Task list — per-task routing schema -------------------------------------
+# Each task is the smallest routable unit. The router grades its verify_command
+# to decide cheap-vs-escalate, and tdd-workflow turns that same command RED->GREEN.
+
+tasks:
+  - id: T-1                          # stable id (used by depends_on / review refs)
+    description: "<one routable thing — self-contained; the executor gets ONLY this>"
+    requirement_ref: R-x.y           # traceability back to the EARS requirement
+    tier_hint: T2                    # STARTING rung (T0|T1|T1.5|T2|T3); router
+                                     #   escalates one rung on a gate fail
+                                     #   (T0->T1->T1.5->T2->T3, FrugalGPT cascade).
+                                     #   NO verify_command => floor T2+. Complex
+                                     #   borrow/lifetime / lock-order-sensitive /
+                                     #   high-rework => NOT local-eligible => T2/T3.
+    executor_model: "claude-sonnet-4-6"   # concrete model the tier_hint resolves to.
+                                     #   Role specialists (embed/rerank) are chosen
+                                     #   by task TYPE, not difficulty; embed=bge-m3.
+    verify_command: "<cmd returning pass/fail>"   # the executable per-task AC = the
+                                     #   RED test. Its EXISTENCE makes the task
+                                     #   cheap-eligible. Use REAL commands:
+                                     #   `cargo test --no-default-features --test foo`,
+                                     #   a grep that must resolve, a `test -f`, a compile.
+    depends_on: []                   # tasks that must PASS first ([] = parallel fan-out).
+                                     #   ⚠️ G3 lesson (2026-07-20): if T-N's verify_command
+                                     #   exercises another task's deliverable (an E2E over
+                                     #   T1-T4's files, a test importing T1's module), it
+                                     #   MUST list those tasks here — with [] the runner
+                                     #   may run/verify it before its inputs exist, and a
+                                     #   desperate executor will then write the missing
+                                     #   deliverables itself to make verify pass (scope
+                                     #   bleed that review has to unpick).
+    review_gate: false               # true -> output must clear the adversarial Review
+                                     #   phase before Assemble (author/design/perf
+                                     #   tasks: true; trivial mechanical: false).
+
+  # - id: T-2
+  #   description: "..."
+  #   requirement_ref: R-x.y
+  #   tier_hint: T3                  # e.g. authoring on a broken contract -> frontier
+  #   executor_model: "claude-opus-4-8"
+  #   verify_command: "test -f .brain/rca/<slug>.md"
+  #   depends_on: [T-1]
+  #   review_gate: true

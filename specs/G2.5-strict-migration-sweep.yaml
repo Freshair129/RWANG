@@ -1,0 +1,93 @@
+# G2.5 — strict-mode migration sweep (the backlog G2's first strict run exposed).
+# Pattern proven by G1.5: local-first sweepers per violation class, cascade review.
+# Live counts at spec time (docs/DOC-GRAPH.json after strict): anchor-symbol-mismatch 90,
+# missing-required-field 62, bad-anchor ~46 (fresh drift from the glog/dxgi/motion
+# commits), invalid-status 10, missing-approval 9, legacy-status-case 8,
+# doc-id-slug-mismatch 1. HARD RULE unique to this epic: approval fields can NEVER
+# be invented — evidence-extraction only, remainder goes to a Boss checklist.
+#
+# DEPENDS ON G2 merged to main (scan --strict + frontmatter-rules present).
+# RECOMMENDED AUTONOMY: supervised.
+
+goal: >
+  Drive `node tools/doc-graph/scan.mjs --strict` to exit 0 for every violation
+  class EXCEPT missing-approval rows that lack in-doc evidence — those are
+  reduced to an explicit Boss sign-off checklist, never fabricated. Repairs
+  are link/metadata surgery only, per the G1.5 discipline.
+
+target_repo: "G:/G-Maiden"
+
+autonomy: supervised
+
+constraints:
+  - "Branch from current main (G2 merged). Dirty-tree rule SCOPE-AWARE as G1.5; NEVER `git add -A`; stage by name."
+  - "EDIT DISCIPLINE as G1.5: wikilink/symbol-link/anchor edits + frontmatter field edits + changelog rows ONLY. Zero prose-meaning changes. Step-5 treatment per touched doc (audits/rca exempt from metadata work but pure link fixes allowed)."
+  - "Anchor repairs use the proven unique-DEFINITION-only rule (pub(crate)-aware for Rust; function/const/class for TS/JS): retarget to the unique def line, else DROP the anchor keeping the file link. No substring fallback, ever (two incidents on record)."
+  - "Frontmatter backfill is MECHANICAL-DERIVATION only: doc_id := file slug; title := first H1 text; version := last changelog row (or '0.1.0' + a baseline row if no changelog); updated := last changelog row date; status := normalize case only (Accepted->accepted etc.). NEVER guess owner (default 'Boss' is acceptable — repo-wide fact); NEVER change a status VALUE (only its casing)."
+  - "APPROVAL FIELDS — evidence-only rule: approved_by/approved_date may be set ONLY when the doc body or changelog contains an explicit sign-off statement (e.g. 'Signed off by Boss ... 2026-07-10', 'Accepted 2026-06-23', 'อนุมัติ'), citing that line. No evidence = leave the violation, add the doc to docs/approval-backfill-checklist.md (id, status, why it needs approval, suggested date-from-history) for Boss to sign in one batch. Fabricated approval = review FAIL."
+  - "invalid-status values: map obvious legacies (candidate->draft, DRAFT->draft, Accepted->accepted, approved->accepted, stable stays, proposed->draft) — anything not on this map goes to the checklist, not guessed."
+  - "Write scope: docs/** (surgical edits per above), docs/approval-backfill-checklist.md (new), scan artifacts. tools/doc-graph/** only if a validator rule is proven wrong (regression test required, as G15-T1)."
+  - "Windows realities as G1 (BOM, space paths, CRLF)."
+
+epic_dod: >
+  WHEN `node tools/doc-graph/scan.mjs --strict` runs after the sweep THE
+  SYSTEM SHALL report zero violations for anchor-symbol-mismatch, bad-anchor,
+  missing-required-field, invalid-status, legacy-status-case, and
+  doc-id-slug-mismatch; missing-approval AND unmappable invalid-status MAY remain only for rows
+  listed in docs/approval-backfill-checklist.md (per-class checklist rows ==
+  remaining per-class count, verified by script); informational reasons remain
+  allowed. Every touched doc carries its Step-5 row; git status shows no
+  modifications outside the write scope. Done means all verify_commands exit
+  0 and the adversarial review confirms zero fabricated approvals and zero
+  prose-meaning changes.
+
+phase_gates:
+  Verify-gate: >
+    Per-class scanner counts checked by script from docs/DOC-GRAPH.json after
+    a real strict run; checklist-row == remaining-missing-approval equality is
+    machine-checked.
+  Author-gate: >
+    Executors receive their class's live violation list + this constraints
+    block only.
+  Review-gate: >
+    Cascade per SPEC--REVIEW-CASCADE v0.2.0 — R-pre panel then R-adv.
+  Assemble-gate: >
+    Run branch only; human owns the merge. Never push.
+
+tasks:
+  - id: G25-T1
+    description: "Repair ALL anchor-symbol-mismatch (90 at spec time) and bad-anchor (~46) violations — re-read the live lists from docs/DOC-GRAPH.json (strict run) first. Apply the unique-definition-only rule per the constraints; for docs/design-system/03-layout.md and 04-components.md (the two heaviest, CSS-token and component anchors into styles.css/CommandDeck.tsx-family) the 'definition' for a CSS token is its declaration line in styles.css and for a component its function/const definition in the deck/app modules. Step-5 rows per touched doc. Verify: strict rescan shows both classes == 0."
+    requirement_ref: R-G25.1
+    tier_hint: T1
+    verify_command: "node tools/doc-graph/scan.mjs --strict; node -e \"const g=require('./docs/DOC-GRAPH.json'); process.exit(g.violations.filter(v=>['anchor-symbol-mismatch','bad-anchor'].includes(v.reason)).length===0?0:1)\""
+
+  - id: G25-T2
+    description: "Frontmatter mechanical backfill: fix all missing-required-field (62), legacy-status-case (8), doc-id-slug-mismatch (1), and mappable invalid-status (10) violations per the MECHANICAL-DERIVATION and status-map rules in the constraints — re-read live lists first. Unmappable statuses go to the checklist (created by T3; coordinate via a shared scratch list tools/doc-graph/unmappable-status.json). Step-5 rows per touched doc. Verify: strict rescan shows missing-required-field == 0, legacy-status-case == 0, doc-id-slug-mismatch == 0, and invalid-status == count of checklist-deferred rows only."
+    requirement_ref: R-G25.2
+    tier_hint: T1
+    verify_command: "node tools/doc-graph/scan.mjs --strict; node -e \"const g=require('./docs/DOC-GRAPH.json'); process.exit(g.violations.filter(v=>['missing-required-field','legacy-status-case','doc-id-slug-mismatch'].includes(v.reason)).length===0?0:1)\""
+
+  - id: G25-T3
+    description: "Approval evidence extraction (missing-approval, 9 at spec time): for each violating doc, search its body + changelog for an explicit sign-off statement per the evidence-only rule; found -> set approved_by/approved_date citing the evidence line in the changelog row; not found -> add a row to docs/approval-backfill-checklist.md (new file, frontmatter per v0.4.0, status draft) with {doc_id, current status, evidence searched, suggested approved_date from history}. FABRICATING approval fields is the epic's cardinal sin. Verify: strict rescan missing-approval count == checklist data-row count (script-checked equality)."
+    requirement_ref: R-G25.3
+    tier_hint: T2
+    verify_command: "node tools/doc-graph/scan.mjs --strict; node -e \"const g=require('./docs/DOC-GRAPH.json'); const miss=g.violations.filter(v=>v.reason==='missing-approval').length; const fs=require('fs'); const rows=(fs.readFileSync('docs/approval-backfill-checklist.md','utf8').match(/^\\| [^-|]/gm)||[]).length-1; process.exit(miss===Math.max(rows,0)?0:1)\""
+
+  - id: G25-T4
+    description: "E2E: full strict scan on the real tree completes <45s writing all artifacts; capture per-class counts verbatim; assert the epic_dod class-zero conditions and the checklist equality; `git status --porcelain` shows no writes outside scope. Also run `node tools/doc-graph/diff-gate.mjs HEAD~1...HEAD` once to confirm the gate tool itself still exits per contract on this branch's own commits (docs changed -> pass)."
+    requirement_ref: R-G25.4
+    tier_hint: T2
+    verify_command: "node tools/doc-graph/e2e-check-g25.mjs"
+
+  - id: G25-R-pre
+    description: "PRE-REVIEW PANEL (veto-only, SPEC--REVIEW-CASCADE §1.1). Five independent checkers, script-merged into tools/doc-graph/review-pre-g25.json. L0: [verify-rerun] all prior verify_commands green; [scope-diff] git diff vs write scope; [class-counts] per-class scanner targets from epic_dod met (script over DOC-GRAPH.json). L1 narrow: [approval-evidence] for EVERY doc that gained approved_by/approved_date this epic, ask 'does the cited evidence line actually exist in this doc and state a sign-off?' — missing/misquoted evidence = veto (this is the anti-fabrication tripwire); [meaning-diff] per touched doc, 'is this hunk link/frontmatter/changelog-only?' — prose change = veto. Annotations for anything unjudgeable. ANY veto = FAIL fast. Zero vetoes = escalate, never approve."
+    requirement_ref: R-G25.5a
+    tier_hint: T1
+    verify_command: "node -e \"const r=require('./tools/doc-graph/review-pre-g25.json'); process.exit(Array.isArray(r.vetoes)&&r.vetoes.length===0?0:1)\""
+
+  - id: G25-R-adv
+    depends_on: [G25-R-pre]
+    description: "ADVERSARIAL REVIEW (consumes review-pre-g25.json annotations): independently attempt to find ONE fabricated approval (any approved_by whose evidence is weaker than an explicit sign-off statement = FAIL); sample 8 repaired anchors and confirm the symbol truly sits at the definition (not import/call-site — the G1.5 failure class); judge every annotation; confirm checklist rows are actionable for Boss (id+status+suggested date present). PASS/FAIL with file:line evidence."
+    requirement_ref: R-G25.5b
+    tier_hint: T3
+    verify_command: "node tools/doc-graph/scan.mjs --strict; node -e \"const g=require('./docs/DOC-GRAPH.json'); process.exit(g.violations.filter(v=>['anchor-symbol-mismatch','bad-anchor','missing-required-field','legacy-status-case','doc-id-slug-mismatch'].includes(v.reason)).length===0?0:1)\""

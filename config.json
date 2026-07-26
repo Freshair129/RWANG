@@ -29,7 +29,31 @@
           "--permission-mode",
           "bypassPermissions"
         ],
-        "_comment": "safe=แก้ไฟล์ได้แต่ Bash ถูก block, full=ทำได้ทุกอย่าง (รัน test/build). เลือกต่อ task ผ่าน routing หรือ UI"
+        "_comment": "read=ROLE read-only (§7.2): อ่าน/ค้นได้ แต่ Edit/Write/MultiEdit/NotebookEdit/Bash ถูกถอด — ห้าม tier ไหน map มาที่นี่ (guard A5); bounded=แก้ไฟล์ที่ได้รับได้ ห้ามค้นหา/shell (H0); safe=แก้ไฟล์+ค้นหา Bash block; shell=+Bash; full=bypass. --disallowedTools/--allowedTools เป็น variadic ต้องอยู่ท้ายสุดของ permArgs เสมอ",
+        "read": [
+          "--permission-mode",
+          "acceptEdits",
+          "--disallowedTools",
+          "Edit",
+          "Write",
+          "MultiEdit",
+          "NotebookEdit",
+          "Bash"
+        ],
+        "shell": [
+          "--permission-mode",
+          "acceptEdits",
+          "--allowedTools",
+          "Bash"
+        ],
+        "bounded": [
+          "--permission-mode",
+          "acceptEdits",
+          "--disallowedTools",
+          "Glob",
+          "Grep",
+          "Bash"
+        ]
       },
       "defaultPermission": "safe",
       "accountEnv": "CLAUDE_CONFIG_DIR",
@@ -49,6 +73,18 @@
         "opus": "opus",
         "sonnet": "sonnet",
         "haiku": "haiku"
+      },
+      "tierPermissions": {
+        "H0": "bounded",
+        "H1": "safe",
+        "H2": "safe",
+        "H3": "shell",
+        "H4": "full",
+        "_comment": "Access Scope ceiling (SPEC §5): H คุม REACH เท่านั้น — ไม่มี tier ไหน map มาที่ read เพราะ read-only เป็นเรื่องของ ROLE (§7.2 Worker เขียน / gate-owning roles อ่านอย่างเดียว). H1 กับ H2 ใช้ profile เดียวกันที่ชั้น CLI (CLI แยก \"กี่ไฟล์\" ไม่ได้) — ความต่างอยู่ที่ tierTools.multiFile + prompt scope. lint-locked โดย access_scope_check.py: แก้ที่นี่ ต้องแก้ EXPECTED ใน guard ใน commit เดียวกัน"
+      },
+      "rolePermissions": {
+        "reviewer": "read",
+        "_comment": "§7.2 gate-owning roles อ่านอย่างเดียวต่อ artifact ที่ตัวเอง GATE. บังคับที่จุด gate: agent ที่ถูก spawn มา review. ไม่เหมารวม role architect เพราะงาน design/plan คือการ \"เขียนเอกสารของตัวเอง\" ไม่ใช่การ gate ของคนอื่น. Hotfix exception (§7.2) ยังไม่ implement (Leader ไม่มีใน engine). lint-locked โดย role_readonly_check.py"
       }
     },
     "ollama": {
@@ -86,9 +122,30 @@
           "temperature": 0.3,
           "num_predict": 8192,
           "num_ctx": 16384
+        },
+        "bonsai-rwang-safe": {
+          "_comment": "Default for Bonsai Q1_0 on RTX 3060 12GB: compatibility smoke and normal RWANG dispatch. Keep ctx at 8192 because the measured cold-load peak reached 11.89 GiB with OLLAMA_GPU_OVERHEAD=3 GiB.",
+          "think": false,
+          "temperature": 0.4,
+          "top_p": 0.95,
+          "top_k": 20,
+          "num_predict": 4096,
+          "num_ctx": 8192
+        },
+        "bonsai-native": {
+          "_comment": "Explicit benchmark-only profile matching the publisher's sampling guidance. Do not make this the automatic routing default until full code/tool holdouts pass.",
+          "think": true,
+          "temperature": 0.7,
+          "top_p": 0.95,
+          "top_k": 20,
+          "num_predict": 4096,
+          "num_ctx": 8192
         }
       },
       "defaultToolsProfile": "tools",
+      "modelProfiles": {
+        "hf.co/prism-ml/Bonsai-27B-gguf:Q1_0": "bonsai-rwang-safe"
+      },
       "vram": {
         "serialize": true,
         "keepResidentPatterns": [],
@@ -528,5 +585,10 @@
       "ollamaHost": "http://127.0.0.1:11434"
     }
   },
-  "costMode": "normal"
+  "costMode": "normal",
+  "governance": {
+    "required": false,
+    "lint": "orchestrator/governance/governance_lint.py",
+    "_comment": "engine-lint-interlock: required=false = warn เมื่อหา lint/python ไม่เจอ (สถานะ planned); ตั้ง true เพื่อ fail-closed เมื่อ flip เป็น enforced"
+  }
 }

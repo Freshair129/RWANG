@@ -1,0 +1,90 @@
+# A1 — Mission Control "Runs" view (Phase A: watch-only integration).
+# Teach the G-Orchestra product UI (RWANG) to READ the orchestrator's shared
+# progress schema, so monitor.html can be retired. Read-only: this phase never
+# launches runs from the UI (that is Phase B, gated on the engine decision).
+#
+# Casting mirrors M0: T2/sonnet workers behind the verify gate; the UI task is
+# review-gated -> T3; the driving session is integrator + final gate.
+# RECOMMENDED AUTONOMY: supervised — this is the first run against a real
+# product repo, pause at phase boundaries.
+
+goal: >
+  Give Mission Control a read-only "Runs" surface over G:/Rwang/runs/*:
+  a reader module, a hash-chain verifier, two HTTP endpoints, and a view —
+  so a human watches orchestrator runs (and their audit integrity) from the
+  product UI instead of the stopgap monitor.html.
+
+target_repo: "D:/RWANG/RWANG"
+
+autonomy: supervised
+
+constraints:
+  - "PRECONDITION: fast-forward the clone first (it trails origin/main; git pull --ff-only) and start from a clean working tree."
+  - "Do NOT modify engine.mjs, accounts*.mjs, providers.mjs, or any dispatch path — this phase is read-only observation."
+  - "Root modules: Node ESM, zero new dependencies (match the accounts.mjs style); tests via node --test."
+  - "studio/: existing dependencies only — no new npm packages."
+  - "Schema contract: runs/<runId>/progress.json + progress.ndjson exactly as documented in G:/Rwang/USERFLOW.md 'The shared progress schema' — read it, never write it."
+  - "Runs dir is configurable: env RWANG_RUNS_DIR, default G:/Rwang/runs."
+  - "Out of scope: launching/steering runs from the UI, editing G:/Rwang, retiring monitor.html (happens after this ships)."
+
+epic_dod: >
+  WHEN Mission Control's server runs with RWANG_RUNS_DIR pointing at a runs
+  directory containing at least one real run (e.g. m0-smoke-20260703)
+  THE SYSTEM SHALL list that run with status, task pass-counts and ledger,
+  AND show its detail (phases, per-task tier/attempts, events tail),
+  AND display an audit badge that is green iff the ndjson hash chain is
+  intact and its tip matches progress.json last_event_hash.
+  Done means: all task verify_commands exit 0, the studio build passes, and
+  the adversarial review confirms no write path into the runs dir exists.
+
+phase_gates:
+  Verify-gate: >
+    Every task carries an executable verify_command (node --test / build) that
+    exits 0; a pass is claimed only from a real run of that command.
+  Author-gate: >
+    Each executor gets only its self-contained task description plus the run
+    context brief; the schema contract is read from USERFLOW.md, not guessed.
+  Review-gate: >
+    T3/opus re-runs the load-bearing tests, checks the read-only constraint
+    (no fs write into RWANG_RUNS_DIR anywhere in the diff), and returns PASS.
+  Assemble-gate: >
+    All changes on a run branch of D:/RWANG/RWANG; the human owns the merge
+    into the product repo.
+
+tasks:
+  - id: A1-T1
+    description: "Create runs-reader.mjs at the RWANG repo root: Node ESM, zero-dep. Export listRuns(runsDir) -> [{runId, status, tasksPassed, tasksTotal, updatedAt, billedUsd}] scanning runsDir/*/progress.json (skip unreadable dirs without throwing), and readRun(runsDir, runId) -> the full parsed snapshot plus the last 50 ndjson events. Read-only: never write into runsDir. Include runs-reader.test.mjs (node:test) with fixture dirs covering: happy path, missing progress.json, malformed JSON."
+    requirement_ref: R-A1.1
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "node --test runs-reader.test.mjs"
+    depends_on: []
+    review_gate: false
+
+  - id: A1-T2
+    description: "Create chain-verify.mjs at the RWANG repo root: Node ESM, zero-dep (node:crypto). Export verifyChain(runDir) -> {ok, events, hashed, chainTip, snapshotTip, errors[]} implementing the documented rule: event_hash = sha256(prev_event_hash + '\\n' + JSON.stringify(event minus the two hash fields, keys sorted, compact separators)); first hashed event uses prev 'genesis'; legacy events without hash fields are tolerated (ok with a warning when zero are hashed); ok requires an unbroken chain AND chainTip === progress.json last_event_hash. Include chain-verify.test.mjs with fixtures: intact chain, edited line, truncated tail, pure-legacy."
+    requirement_ref: R-A1.2
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "node --test chain-verify.test.mjs"
+    depends_on: []
+    review_gate: false
+
+  - id: A1-T3
+    description: "Wire two read-only HTTP endpoints into the existing server: GET /api/runs (listRuns) and GET /api/runs/:id (readRun + verifyChain result). Runs dir from env RWANG_RUNS_DIR, default G:/Rwang/runs. 404 on unknown id; strictly no write into the runs dir. Include server-runs.test.mjs (node:test) that boots the server on an ephemeral port against a fixture runs dir and asserts both endpoints' JSON shape and the 404."
+    requirement_ref: R-A1.3
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "node --test server-runs.test.mjs"
+    depends_on: [A1-T1, A1-T2]
+    review_gate: false
+
+  - id: A1-T4
+    description: "Add a 'Runs' view to studio/: a list panel (runId, status chip, passed/total, billed USD, updated-at) fed by GET /api/runs, and a detail panel fed by GET /api/runs/:id showing phases, per-task tier + attempts, the events tail, and an audit badge — green 'chain intact' iff the endpoint's verifyChain.ok is true, red otherwise with the first error. Follow the existing studio component and styling conventions; poll the list every 3s while the view is open."
+    requirement_ref: R-A1.4
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "cd studio && npm run build"
+    depends_on: [A1-T3]
+    review_gate: false   # keep the worker at T2/sonnet (M0 casting); the phase-level
+                         # opus adversarial review is the gate for the whole epic

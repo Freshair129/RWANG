@@ -1,0 +1,18 @@
+{
+  "schema_version": "rwang-host-skill-source/v1",
+  "sources": [
+    {
+      "id": "rwang-skill-bundle",
+      "repository": "https://github.com/Freshair129/RWANG-PROMAX.git",
+      "commit": "31a61d36728824f21d67d8b10e98664abc3ba763",
+      "distribution": "external-installable-skill-bundle",
+      "supported_hosts": ["codex", "claude", "antigravity"],
+      "adapter_contract": "host-skills/v1",
+      "validation": {
+        "command": "scripts/validate-bundle.ps1",
+        "observed_result": "pass",
+        "observed_at": "2026-07-22T03:35:00+07:00"
+      }
+    }
+  ]
+}

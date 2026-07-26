@@ -271,6 +271,20 @@ export function _createGenesisStore(g = {}) {
       const hits = await d.hybridSearch({ queryVector: await embed(text), k, alpha, lang: "th" });
       return { ok: true, nodes: (hits || []).map((h) => ({ id: h.node?.id, labels: h.node?.labels, props: h.node?.props, score: h.score })) };
     },
+    async _embed(text) {
+      return embed(text);
+    },
+    async _searchSim(text, { k = 12, alpha = 0 } = {}) {
+      const d = open();
+      const hits = await d.hybridSearch({ queryVector: await embed(text), k, alpha, lang: "th" });
+      return (hits || []).map((hit) => ({
+        id: hit.node?.id,
+        sim: Math.max(0, Math.min(1, Number(hit.score) || 0)),
+        score: hit.score,
+        labels: hit.node?.labels || [],
+        props: hit.node?.props || {},
+      }));
+    },
   };
   return store;
 }
@@ -316,6 +330,26 @@ export function getStore(CONFIG) {
 
 /** Reset the singleton — use only in tests or when reloading config. */
 export function resetStore() { _store = null; }
+
+export async function embed(CONFIG, text) {
+  const store = getStore(CONFIG);
+  if (store.kind !== "genesisdb") return null;
+  try {
+    return await store._embed(String(text || ""));
+  } catch {
+    return null;
+  }
+}
+
+export async function searchSim(CONFIG, text, opts = {}) {
+  const store = getStore(CONFIG);
+  if (store.kind !== "genesisdb") return [];
+  try {
+    return await store._searchSim(String(text || ""), opts);
+  } catch {
+    return [];
+  }
+}
 
 // ── Canvas write API — public wrappers (feature--node-db-canvas) ──────────────
 export async function writeNode(CONFIG, { id, labels, props, text }) {

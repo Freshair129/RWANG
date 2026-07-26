@@ -168,4 +168,10 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`\n  G-Maiden Orchestrator UI → http://localhost:${PORT}\n  (Ctrl+C เพื่อหยุด)\n`);
+  // governance interlock at boot (engine-lint-interlock): the same meta-guard the runner honors.
+  // The verdict is cached inside the engine; runPool/dispatchOne re-check it before any dispatch.
+  const gv = E.governanceInterlock({ force: true });
+  if (gv.ok === true) console.log("  governance lint: OK");
+  else if (gv.ok === false) console.log("  ⛔ governance lint BROKEN — dispatch is blocked: " + gv.detail);
+  else console.log("  governance lint: " + gv.detail);
 });

@@ -1,0 +1,31 @@
+# blocked_patterns.txt — G3 action-classification patterns (governance spec §5)
+# format ต่อบรรทัด:  CLASS:REGEX   (Python re.search บน command line เต็ม)
+#   EXTERNAL    = ห้ามเด็ดขาดใน autonomy (Rwang invariant #1) — human เท่านั้น
+#   DESTRUCTIVE = ต้อง human confirm ก่อนเสมอ
+# ใช้โดย: test_guards.py (GP1 — พิสูจน์ semantics) · hook/wrapper (GP4 — enforcement จริง)
+#
+# หมายเหตุ pattern: (\s+-{1,2}\S+(\s+[^\s-]\S*)?)* = ยอมรับ global flags + argument ของมัน
+# แทรกระหว่าง git กับ subcommand (เช่น `git -C <path> push`) — จาก adversarial review M6
+# ข้อจำกัดที่รู้: line-matching อาจ FP กับ string ใน commit message / echo — GP4 wrapper
+# ต้อง match กับ argv จริงของ process ไม่ใช่ทั้ง command line เพื่อตัด FP คลาสนี้
+
+# --- EXTERNAL: เขียนออกนอกเครื่อง/repo ---
+EXTERNAL:\bgit(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+push\b
+EXTERNAL:\bgh(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+pr\s+(create|merge|close|edit)\b
+EXTERNAL:\bgh(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+(release|repo)\s+(create|delete|edit)\b
+EXTERNAL:\bgit(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+remote\s+set-url\b
+EXTERNAL:\bnpm\s+publish\b
+EXTERNAL:\bcargo\s+publish\b
+
+# --- DESTRUCTIVE: ย้อนกลับยาก — confirm ก่อน ---
+DESTRUCTIVE:\bgit(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+reset\b.*--hard
+DESTRUCTIVE:\bgit(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+clean\b.*(\s-[A-Za-z]*f|--force)
+DESTRUCTIVE:\brm\s+(-{1,2}\S+\s+)*(-[A-Za-z]*[rR][A-Za-z]*|--recursive)\b
+DESTRUCTIVE:\bgit(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+filter-branch\b
+DESTRUCTIVE:\bgit(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+branch\s+(-\S+\s+)*-D\b
+DESTRUCTIVE:\bgit(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+checkout\s+(\.(\s|$)|--\s)
+DESTRUCTIVE:\bgit(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+restore\b
+DESTRUCTIVE:\bgit(\s+-{1,2}\S+(\s+[^\s-]\S*)?)*\s+stash\s+(drop|clear)\b
+
+# --- tests immutable + holdout isolation (เขียน/ย้าย/ลบใต้ tests/holdout = DESTRUCTIVE ต่อ gate) ---
+DESTRUCTIVE:(>>?|\btee\b|\bmv\b|\bcp\b|\brm\b)[^|;&]*[\s'"=\\/]tests[\\/]+holdout([\\/\s'"]|$)

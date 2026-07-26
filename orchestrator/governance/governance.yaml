@@ -1,0 +1,259 @@
+# governance.yaml — machine-readable Governance Matrix
+# SSOT เชิงเนื้อหา: G:\Rwang\docs\SPEC--AGENT-RUNTIME-GOVERNANCE.md §2 (ไฟล์นี้คือ mirror ที่ lint อ่าน)
+#
+# กติกาเหล็ก (G6):
+#   - policy ที่ status != enforced ห้าม claim ว่ามีผลบังคับ (ยังเป็นแผน)
+#   - enforced ทุกตัวต้องมี guard file ที่มีอยู่จริง + guard_test ที่ exit 0
+#     ไม่งั้น governance_lint.py exit non-zero → run.js ไม่เริ่ม run ใหม่
+#   - เพิ่ม policy ใหม่ = เพิ่มแถวที่นี่ + guard + guard_test ก่อน แล้วค่อยประกาศใช้
+#
+# fields ต่อ policy:
+#   policy       ชื่อ (unique)
+#   status       enforced | planned
+#   intent       ชั้น prompt (ว่างได้ = policy ที่เป็น code ล้วนโดยนิยาม)
+#   guard        path (relative จาก repo root) ของ runtime guard — ต้องมีจริงเมื่อ enforced
+#   guard_test   คำสั่งพิสูจน์ว่า guard ยังทำงาน (บังคับเมื่อ enforced)
+#   check        full | structural (structural = ตรวจว่า mechanism ยังอยู่ ไม่ใช่ e2e)
+#   audit_event  event ที่เป็นหลักฐานใน progress.ndjson
+#   gp           rollout phase ตาม governance spec §12
+
+version: 1
+policies:
+  - policy: verify-gate
+    status: enforced
+    intent: "prompt สั่งรัน verify_command ทุก task; finding ไม่มี evidence_command = reject"
+    guard: orchestrator/check_evidence.py
+    guard_test: "python orchestrator/governance/test_guards.py verify-gate"
+    check: full
+    audit_event: verify
+    gp: GP1
+
+  - policy: maxrework-1
+    status: enforced
+    intent: ""   # เป็น code ล้วน — ladder ใน run.js
+    guard: orchestrator/run.js
+    guard_test: "python orchestrator/governance/test_guards.py maxrework-1"
+    check: structural   # ตรวจว่า escalation-ladder mechanism ยังอยู่ (single climb ต่อ fail)
+    audit_event: escalate
+    gp: GP1
+
+  - policy: shared-runtime-contract
+    status: enforced   # GP5: progress.py emit field ครบแล้ว — contract_selftest พิสูจน์ end-to-end
+    intent: "ทุกไฟล์ event (progress.ndjson / model_stats.jsonl / ledger.jsonl) ใช้ field ตาม governance spec §7.1"
+    guard: orchestrator/governance/event_schema.json
+    guard_test: "python orchestrator/governance/contract_selftest.py --self-test"
+    check: full
+    audit_event: "*"
+    gp: GP5
+
+  - policy: no-external-write
+    status: enforced   # law = (1) ไม่มี credential (2) needs_external_write halt ใน run.js (3) tool_guard classifier
+    intent: "system prompt ทุก agent: ห้าม push/PR/merge/deploy"
+    guard: orchestrator/governance/tool_guard.py
+    guard_test: "python orchestrator/governance/tool_guard.py --self-test"
+    check: full
+    audit_event: blocked
+    gp: GP4
+
+  - policy: confirm-destructive
+    status: enforced   # hook wired 2026-07-03 (user-approved): .claude/settings.json PreToolUse
+                       # → tool_guard --hook block DESTRUCTIVE ทุก Bash/PowerShell call ใน repo นี้
+                       # (มีผลกับ session ใหม่; canonical copy = governance/claude_settings.hook.json)
+    intent: "prompt ระบุ list action ที่ต้อง confirm (reset --hard, rm -r, แก้ tests/)"
+    guard: orchestrator/governance/tool_guard.py
+    guard_test: "python orchestrator/governance/tool_guard.py --self-test"
+    check: full
+    audit_event: confirm_required
+    gp: GP4
+
+  - policy: branch-only
+    status: enforced   # git_guard.py + code gate ใน run.js phaseCommit (unattended path)
+    intent: "prompt: ทำงานบน run branch เท่านั้น ห้าม commit บน default branch"
+    guard: orchestrator/governance/git_guard.py
+    guard_test: "python orchestrator/governance/git_guard.py --self-test"
+    check: full
+    audit_event: blocked
+    gp: GP4
+
+  - policy: tests-immutable
+    status: enforced
+    intent: "prompt: ห้ามลบ/แก้ tests หลัง approve — ถ้า test ผิดให้แจ้ง ไม่ใช่หาทางอ้อม"
+    guard: orchestrator/governance/tests_hash_check.py
+    guard_test: "python orchestrator/governance/tests_hash_check.py --self-test"
+    check: full
+    audit_event: tests_amended
+    gp: GP2
+
+  - policy: external-state-contract
+    status: enforced
+    intent: "prompt: state ทั้งหมดของ run อยู่ในไฟล์ใต้ runDir — resume ผ่าน restart_prompt.md เท่านั้น ห้ามเดาสิ่งที่ไฟล์ไม่ได้บอก"
+    guard: orchestrator/governance/state_check.py
+    guard_test: "python orchestrator/governance/state_check.py --self-test"
+    check: full
+    audit_event: state_verified
+    gp: GP2
+
+  - policy: verify-claims
+    status: enforced
+    intent: "prompt: ทุก progress report ต้องอ้าง tool output ในเซสชัน"
+    guard: orchestrator/governance/drift_check.py
+    guard_test: "python orchestrator/governance/drift_check.py --self-test"
+    check: full
+    audit_event: drift_detected
+    gp: GP3
+
+  - policy: event-hash-chain
+    status: enforced
+    intent: ""   # code ล้วน — hash chain อยู่ที่จุด append เดียวใน progress.py; snapshot เก็บ tip กัน truncation
+    guard: orchestrator/progress.py
+    guard_test: "python orchestrator/governance/chain_selftest.py --self-test"
+    check: full
+    audit_event: "*"
+    gp: P1
+
+  - policy: coordination-ownership
+    status: enforced   # GP5: owners_check พิสูจน์ file-set ไม่ทับกันภายใน wave ก่อนรัน
+    intent: "spec ประกาศ files: ต่อ task; งานขนานห้ามแตะไฟล์ทับกัน"
+    guard: orchestrator/governance/owners_check.py
+    guard_test: "python orchestrator/governance/owners_check.py --self-test"
+    check: full
+    audit_event: blocked
+    gp: GP5
+
+  - policy: holdout-acceptance
+    status: enforced   # GP6: holdout_runner + gate ใน run.js ท้าย Execute (บล็อกใน code)
+    intent: ""   # ต้องไม่อยู่ใน prompt โดยนิยาม
+    guard: orchestrator/governance/holdout_runner.py
+    guard_test: "python orchestrator/governance/holdout_runner.py --self-test"
+    check: full
+    audit_event: verify
+    gp: GP6
+
+  - policy: holdout-isolation
+    status: enforced   # structural — holdout อยู่ใต้ runDir (นอก target tree ของ worker);
+                       # self-test grep พิสูจน์ว่า EXEC prompts ใน run.js ไม่เอ่ยถึง holdout
+    intent: ""   # structural
+    guard: orchestrator/governance/holdout_runner.py
+    guard_test: "python orchestrator/governance/holdout_runner.py --self-test"
+    check: structural
+    audit_event: verify
+    gp: GP6
+
+  - policy: quality-decay-metrics
+    status: enforced   # GP6: วัดจาก ndjson deterministic; runner ตอบสนอง alert (หด batch) = ขั้นถัดไป
+    intent: ""   # code ล้วน — metrics จาก event log
+    guard: orchestrator/governance/decay_report.py
+    guard_test: "python orchestrator/governance/decay_report.py --self-test"
+    check: full
+    audit_event: "*"
+    gp: GP6
+
+  - policy: w3-lead-review
+    status: enforced   # GP12 — smoke-proven ที่ G-Maiden (2026-07-10): W3 (deg6) ตั้ง
+                       # requireReview:false + route ไป ollama ยังถูกบังคับ review=true; W2 (deg2)
+                       # opt-out ยังเคารพ (พฤติกรรมเดิม). ตรงกับ hop_metrics (G3.4 deg6).
+                       # SPEC §8: W3 (6-8 connections) = "lead review required". ช่องว่าง:
+                       # requireReviewFor มี 3 ทางลัดข้าม review (global off / requireReview:false /
+                       # skipForDraft สำหรับ local model) → task W3 หลบ review ได้ด้วยการถูก route
+                       # ไป draft model หรือตั้ง opt-out. Fix: fanoutDegree>=6 บังคับ review=true
+                       # เหนือทุก skip (reuse review machinery เดิม ไม่สร้าง gate ใหม่).
+                       # "lead" = review gate รันโดย reviewer role (§7.2 read-only) ห้ามข้าม —
+                       # ไม่ escalate เป็น architect-tier (แยก decision). flip หลัง smoke: W3+draft
+                       # ยังถูกบังคับ review, W2 พฤติกรรมเดิม
+    intent: ""   # code ล้วน — force อยู่ใน requireReviewFor
+    guard: orchestrator/governance/w3_review_check.py
+    guard_test: "python orchestrator/governance/w3_review_check.py"
+    check: structural
+    audit_event: verify
+    gp: GP12
+
+  - policy: w4-superhub-gate
+    status: enforced   # GP11 — smoke-proven ที่ G-Maiden (2026-07-10): task H deg 9 ถูกปฏิเสธที่
+                       # dispatch ด้วย "W4 super-hub (degree 9 ≥ 9) — decompose or approve"; task M
+                       # deg 8 ไม่โดน W4; confirm H แล้ว gate เคลียร์. ตรงกับ hop_metrics (G0.1 deg9).
+                       # SPEC §8: W4 (>=9 sibling/peer connections) = "block high-risk
+                       # deployment until decomposed or approved". §8 เคยมีแค่การวัด (hop_metrics
+                       # ชี้ super-hub) แต่ไม่มี gate — รูปเดียวกับ §7.2 ก่อน B3. Fix: fanoutDegree
+                       # (undirected = deps ตัวเอง + task ที่ขึ้นกับมัน ตรงกับ hop_metrics) + isW4
+                       # เข้า needsConfirm() → W4 ผ่านประตู confirm เดิม (approved=confirm,
+                       # decomposed=ลด degree<9). ไม่สร้าง gate ใหม่. flip เป็น enforced หลัง e2e
+                       # smoke: task deg 9 ถูกปฏิเสธที่ dispatch จนกว่าจะ confirm, deg 8 ผ่าน
+    intent: ""   # code ล้วน — gate อยู่ที่ dispatch ผ่าน needsConfirm
+    guard: orchestrator/governance/w4_gate_check.py
+    guard_test: "python orchestrator/governance/w4_gate_check.py"
+    check: structural
+    audit_event: blocked
+    gp: GP11
+
+  - policy: graph-health-metrics
+    status: enforced   # GP10 (RCA Phase D): RFC--H-AXIS D3/D4 ถอดคำว่า "hop" ออกจากข้อความบังคับ
+                       # พร้อมสัญญาว่าจะกลับมาเมื่อ "วัดได้" — นี่คือเครื่องวัดนั้น. deterministic,
+                       # stdlib, BFS; guard_test พิสูจน์เลขคณิตกราฟกับ fixture ที่คำนวณมือได้
+                       # (P5/triangle/star/cycle). เป็น HEALTH REPORT ไม่ใช่ gate: node ที่เกิน
+                       # เพดานไม่เคยบล็อก agent (D4) — มันแปลว่ากราฟขาด hub หรือ task ใหญ่เกิน
+    intent: ""   # code ล้วน — วัดจากกราฟจริง (atom wikilinks + backlog deps)
+    guard: orchestrator/governance/hop_metrics.py
+    guard_test: "python orchestrator/governance/hop_metrics.py --self-test"
+    check: full
+    audit_event: "*"
+    gp: GP10
+
+  - policy: doc-governance
+    status: enforced   # GP7 (RCA--GOVERNANCE-FRAMEWORK-DRIFT §6 Phase B): เอกสารที่ gate ทุกอย่าง
+                       # ต้องถูก gate เอง — canonical docs (SPEC §12 format) ต้องผ่าน lint และ
+                       # H tiers ใน SPEC ต้องมีจริงใน planner.mjs H_TIERS (บทเรียน silent-H6 bug)
+                       # guard_test รัน fixture self-test + lint docs/ จริงในคำสั่งเดียว —
+                       # canonical doc พังหรือ tier contract หลุด = ไม่มี run ใหม่เริ่มได้
+    intent: ""   # code ล้วน — กติกาอยู่ใน SPEC--RWANG-STANDALONE-GOVERNANCE-FRAMEWORK §12
+    guard: orchestrator/governance/doc_lint.py
+    guard_test: "python orchestrator/governance/doc_lint.py"
+    check: full
+    audit_event: blocked
+    gp: GP7
+
+  - policy: access-scope-enforcement
+    status: enforced   # GP8 — smoke-proven ที่ runnable origin (G-Maiden de1c6c94, 2026-07-10):
+                       # argv จริงผ่านเส้น runAgent→runProvider→spawn (re-smoked 6/6 หลัง SPEC 0.7.0):
+                       # H1+code เขียนได้ (กับดักเดิม), H0→bounded (แก้ไฟล์เดียว ห้าม Glob/Grep/Bash),
+                       # H2+code ถูกกดเหลือ acceptEdits จาก full, H3→+allowedTools Bash,
+                       # legacy ไม่ประกาศ tier = bypassPermissions เดิมเป๊ะ, H4+docs ไม่ถูกยกขึ้น;
+                       # guard ที่นี่เป็น structural (ceiling map lint-locked + engine consumption)
+    intent: ""   # code ล้วน — เพดานอยู่ที่ spawn args ไม่ใช่ prompt
+    guard: orchestrator/governance/access_scope_check.py
+    guard_test: "python orchestrator/governance/access_scope_check.py"
+    check: structural
+    audit_event: blocked
+    gp: GP8
+
+  - policy: role-readonly-gate
+    status: enforced   # GP9 — smoke-proven ที่ G-Maiden (2026-07-10): reviewer ถูก spawn ด้วย
+                       # --disallowedTools Edit Write MultiEdit NotebookEdit Bash (perm=read)
+                       # ส่วน worker ยัง full เหมือนเดิม. ที่มา: SPEC §7.2 "gate-owning roles อ่านอย่างเดียว
+                       # ต่อ artifact ที่ตัวเอง gate" เป็นกฎหมายตั้งแต่ 0.5.0b แต่ไม่เคยมี guard —
+                       # runReview() เรียก runProvider() โดยไม่ส่ง opts → reviewer ตกไปได้
+                       # defaultPermission (safe=acceptEdits) และแก้ชิ้นงานที่ตัวเองตัดสินได้
+                       # (ช่องโหว่ที่รั่วอยู่จริง ไม่ใช่ latent). Fix: permissionFor รับ role เป็น
+                       # bound ที่สามและกดต่ำสุดเสมอ; profile `read` ถอด Edit/Write/MultiEdit/
+                       # NotebookEdit/Bash. ขอบเขต: เฉพาะ agent ที่ spawn มา GATE (reviewer) —
+                       # architect ที่เขียนเอกสารของตัวเองไม่ถูกกด. flip เป็น enforced หลัง e2e
+                       # smoke พิสูจน์ argv ของ reviewer ที่ runnable origin
+    intent: ""   # code ล้วน — เพดานอยู่ที่ spawn args
+    guard: orchestrator/governance/role_readonly_check.py
+    guard_test: "python orchestrator/governance/role_readonly_check.py"
+    check: structural
+    audit_event: blocked
+    gp: GP9
+
+  - policy: engine-lint-interlock
+    status: enforced   # GP8 — smoke-proven ที่ G-Maiden (de1c6c94, 2026-07-10): lint exit 1 →
+                       # dispatchOne และ runPool ปฏิเสธก่อน claim ("governance interlock" error);
+                       # lint เขียว → gated task ทะลุไปตายที่ confirm-gate (ผ่าน interlock โดยไม่ spawn);
+                       # meta-guard จริงข้าม repo ok=true 23.4s + cache ตาม mtime ทำงาน
+                       # หมายเหตุ: python/lint หายและ governance.required=false = warn-path (fail-open
+                       # โดยตั้งใจสำหรับ engine ที่ deploy โดดเดี่ยว) — ตั้ง required=true เพื่อ fail-closed
+    intent: ""   # code ล้วน
+    guard: orchestrator/governance/engine_interlock_check.py
+    guard_test: "python orchestrator/governance/engine_interlock_check.py"
+    check: structural
+    audit_event: blocked
+    gp: GP8

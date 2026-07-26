@@ -1,8 +1,13 @@
+*.pyc
+__pycache__/
+
 # Dependencies
 node_modules/
 studio/node_modules/
 
 # Runtime artifacts
+runs/*
+!runs/.gitkeep
 state.json
 usage.jsonl
 .state.lock
@@ -12,6 +17,7 @@ logs/
 
 # Brain / sidecar data
 brain/failures.jsonl
+brain/traces.jsonl
 brain/*.gdb
 brain/orch.gdb/
 
@@ -43,3 +49,21 @@ store/dashboard.log
 *.dmg
 *.AppImage
 *.deb
+
+# Agent-local state
+.agents/**/.brain/
+.agents/**/MEMORY.md
+.turbo/
+**/.turbo/
+# approval tokens are ephemeral human-minted artifacts; the consumed ledger is
+# local audit — none of it belongs in git
+orchestrator/governance/approvals/
+# GenesisBlockDB knowledge store — runtime WAL + peer identity (store/knowledge.mjs
+# ingest populates it); a local rebuildable cache, never source. The glob also covers
+# reversible reset backups (.knowledge.bak-*), since the governance guard blocks rm -rf.
+.knowledge*
+# Local session-affinity state; contains scheduling metadata only and is rebuildable.
+store/.session-leases.json
+# External skill-distribution checkout; the harness records its immutable source in
+# adapters/host-skills/registry.json and must not track a nested checkout.
+/RWANG-PROMAX-skills/
