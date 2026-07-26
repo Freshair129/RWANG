@@ -1,0 +1,17 @@
+{
+  "name": "@rwang/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Initial scaffold for canonical RWANG contracts and shared execution schemas.",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./canonical-task": "./src/canonical-task.mjs",
+    "./adapters": "./src/adapters.mjs"
+  },
+  "scripts": {
+    "build": "node -e \"console.log('@rwang/contracts: no build artifacts yet')\"",
+    "test": "node --test test/*.test.mjs",
+    "lint": "node -e \"console.log('@rwang/contracts: no lint rules yet')\""
+  }
+}

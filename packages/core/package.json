@@ -1,0 +1,16 @@
+{
+  "name": "@rwang/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Initial RWANG core package for reusable execution-kernel logic.",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./model-routing": "./src/model-routing.mjs"
+  },
+  "scripts": {
+    "build": "node -e \"console.log('@rwang/core: no build artifacts yet')\"",
+    "test": "node --test test/*.test.mjs",
+    "lint": "node -e \"console.log('@rwang/core: no lint rules yet')\""
+  }
+}
