@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"orchestrator/governance/tool_guard.py\" --hook"
+            "command": "py -3 \"orchestrator/governance/tool_guard.py\" --hook"
           }
         ]
       }

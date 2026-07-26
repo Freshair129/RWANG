@@ -1,7 +1,7 @@
 ---
-version: "0.1.1b"
+version: "0.1.2b"
 created_at: "2026-07-26T00:00:00+07:00,ATHER,pending"
-last_update: "2026-07-26T19:42:00+07:00,ATHER"
+last_update: "2026-07-26T19:52:00+07:00,ATHER"
 status: "candidate"
 superseded_by: null
 attributes:
@@ -42,12 +42,14 @@ lockfiles, and owner worktrees outside this named worktree.
 - Operational progress, restart, governance, and guard instructions no longer
   emit machine-specific RWANG paths.
 - The Claude governance hook invokes `tool_guard.py` with a repository-relative
-  command that is valid when applied from the repository root.
+  `py -3` command that is executable from the repository root on the verified
+  Windows environment.
 - `package.json` exposes `test`, `runtime:smoke`, and `verify` scripts without a
   new package manager or dependency. The Windows verification script uses the
   existing `py -3` launcher because `python` is not on this machine's PATH.
 - Runtime compatibility tests assert the default-path shape, root-relative
-  runner instructions, and hook command.
+  runner instructions, and execute a safe hook probe through the configured
+  Python launcher.
 
 External consumer and target-repository paths remain inputs or examples; this
 slice does not move, vendor, or modify those repositories.
@@ -87,5 +89,6 @@ Recorded results:
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---|---|---|---|---|---|
+| 0.1.2b | 2026-07-26 | candidate | Switched governance hook and guard instructions to the verified Windows Python launcher and added an execution probe. | pending | ATHER |
 | 0.1.1b | 2026-07-26 | candidate | Covered active progress, restart, governance, and guard instructions in the repository-relative path boundary. | pending | ATHER |
 | 0.1.0b | 2026-07-26 | candidate | Defined the bounded Wave 3 path-compatibility scope and evidence contract. | pending | ATHER |

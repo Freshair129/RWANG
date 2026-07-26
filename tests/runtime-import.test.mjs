@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { existsSync, readFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
@@ -56,7 +56,14 @@ test('runtime defaults and governance commands are repository-relative', () => {
   for (const source of [runnerSource, progressSource, governanceSource, restartSource, guardSource]) {
     assert.doesNotMatch(source, /G:[/\\]Rwang/);
   }
-  assert.equal(hook.hooks.PreToolUse[0].hooks[0].command, 'python "orchestrator/governance/tool_guard.py" --hook');
+  assert.equal(hook.hooks.PreToolUse[0].hooks[0].command, 'py -3 "orchestrator/governance/tool_guard.py" --hook');
+
+  const hookProbe = spawnSync('py', ['-3', 'orchestrator/governance/tool_guard.py', '--hook'], {
+    cwd: root,
+    encoding: 'utf8',
+    input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'echo wave3-probe' } }),
+  });
+  assert.equal(hookProbe.status, 0, hookProbe.stderr || hookProbe.stdout);
 });
 
 test('harness server boots with the restored runtime closure', async () => {
