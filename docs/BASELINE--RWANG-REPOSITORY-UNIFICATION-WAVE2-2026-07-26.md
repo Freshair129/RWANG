@@ -1,7 +1,7 @@
 ---
-version: "0.1.1b"
+version: "0.1.2b"
 created_at: "2026-07-26T18:05:00+07:00,ATHER,pending"
-last_update: "2026-07-26T19:23:31+07:00,ATHER"
+last_update: "2026-07-26T19:30:00+07:00,ATHER"
 status: "candidate"
 superseded_by: null
 attributes:
@@ -96,8 +96,8 @@ py -3 orchestrator/governance/contract_selftest.py
 py -3 orchestrator/governance/chain_selftest.py
 git ls-files -s | Select-String '^160000 '
 git ls-files | Select-String '^(govibe|GenesisBlock|G-Maiden)(/|$)'
-git ls-files -- brain/failures.jsonl store/.accounts-state.json accounts.local.json
-git check-ignore --no-index -- .env accounts.local.json brain/failures.jsonl store/.accounts-state.json runs/example/progress.json .agents/agt/MEMORY.md
+git ls-files -- brain/failures.jsonl brain/traces.jsonl store/.accounts-state.json accounts.local.json
+git check-ignore --no-index -- .env accounts.local.json brain/failures.jsonl brain/traces.jsonl store/.accounts-state.json runs/example/progress.json .agents/agt/MEMORY.md
 git status --short
 ```
 
@@ -112,5 +112,6 @@ Recorded pre-commit results:
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---|---|---|---|---|---|
+| 0.1.2b | 2026-07-26 | candidate | Covered the knowledge-store trace log in the local-state ignore boundary. | pending | ATHER |
 | 0.1.1b | 2026-07-26 | candidate | Preserved the canonical similarity API, united local-state exclusions, and narrowed boundary claims to tracked source trees. | pending | ATHER |
 | 0.1.0b | 2026-07-26 | candidate | Recorded the history-preserving import boundary, conflict decisions, exclusions, and verification evidence. | pending | ATHER |

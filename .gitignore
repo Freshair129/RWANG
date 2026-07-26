@@ -17,6 +17,7 @@ logs/
 
 # Brain / sidecar data
 brain/failures.jsonl
+brain/traces.jsonl
 brain/*.gdb
 brain/orch.gdb/
 
