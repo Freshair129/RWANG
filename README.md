@@ -1,8 +1,10 @@
 # RWANG
 
-**RWANG is the canonical repository for the governed autonomous execution kernel and control plane.**
+**Canonical repository:** https://github.com/Freshair129/RWANG
 
-It unifies the former split between `Freshair129/RWANG` as architecture authority and `Freshair129/Rwang-orchestrator` as active implementation, so architecture, runtime, tests, and migration state can now converge in one repository.
+**Status (2026-07-26):** Wave 5 consumer-cutover documentation is prepared on top of Wave 4 final tip `64ec8ba`. The stacked PR chain `#25`-`#28` is open/pending; no cutover, tagged release, or repository archive is claimed.
+
+RWANG is the proposed canonical destination for the former split between `Freshair129/RWANG` as architecture authority and `Freshair129/Rwang-orchestrator` as active implementation. The transition remains approval-gated until the PR chain is merged and the owner authorizes a release or confirms cutover.
 
 ---
 
@@ -84,13 +86,17 @@ As of 2026-07-26, the repository-unification workflow includes:
 - phase-based overlay tooling for re-applying monorepo bootstrap and package extraction work;
 - end-state audit tooling for the canonical destination.
 
+The consumer cutover is not complete. See the open stacked PR chain `#25`-`#28`, the [cutover compatibility contract](docs/COMPATIBILITY--RWANG-REPOSITORY-CUTOVER.md), and the [GoVibe consumer boundary example](examples/govibe/README.md) before changing an external consumer.
+
 ---
 
 ## Read next
 
 - `docs/CR--RWANG-REPOSITORY-UNIFICATION.md`
 - `docs/PLAN--RWANG-REPOSITORY-UNIFICATION-MIGRATION.md`
-- `docs/PLAYBOOK--CANONICAL-RWANG-HISTORY-IMPORT.md`
-- `docs/PLAYBOOK--CANONICAL-RWANG-CONFLICT-RESOLUTION.md`
-- `docs/PLAN--CANONICAL-RWANG-POST-IMPORT-MONOREPO-OVERLAY.md`
-- `docs/SPEC--CANONICAL-RWANG-ENDSTATE-AUDIT.md`
+- `docs/BASELINE--RWANG-REPOSITORY-UNIFICATION-WAVE1-2026-07-26.md`
+- `docs/BASELINE--RWANG-REPOSITORY-UNIFICATION-WAVE2-2026-07-26.md`
+- `docs/BASELINE--RWANG-REPOSITORY-UNIFICATION-WAVE3-2026-07-26.md`
+- `docs/BASELINE--RWANG-REPOSITORY-UNIFICATION-WAVE4-2026-07-26.md`
+- `docs/COMPATIBILITY--RWANG-REPOSITORY-CUTOVER.md`
+- `examples/govibe/README.md`
