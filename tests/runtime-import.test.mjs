@@ -32,6 +32,16 @@ test('harness direct runtime modules exist and non-listening entrypoints import'
   await import(pathToFileURL(resolve(root, 'planner.mjs')).href);
 });
 
+test('knowledge store preserves the canonical similarity API in file mode', async () => {
+  const knowledge = await import(pathToFileURL(resolve(root, 'store', 'knowledge.mjs')).href);
+
+  assert.equal(typeof knowledge.embed, 'function');
+  assert.equal(typeof knowledge.searchSim, 'function');
+  knowledge.resetStore();
+  assert.equal(await knowledge.embed({}, 'compatibility probe'), null);
+  assert.deepEqual(await knowledge.searchSim({}, 'compatibility probe'), []);
+});
+
 test('harness server boots with the restored runtime closure', async () => {
   const port = 46000 + (process.pid % 1000);
   const child = spawn(process.execPath, ['server.mjs', '--port', String(port)], {
