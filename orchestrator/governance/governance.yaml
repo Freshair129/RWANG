@@ -1,5 +1,5 @@
 # governance.yaml — machine-readable Governance Matrix
-# SSOT เชิงเนื้อหา: G:\Rwang\docs\SPEC--AGENT-RUNTIME-GOVERNANCE.md §2 (ไฟล์นี้คือ mirror ที่ lint อ่าน)
+# SSOT เชิงเนื้อหา: docs\SPEC--AGENT-RUNTIME-GOVERNANCE.md §2 (ไฟล์นี้คือ mirror ที่ lint อ่าน)
 #
 # กติกาเหล็ก (G6):
 #   - policy ที่ status != enforced ห้าม claim ว่ามีผลบังคับ (ยังเป็นแผน)

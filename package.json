@@ -20,6 +20,9 @@
     "daci-governance"
   ],
   "scripts": {
+    "test": "node --test",
+    "runtime:smoke": "node --test tests/runtime-import.test.mjs tests/gesture-command-intent.test.mjs tests/host-skill-registry.test.mjs",
+    "verify": "npm test && npm run runtime:smoke && py -3 orchestrator/governance/contract_selftest.py && py -3 orchestrator/governance/chain_selftest.py && py -3 orchestrator/governance/w3_review_check.py && py -3 orchestrator/governance/w4_gate_check.py",
     "ui": "node server.mjs",
     "status": "node orchestrator.mjs status",
     "next": "node orchestrator.mjs next",

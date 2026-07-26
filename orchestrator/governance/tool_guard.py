@@ -81,7 +81,7 @@ BLOCK_MSG = {
 }
 MINT_HINT = ("To approve it, a HUMAN mints a one-shot token in a PLAIN terminal "
              "(not an agent shell):\n"
-             "  python \"G:/Rwang/orchestrator/governance/tool_guard.py\" "
+             "  python \"orchestrator/governance/tool_guard.py\" "
              "--mint \"<exact command>\" --by <name> --ttl 15\n"
              "then re-run the command once within the TTL.")
 

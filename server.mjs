@@ -7,7 +7,8 @@
  */
 import { createServer } from "node:http";
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as E from "./engine.mjs";
 import { writeNode, writeEdge, queryNodes } from "./store/knowledge.mjs";
 import { accountsStatus, fetchPlanQuotas, DEFAULT_STATE_PATH } from "./accounts.mjs";
@@ -21,7 +22,8 @@ import { verifyChain } from "./chain-verify.mjs";
 
 // Rwang runs/ tree — read-only observation surface (Mission Control "Runs" view).
 // Never written to from this server; see runs-reader.mjs / chain-verify.mjs.
-const RUNS_DIR = process.env.RWANG_RUNS_DIR || "G:/Rwang/runs";
+const REPO_ROOT = dirname(fileURLToPath(import.meta.url));
+const RUNS_DIR = process.env.RWANG_RUNS_DIR || join(REPO_ROOT, "runs");
 
 // Account-pool mutations touch secrets on disk — allow them from localhost only.
 function isLocal(req) {

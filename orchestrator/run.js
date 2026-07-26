@@ -8,13 +8,13 @@
 //   skill, ported to run end-to-end without per-task human prompts.
 //
 // HOW IT RUNS
-//   Workflow({ scriptPath: "G:/Rwang/orchestrator/run.js",
+//   Workflow({ scriptPath: "orchestrator/run.js",
 //              args: { specPath, targetRepo, autonomy, runDir } })
 //
 //   args.specPath   : path to the spec (YAML/JSON task list) Rwang routes.
 //   args.targetRepo : the repo the work is DONE in (e.g. G:/GenesisBlock_Dev/GenesisBlock).
 //   args.autonomy   : "supervised" | "autonomous" | "unattended".
-//   args.runDir     : G:/Rwang/runs/<runId>  — progress.ndjson + progress.json live here.
+//   args.runDir     : runs/<runId>  — progress.ndjson + progress.json live here.
 //
 // WORKFLOW SCRIPTING CONSTRAINTS (why this file looks the way it does)
 //   * Pure JS. NO fs / Bash / Node APIs in the script body.
@@ -158,7 +158,7 @@ function executePrompt(task, tier, model, runDir, attemptNo, prevFail) {
     ? [
         `This is a LOCAL tier (${tier}). Do the authoring/work via the local model:`,
         `  bash orchestrator/ollama_route.sh ${model} "<your fully-specified prompt>"`,
-        `(run from the Rwang dir G:/Rwang). It prints the response text plus`,
+        `(run from the RWANG repository root). It prints the response text plus`,
         `prompt_eval_count + eval_count — SUM those two into local_tokens. billed_estimate=0.`,
         `Apply the model's output as concrete edits in the target repo yourself.`,
       ].join("\n")
@@ -174,7 +174,7 @@ function executePrompt(task, tier, model, runDir, attemptNo, prevFail) {
     localBlock,
     ``,
     `TARGET REPO (do ALL work here): ${CFG.targetRepo}`,
-    `RWANG DIR (scripts live here):   G:/Rwang`,
+    `RWANG DIR (scripts live here):   repository root`,
     `CONTEXT BRIEF: ${runDir}/context.md — verified facts about the target repo (build/`,
     `test commands, layout, constraints). Read it FIRST instead of re-exploring the`,
     `repo. If it is missing or contradicts the live repo, trust the repo.`,
@@ -187,7 +187,7 @@ function executePrompt(task, tier, model, runDir, attemptNo, prevFail) {
     `Task "${task.id}" at tier ${tier} (attempt #${attemptNo}${prevFail ? ", ESCALATED" : ""}).`,
     `Task: ${task.description}`,
     `verify_command: ${task.verify_command ? task.verify_command : "(none)"}`,
-    `Progress command (from G:/Rwang; fill in status/cost/note):`,
+    `Progress command (from the repository root; fill in status/cost/note):`,
     `  python orchestrator/progress.py ${runDir} event --task ${task.id} \\`,
     `    --status <running|pass|fail> --tier ${tier} --model ${model} \\`,
     `    --cost <billed_estimate-usd> --note "<one line>"`,
@@ -217,7 +217,7 @@ async function runTaskWithEscalation(task, runDir) {
     await agent(
       [
         `Record that task "${task.id}" is flagged human_review and was NOT auto-executed.`,
-        `From G:/Rwang run:`,
+        `From the repository root run:`,
         `  python orchestrator/progress.py ${runDir} event --task ${task.id} ` +
           `--status blocked --tier ${task.tier} --model ${task.executor_model} ` +
           `--cost 0 --note "human_review flag: requires a human; not auto-run"`,
@@ -415,7 +415,7 @@ async function phaseRoute() {
   const routed = await agent(
     [
       `RWANG ROUTE — MECHANICAL phase: run the deterministic pipeline below EXACTLY,`,
-      `in order, from G:/Rwang. route.py computes everything; do not reason about tiers.`,
+      `in order, from the repository root. route.py computes everything; do not reason about tiers.`,
       ``,
       `0) Ensure the run dir exists: ${runDir}`,
       `1) GOVERNANCE LINT — hard gate before anything else. Run:`,
@@ -495,7 +495,7 @@ async function phaseRoute() {
         ``,
         `GRADED ASSEMBLY (RFC--RESOLUTION-GRADIENT, Phase 1) — do this ONLY IF a knowledge`,
         `graph of atoms relevant to this run exists (e.g. a GKS atom dir, or a wired`,
-        `store.knowledge in G:/Rwang/config.json). If none exists, SKIP this and just write`,
+        `store.knowledge in config.json). If none exists, SKIP this and just write`,
         `the prose facts above. When it does exist:`,
         `  a) Get similarity-ranked candidates from the knowledge store (the sim term):`,
         `       node store/knowledge.mjs query "<epic goal + task keywords>" --k 12 \\`,
@@ -508,7 +508,7 @@ async function phaseRoute() {
         `     (estimate = chars/4), and the "sim" from the file (omit it in the hop-only case).`,
         `  b) Write a request JSON {budget_tokens, anchor, atoms:[...]} to`,
         `     ${runDir}/context_atoms.json (budget_tokens = the spec's scope.budgetTokens if`,
-        `     present, else 1500), then from G:/Rwang run:`,
+        `     present, else 1500), then from the repository root run:`,
         `       python orchestrator/governance/resolution_gradient.py plan \\`,
         `         ${runDir}/context_atoms.json --atoms <atom-dir> --anchor <anchor-id> --json \\`,
         `         > ${runDir}/context_plan.json`,
@@ -527,7 +527,7 @@ async function phaseRoute() {
         `     was written, log ONE note event so the run's event stream carries a pointer +`,
         `     summary — a UI binds to this instead of polling the file. Read mode, used_tokens,`,
         `     budget_tokens, overflow, and trim_order STRAIGHT OUT of that JSON (never`,
-        `     recompute or hand-summarize), then from G:/Rwang run:`,
+        `     recompute or hand-summarize), then from the repository root run:`,
         `       python orchestrator/progress.py ${runDir} event --task "<run>" --status note \\`,
         `         --note "context_plan=context_plan.json mode=<mode> <used>/<budget>tok` +
           ` overflow=<bool> trim_order=<comma-joined ids>"`,
@@ -564,7 +564,7 @@ async function phaseExecute(routed) {
       [
         `RWANG EXECUTE REHYDRATE — MECHANICAL: reconstruct run state from DISK only.`,
         `1) GOVERNANCE LINT re-check (the matrix may have broken since Route). From`,
-        `   G:/Rwang run:  python orchestrator/governance/governance_lint.py --stamp "${runDir}"`,
+        `   From the repository root run:  python orchestrator/governance/governance_lint.py --stamp "${runDir}"`,
         `   and record its exit code as governance_lint_exit. If NON-ZERO: STOP —`,
         `   return {"governance_lint_exit": <code>, "epic_dod": "", "tasks": []}.`,
         `2) Print the deterministic resume join (tasks.json x progress.json):`,
@@ -629,7 +629,7 @@ async function phaseExecute(routed) {
   if (!runBlocked) {
     const drift = await agent(
       [
-        `RWANG DRIFT CHECK — MECHANICAL: run the command below EXACTLY, from G:/Rwang,`,
+        `RWANG DRIFT CHECK — MECHANICAL: run the command below EXACTLY, from the repository root,`,
         `and relay its result. Do not interpret, fix, or re-run anything else.`,
         `  python orchestrator/governance/drift_check.py "${runDir}" --target "${CFG.targetRepo}" --json`,
         `Record the process EXIT CODE as drift_exit (0 = no drift). From the JSON it`,
@@ -651,7 +651,7 @@ async function phaseExecute(routed) {
       log(`[drift] drift_check exit=${code} — passed claim(s) no longer verify; blocking the run.`);
       await agent(
         [
-          `Record the drift finding (the verify-claims audit event). From G:/Rwang run:`,
+          `Record the drift finding (the verify-claims audit event). From the repository root run:`,
           `  python orchestrator/progress.py "${runDir}" event --task "<run>" \\`,
           `    --status note --cost 0 \\`,
           `    --note "drift_detected: drift_check exit=${code}${summary ? " — " + summary : ""}"`,
@@ -675,7 +675,7 @@ async function phaseExecute(routed) {
   if (!runBlocked) {
     const hold = await agent(
       [
-        `RWANG HOLDOUT GATE — MECHANICAL: run the command below EXACTLY, from G:/Rwang,`,
+        `RWANG HOLDOUT GATE — MECHANICAL: run the command below EXACTLY, from the repository root,`,
         `and relay its result. Do not interpret, fix, or re-run anything else.`,
         `  python orchestrator/governance/holdout_runner.py "${runDir}" --target "${CFG.targetRepo}" --json`,
         `Record the process EXIT CODE as holdout_exit (0 = pass or no holdout dir).`,
@@ -696,7 +696,7 @@ async function phaseExecute(routed) {
       log(`[holdout] holdout_runner exit=${code} — unseen acceptance failed; blocking the run.`);
       await agent(
         [
-          `Record the holdout finding (the holdout-acceptance audit event). From G:/Rwang run:`,
+          `Record the holdout finding (the holdout-acceptance audit event). From the repository root run:`,
           `  python orchestrator/progress.py "${runDir}" event --task "<run>" \\`,
           `    --status note --cost 0 --holdout-exit ${typeof code === "number" ? code : 1} \\`,
           `    --note "holdout_failed: holdout_runner exit=${code}${summary ? " — " + summary : ""}"`,
@@ -715,7 +715,7 @@ async function phaseExecute(routed) {
   if (!runBlocked) {
     await agent(
       [
-        `Mark the Execute phase complete. From G:/Rwang run:`,
+        `Mark the Execute phase complete. From the repository root run:`,
         `  python orchestrator/progress.py ${runDir} phase-done --phase execute`,
         `Return a one-line confirmation.`,
       ].join("\n"),
@@ -770,7 +770,7 @@ async function phaseReview(epic_dod, runBlocked, blockedTask, results) {
       `// GATE (invariant 1): do NOT commit/push/merge. Review only. In "unattended" mode the`,
       `// commit-to-branch is a SEPARATE gated phase and a human still merges.`,
       ``,
-      `Then, from G:/Rwang, run:`,
+      `Then, from the repository root, run:`,
       `  python orchestrator/progress.py ${runDir} phase-done --phase review`,
       ``,
       `Return a concise prose verdict (<= 10 lines): PASS or NEEDS-WORK, the strongest`,
@@ -805,7 +805,7 @@ async function phaseCommit() {
       `// branch. The human always owns the merge.`,
       ``,
       `Steps:`,
-      `1) BRANCH GUARD (deterministic — governance branch-only policy). From G:/Rwang run:`,
+      `1) BRANCH GUARD (deterministic — governance branch-only policy). From the repository root run:`,
       `     python orchestrator/governance/git_guard.py "${targetRepo}"`,
       `   Record its exit code as git_guard_exit. If NON-ZERO (on the default branch, or`,
       `   the default cannot be resolved): STOP — do NOT commit; return`,
@@ -815,7 +815,7 @@ async function phaseCommit() {
       `     git add -A`,
       `     git commit -m "rwang(unattended): verified work for run ${runDir}"`,
       `   (If there is nothing to commit, say so; that is fine — treat it as a no-op.)`,
-      `3) From G:/Rwang, record the boundary so a human can merge:`,
+      `3) From the repository root, record the boundary so a human can merge:`,
       `     python orchestrator/progress.py "${runDir}" finish --status awaiting_merge`,
       ``,
       `Return the schema JSON: git_guard_exit, committed (true|false|"no-op" as boolean +`,
@@ -907,7 +907,7 @@ const requested = CFG.phase; // "route"|"execute"|"review"|"commit"|undefined
   if (autonomy === "supervised") {
     await agent(
       [
-        `Set the supervised approval gate. From G:/Rwang run:`,
+        `Set the supervised approval gate. From the repository root run:`,
         `  python orchestrator/progress.py ${runDir} gate --phase execute --await`,
         `Return a one-line confirmation.`,
       ].join("\n"),
@@ -933,7 +933,7 @@ const requested = CFG.phase; // "route"|"execute"|"review"|"commit"|undefined
   if (terminalStatus !== "awaiting_merge") {
     await agent(
       [
-        `Finalize the Rwang run. From G:/Rwang run:`,
+        `Finalize the RWANG run. From the repository root run:`,
         `  python orchestrator/progress.py ${runDir} finish --status ${terminalStatus}`,
         `This flips ${runDir}/progress.json status to "${terminalStatus}" and stamps updated_at.`,
         `Return a one-line confirmation of the final status.`,
