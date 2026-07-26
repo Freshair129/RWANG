@@ -1,6 +1,6 @@
 ---
 version: "0.2.0b"
-created_at: "2026-07-26T00:00:00+07:00,ATHER,pending"
+created_at: "2026-07-26T00:00:00+07:00,ATHER,80ab8b4"
 last_update: "2026-07-26T19:44:42+07:00,ATHER"
 status: "candidate"
 superseded_by: null
@@ -99,5 +99,5 @@ Recorded results:
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---|---|---|---|---|---|
-| 0.2.0b | 2026-07-26 | candidate | Integrated root workspace metadata, reproducible pnpm links, Turbo verification, and bare package import tests. | pending | ATHER |
+| 0.2.0b | 2026-07-26 | candidate | Integrated root workspace metadata, reproducible pnpm links, Turbo verification, and bare package import tests. | 80ab8b4 | ATHER |
 | 0.1.0b | 2026-07-26 | beta | Imported the bounded package-source slice from canonical monorepo provenance. | pending | ATHER |
