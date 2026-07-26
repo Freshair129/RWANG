@@ -1,6 +1,6 @@
 ---
 version: "0.1.0b"
-created_at: "2026-07-26T00:00:00+07:00,ATHER,pending"
+created_at: "2026-07-26T00:00:00+07:00,ATHER,6c84b06"
 last_update: "2026-07-26T20:02:05+07:00,ATHER"
 status: "candidate"
 superseded_by: null
@@ -99,4 +99,4 @@ Risk: **MEDIUM**. The change is documentation-only, but inaccurate state or rele
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 |---|---|---|---|---|---|
-| 0.1.0b | 2026-07-26 | candidate | Documented canonical consumer cutover, external boundaries, and owner-gated transition. | pending | ATHER |
+| 0.1.0b | 2026-07-26 | candidate | Documented canonical consumer cutover, external boundaries, and owner-gated transition. | 6c84b06 | ATHER |
