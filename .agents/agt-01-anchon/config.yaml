@@ -1,0 +1,36 @@
+# Loadout config for ANCHON (agt-01). The identity (AGENTS.md + MEMORY.md + .brain/) is fixed;
+# the model is swappable. Pick a loadout per run; all read the SAME charter and memory.
+
+agent_id: agt-01
+codename: anchon
+role: independent architecture critic (second opinion)
+default: fable
+
+# Persistence model: every loadout is READ-ONLY. ANCHON never writes to disk; it emits KNOWLEDGE/RCA/
+# SESSION/PROMOTE blocks in its final message and the spawning orchestrator writes them into .brain/.
+# (See AGENTS.md "Shutdown ritual".) Keeps the critic safe and behaviour uniform across runners.
+
+loadouts:
+  fable:                          # via Claude Code Agent tool  (subagent_type: anchon)
+    runner: claude-code
+    model: fable
+    tools: [Read, Grep, Glob]
+  sol:                            # via codex CLI — flagship, toughest
+    runner: codex-cli
+    model: gpt-5.6-sol
+    effort: high
+    sandbox: read-only
+  gpt55:                          # via codex CLI — fallback that runs on older CLI
+    runner: codex-cli
+    model: gpt-5.5
+    sandbox: read-only
+
+# Secrets are NEVER stored here — only the env-var NAMES the runners resolve themselves.
+secrets:
+  - ANTHROPIC_API_KEY             # Claude Code loadout
+  - OPENAI_API_KEY                # codex loadouts (codex also keeps its own auth in ~/.codex)
+
+# codex invocation convention (sol):
+#   cd .agents/agt-01-anchon && \
+#   codex exec -m gpt-5.6-sol -c model_reasoning_effort=high -s read-only "<task>"
+#   (AGENTS.md in cwd is auto-loaded as the agent's charter)

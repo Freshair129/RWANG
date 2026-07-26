@@ -1,0 +1,16 @@
+{
+  "_comment": "GP4 hook wiring — เนื้อหานี้ต้องถูก merge เข้า G:/Rwang/.claude/settings.json ด้วยมือ (harness ไม่อนุญาตให้ agent แก้ config ตัวเอง ซึ่งถูกต้องแล้ว) — เมื่อ apply แล้ว PreToolUse จะเรียก tool_guard.py กับทุก Bash/PowerShell call: EXTERNAL/DESTRUCTIVE -> block (exit 2) พร้อมข้อความอธิบาย · จากนั้นเปลี่ยน confirm-destructive ใน governance.yaml เป็น enforced",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"G:/Rwang/orchestrator/governance/tool_guard.py\" --hook"
+          }
+        ]
+      }
+    ]
+  }
+}

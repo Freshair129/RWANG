@@ -4,7 +4,7 @@
  * ฟังก์ชันทั้งหมด return ค่าแบบ structured (ไม่ print) เพื่อให้ทั้ง CLI/HTTP ใช้ได้.
  */
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync, readdirSync, createWriteStream, statSync, readSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getStore } from "./store/knowledge.mjs";
@@ -158,13 +158,36 @@ export function blockedTasks(s) { return BACKLOG.filter((t) => s.tasks[t.id].sta
 
 // ---------- governance gate (guard--governance-gate / ADR B4) ----------
 const AUTO_GATE_TYPES = new Set(["safety", "guard", "audit"]);
+// SPEC §8 W-scale: W4 (>=9 sibling/peer connections) is "block high-risk deployment until
+// decomposed or approved". Enforcement point = dispatch, reusing the confirm gate below —
+// "approved" = confirm; "decomposed" = drop the degree under 9. Degree is UNDIRECTED
+// (own deps + tasks depending on this one), matching hop_metrics.py so the gate blocks
+// exactly the W4 the audit reports. Matrix policy `w4-superhub-gate`.
+const W4_MIN = 9;
+const W3_MIN = 6;   // SPEC §8: W3 (6-8 connections) = "lead review required" — review cannot be skipped
+export function fanoutDegree(t) {
+  const out = (t.deps || []).length;
+  const inc = BACKLOG.reduce((n, x) => n + ((x.deps || []).includes(t.id) ? 1 : 0), 0);
+  return out + inc;
+}
+export function isW4(t) { return fanoutDegree(t) >= W4_MIN; }
+export function isW3(t) { const d = fanoutDegree(t); return d >= W3_MIN && d < W4_MIN; }
 export function needsConfirm(t) {
   if (t.requiresConfirm) return true;
   // auto-gate by original atom type (encoded in id prefix: "guard--foo" → "guard")
   const atomType = t.id?.split("--")[0];
   if (atomType && AUTO_GATE_TYPES.has(atomType)) return true;
   if (AUTO_GATE_TYPES.has(t.type)) return true;
+  if (isW4(t)) return true;   // §8 W4 super-hub
   return false;
+}
+// why a task is gated — makes the dispatch refusal name its cause (W4 vs auto-gate/requiresConfirm)
+export function confirmReason(t) {
+  if (t.requiresConfirm) return "requiresConfirm";
+  const atomType = t.id?.split("--")[0];
+  if ((atomType && AUTO_GATE_TYPES.has(atomType)) || AUTO_GATE_TYPES.has(t.type)) return `auto-gate type=${t.type}`;
+  if (isW4(t)) return `W4 super-hub (degree ${fanoutDegree(t)} ≥ ${W4_MIN}) — decompose or approve (SPEC §8)`;
+  return "gated";
 }
 export function isConfirmed(t, s) {
   return !!s.tasks[t.id]?.confirmed;
@@ -230,7 +253,7 @@ export function setStatus(id, status, extra = {}) {
     const s = loadState();
     // governance gate (guard--governance-gate): gated atoms cannot transition to running without confirm
     if (status === "running" && needsConfirm(t) && !isConfirmed(t, s)) {
-      return { ok: false, error: `⛔ governance gate: ${id} ต้อง confirm ก่อน running (requiresConfirm / auto-gate type=${t.type})` };
+      return { ok: false, error: `⛔ governance gate: ${id} ต้อง confirm ก่อน running (${confirmReason(t)})` };
     }
     s.tasks[id] = { ...s.tasks[id], status, ...extra };
     if (status === "todo") { s.tasks[id].worker = null; s.tasks[id].claimedAt = null; }
@@ -315,6 +338,7 @@ export function snapshot() {
       deps: t.deps || [], depsDone: depsDone(t, cur), ready: isReady(t, cur),
       accept: t.accept, est: t.est, state: t.state, moscow: t.moscow, rice: t.rice,
       gated: needsConfirm(t), confirmed: !!st.confirmed, owner: st.owner ?? null,
+      degree: fanoutDegree(t), wscale: (() => { const d = fanoutDegree(t); return d >= 9 ? "W4" : d >= 6 ? "W3" : "W2"; })(),
     };
   });
   // build model options from all enabled providers' models
@@ -397,8 +421,60 @@ function isTextOnly(provider) {
 }
 
 const FULL_PERM_TYPES = new Set(["code", "eval", "guard"]);
-function permissionFor(t) {
-  return FULL_PERM_TYPES.has(t.type) ? "full" : (CONFIG.providers?.claude?.defaultPermission || "safe");
+// access-scope binding (SPEC--RWANG-STANDALONE-GOVERNANCE-FRAMEWORK §5 / RFC--H-AXIS-0.6.0 D2;
+// matrix policy `access-scope-enforcement`): an atom that DECLARES its H tier gets that tier
+// as a permission CEILING — it can lower the type-derived profile, never raise it. Atoms with
+// no declared tier keep the legacy type defaults verbatim, so nothing regresses.
+const PERM_RANK = { read: 0, bounded: 1, safe: 2, shell: 3, full: 4 };
+// The spawn permission is the MOST RESTRICTIVE of three independent bounds — each may lower it,
+// none may raise it: task TYPE (legacy default) · declared H tier (access scope, §5) · the spawning
+// ROLE (§7.2 — an agent spawned to GATE an artifact is read-only over it; matrix `role-readonly-gate`).
+function permissionFor(t, { role = null } = {}) {
+  const typePerm = FULL_PERM_TYPES.has(t.type) ? "full" : (CONFIG.providers?.claude?.defaultPermission || "safe");
+  const bounds = [typePerm];
+  const tier = typeof t.tier === "string" ? t.tier.toUpperCase() : null;
+  const tierPerm = tier ? CONFIG.providers?.claude?.tierPermissions?.[tier] : null;
+  if (tierPerm && tierPerm in PERM_RANK) bounds.push(tierPerm);
+  const rolePerm = role ? CONFIG.providers?.claude?.rolePermissions?.[role] : null;
+  if (rolePerm && rolePerm in PERM_RANK) bounds.push(rolePerm);
+  return bounds.reduce((lo, p) => (PERM_RANK[p] < (PERM_RANK[lo] ?? 9) ? p : lo));
+}
+
+// ---------- governance interlock (engine-lint-interlock — RCA Phase B2 #2) ----------
+// run.js refuses to start when governance_lint fails; the engine daemon must honor the same
+// meta-guard or the daemon IS the bypass SPEC §13 forbids. The full lint runs every guard_test
+// (slow), so the verdict is cached and refreshed only when governance.yaml changes or the TTL
+// lapses. While the matrix row is `planned`: missing python / missing governance dir → warn and
+// allow; set governance.required=true in config.json to fail closed already.
+const GOV = { checkedAt: 0, ok: null, detail: "", mtime: 0 };
+const GOV_TTL_MS = 10 * 60 * 1000;
+export function governanceInterlock({ force = false } = {}) {
+  const rel = CONFIG.governance?.lint || "orchestrator/governance/governance_lint.py";
+  const lint = resolve(__dir, rel);
+  const required = !!CONFIG.governance?.required;
+  if (!existsSync(lint)) {
+    GOV.ok = required ? false : null;
+    GOV.detail = `governance lint not found: ${lint}` + (required ? " (governance.required → blocked)" : " (warn only)");
+    GOV.checkedAt = now();
+    return { ...GOV };
+  }
+  const matrix = join(dirname(lint), "governance.yaml");
+  const mt = existsSync(matrix) ? statSync(matrix).mtimeMs : 0;
+  if (!force && GOV.checkedAt && GOV.mtime === mt && now() - GOV.checkedAt < GOV_TTL_MS) return { ...GOV };
+  const r = spawnSync("python", [lint, "--json"], { cwd: __dir, encoding: "utf-8", timeout: 300000 });
+  if (r.error || typeof r.status !== "number") {
+    GOV.ok = required ? false : null;
+    GOV.detail = `governance lint could not run (${r.error?.message || "python unavailable?"})` + (required ? " → blocked" : " — warn only");
+  } else {
+    GOV.ok = r.status === 0;
+    GOV.detail = GOV.ok ? "governance lint OK" : `governance lint exit ${r.status} — GOVERNANCE BROKEN, no new dispatch`;
+  }
+  GOV.checkedAt = now(); GOV.mtime = mt;
+  return { ...GOV };
+}
+function governanceBlock() {
+  const g = governanceInterlock();
+  return g.ok === false ? g.detail : null; // null verdict (lint unavailable, not required) = warn path
 }
 
 export function buildPrompt(t, model, provider = "claude", reworkNote = null, pastMistakes = null, grounded = null) {
@@ -542,6 +618,8 @@ export function runPool({ mode = "wave", max = CONFIG.concurrency, worker = "poo
   if (POOL.active) return { ok: false, error: "pool กำลังทำงานอยู่ (กด stop ก่อน)" };
   const block0 = capBlock();
   if (block0) return { ok: false, error: "cost cap: " + block0 };
+  const gv0 = governanceBlock();
+  if (gv0) return { ok: false, error: "⛔ governance interlock: " + gv0 };
   POOL = { active: true, stop: false, running: 0, mode, started: now(), max, capReason: null };
   let idx = 0;
   const inflight = new Set();
@@ -586,6 +664,13 @@ function reviewerModelFor(_workerModel) {
   return resolved ? `${resolved.provider}:${resolved.model}` : "claude:sonnet";
 }
 export function requireReviewFor(t) {
+  // SPEC §8: a W3+ task (>=6 sibling/peer connections) requires review — coupling that broad
+  // must not dodge the gate by being routed to a draft model or opting out. This forces review
+  // ON above every skip below (per-task requireReview:false, skipForDraft, requireReviewDefault).
+  // Matrix policy `w3-lead-review`; "lead" = the review gate runs by the reviewer role (§7.2),
+  // read-only per role-readonly-gate. (Escalating W3 to an architect-tier reviewer is NOT done —
+  // that would be a separate decision; here "required" means "unskippable".)
+  if (fanoutDegree(t) >= W3_MIN) return true;
   if (!CONFIG.review?.enabled) return false;
   if (typeof t.requireReview === "boolean") return t.requireReview;
   if (CONFIG.review?.skipForDraft) {
@@ -650,7 +735,11 @@ async function runReview(t, workerModel, worker) {
     CONFIG.providers.claude.auth.mode = getAuthMode();
   }
   const reviewTask = { ...t, id: `${t.id}#review` };
-  const r = await runProvider(parsed.provider, reviewTask, parsed.model, `${worker}.review`, prompt, CONFIG, PATHS);
+  // §7.2: the reviewer GATES this artifact, so it spawns read-only over it. Without an explicit
+  // permissionMode this call fell back to defaultPermission ("safe" = acceptEdits) and the gate
+  // owner could silently modify the very output it was judging.
+  const provOpts = { permissionMode: permissionFor(reviewTask, { role: "reviewer" }) };
+  const r = await runProvider(parsed.provider, reviewTask, parsed.model, `${worker}.review`, prompt, CONFIG, PATHS, provOpts);
   const u = r.usage || {};
   recordUsage({ id: t.id + "#review", model: reviewerFull, mode: r.provider || parsed.provider, cost: u.cost || 0, inTok: u.inTok || 0, outTok: u.outTok || 0, cache: u.cache || 0 });
   if (!r.ok && !r.logFile) return { ran: false };
@@ -737,9 +826,11 @@ export function dispatchOne(id, worker = "ui") {
   const t = byId(id); if (!t) return { ok: false, error: `ไม่พบ task ${id}` };
   const block = capBlock();
   if (block) return { ok: false, error: "cost cap: " + block };
+  const gvBlk = governanceBlock();
+  if (gvBlk) return { ok: false, error: "⛔ governance interlock: " + gvBlk };
   // governance gate: requiresConfirm atoms need explicit human confirm before dispatch
   if (needsConfirm(t) && !isConfirmed(t, loadState())) {
-    return { ok: false, error: `⛔ governance gate: ${id} ต้อง confirm ก่อน dispatch (requiresConfirm / auto-gate type=${t.type})` };
+    return { ok: false, error: `⛔ governance gate: ${id} ต้อง confirm ก่อน dispatch (${confirmReason(t)})` };
   }
   const cur = loadState().tasks[id]?.status;
   if (["needs-rework", "failed", "reviewing"].includes(cur)) setStatus(id, "todo"); // re-dispatch

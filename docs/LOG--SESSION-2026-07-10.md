@@ -1,0 +1,98 @@
+# LOG — Session 2026-07-09/10: จาก UX study ถึง Governance 17/17 enforced
+
+> Session log (plain record — ไม่เข้า version lifecycle) · driver: Boss + ClaudeFable
+> เส้นเรื่องของวันนี้: เริ่มจากโจทย์ออกแบบ desktop UX → ไปเจอคำถาม "แกน H มัน work จริงไหม" → จบที่ระบบ governance ที่บังคับใช้จริงถึงระดับ argv และ push ขึ้น GitHub ครบสอง repo
+
+---
+
+## 1. สิ่งที่ส่งมอบ (deliverables บน `main` แล้วทั้งหมด)
+
+| ชิ้นงาน | ไฟล์/commit | สถานะ |
+|---|---|---|
+| RWANG FLIGHT desktop UX spec (8 หน้าจอ, ID spine, keymap, data bindings) | `docs/DESIGN--RWANG-FLIGHT-DESKTOP-UX.md` | draft 0.1.0b |
+| Visual mockup (interactive) | https://claude.ai/code/artifact/9fa2f2dd-8d8c-49ce-8d73-71404e258b6c | published |
+| Governance review report (44 raw → 26 dedup → 25 confirmed) | `docs/REVIEW--GOVERNANCE-FRAMEWORK-2026-07-09.md` | candidate |
+| SPEC governance framework 0.4.0b → 0.5.0b → **0.6.0 active** (อนุมัติครบ lifecycle §12 ของตัวเองเป็นฉบับแรก) | `docs/SPEC--RWANG-STANDALONE-GOVERNANCE-FRAMEWORK.md` · b6cd792, 2d30c17, c893bca | **active** |
+| RCA drift 5 สาเหตุราก + แผน A–E | `docs/RCA--GOVERNANCE-FRAMEWORK-DRIFT.md` · f5e6024 | candidate |
+| RFC H-axis (D1–D6) — อนุมัติเต็มโดย Boss | `docs/RFC--H-AXIS-0.6.0.md` · bda6cc5, c893bca | **active 0.1.0** |
+| doc-governance guard (Matrix #15) | `orchestrator/governance/doc_lint.py` · a822b8e | enforced |
+| Access-scope + engine-interlock (Matrix #16–17) | `access_scope_check.py`, `engine_interlock_check.py`, engine/server/config wiring · 9088f7a, eb8a1c2 | **enforced (smoke-proven)** |
+| planner.mjs H_TIERS แก้สองรอบ (H6 bug → truncate เป็น H0–H4) | b6cd792, 2d30c17 | landed |
+| tiered-swarm precedence clause (skill=intent, law=law) | `.claude/skills/tiered-swarm/SKILL.md` · df5fa82 | landed |
+| **Upstream govibe (signed off + merged + pushed)**: STD-Execution-Governance **2.3.0+ga**, GVDOC-1003 **1.4.0**, POC-H6 0.1.1, registry 0.1.56 | govibe a0b76d4 | stable/active |
+| **G-Maiden**: B2 wiring ลง `orchestration/` จริง | G-Maiden de1c6c94 / merge d84a70a6 | on main |
+
+**Push ยืนยันแล้ว:** Rwang-orchestrator main = `df5fa82` · G-Maiden main = `a10f28ef` (ls-remote ตรง local ทั้งคู่)
+
+## 2. เส้นเรื่องตามลำดับ
+
+1. **UX design study** — workflow 14 agents (3 readers/183 facts → 5 metaphor directions → 3 adversarial judges): **RWANG FLIGHT — The Ops Floor** ชนะ 3/3 (mission control ที่ศัพท์ metaphor = ศัพท์ operator, สร้างได้ใน Tauri เป็นสัปดาห์); critic เจอ 20 gaps → revised ครบ → spec + mockup
+2. **รีวิว governance spec 0.4.0b** — 4 lens + adversarial verify ต่อ finding: ยืนยัน 25 ข้อ (3 BLOCKER: Leader flow ตัด AC/Test gate, ไม่มี external-write prohibition ทั้งฉบับ, Budget Control เป็น bypass ของ H gate) + เจอ **bug จริง**: `H_TIERS` ไม่มี H6 → ประกาศ H6 ได้ toolset H0 เงียบ ๆ
+3. **apply 0.5.0b** — 25 fixes + consistency pass 2 รอบ (อีก 20 จุดที่ fixes ชนกันเอง) + fix planner
+4. **คำถามแกน H** — ไล่ต้นทางสามชั้น: GVDOC-1003 (H = hop วัดจริง + small-world health rule), UCF/Resolution-Gradient (hop = decay term ใน scoring, budget = กำแพงจริง), POC-H6 ของ Boss (reach × budget — พิสูจน์ล่วงหน้า) → ข้อสรุป: แนวคิด work, เลข 7 ชั้นไม่ work (โค้ดแยกได้ 5 ชุดสิทธิ์, atoms ใช้จริง 89% แค่ H2/H3, TIP "เกิน 6 hop = spaghetti" กลับด้าน — coupling หนาทำให้ path *สั้นลง*, ตัวจับ spaghetti ที่ถูกคือ W)
+5. **RCA** — 5 สาเหตุราก: semantic fusion / contract ไม่ถูก gate ด้วยกฎตัวเอง / standalone-by-copy / ไม่มี doc↔code lint / letter overload
+6. **Phase B** — `doc_lint.py`: canonical docs ต้อง lint, SPEC H tiers ⊆ H_TIERS, จับ bump-cluster ไร้ reviewer (จับแถว 0.4.0b ได้จริง)
+7. **RFC → 0.6.0a → อนุมัติ** — H = Access Scope 5 ชั้น capability-defined (H5/H6 ออก — migration cost 0), un-fuse ตาม UCF, เพดาน = 2×hierarchy_depth เป็น health lint, H default จาก C
+8. **Upstream sync** — ตระกูลเอกสารเลิกใช้ตัวอักษรชนกัน: `H` = access (STD v2.3), `R` = retrieval radius (GVDOC v1.4), `CH` = compaction; แก้เลข "6 hops = 6 nodes" → 7 nodes; Boss sign-off ครบ
+9. **Phase B2 + smoke ที่ G-Maiden** — (S1) interlock: lint พัง → dispatchOne/runPool ปฏิเสธก่อน claim; lint จริงข้าม repo 23.4s + cache mtime · (S2) argv จริง 5/5: H2+code → `acceptEdits` (โดนกดจาก full), H0 → `plan`, H3 → `+allowedTools Bash`, legacy ไม่ประกาศ = เดิมเป๊ะ, H4+docs ไม่ถูกยก → **flip enforced: Matrix 17/17**
+10. **Push saga** — tool_guard บล็อก agent push (ถูกต้องตาม invariant #1) รวมถึงบล็อก*ผู้สร้างมันเอง*; mint fail สองรอบเพราะ terminal ใน IDE มี `CLAUDECODE` env → Boss push จาก plain terminal สำเร็จ
+
+## 3. บทเรียนที่ต้องจำ
+
+- **สัญญา governance ต้องถูก gate ด้วยกฎของตัวเองก่อนใคร** — 0.4.0b พังเพราะ bump 3 รอบวันเดียวไม่มี review; ตอนนี้ doc_lint ปิดช่องแล้ว
+- **ตัวเลขที่มาจากเรื่องเล่า (six degrees) ต้อง derive จาก graph ของเราเองก่อนตราเป็นกฎ** — 6 ที่ "รู้สึกพอ" จริง ๆ คือ 2×(4−1) ของ hierarchy เราเอง
+- **ป้ายที่ไม่มีตัววัดจะกลายเป็น numerology** — ห้ามพูด "hop" ในข้อความบังคับจนกว่าจะวัดบน traceability graph ได้
+- **Copy ≠ standalone** — ทุกสำเนาต้องมี precedence clause (ทำครบแล้ว: GoVibe, RWANG, skill)
+- **mint token ต้องมาจาก terminal ที่เปิดจาก Start menu** — terminal ใน Claude Code/VS Code มี `CLAUDECODE` env → tool_guard REFUSE ทาง stderr (พลาดง่าย); คำสั่งที่วางในแชทมาถึง agent shell เสมอ = โดน hook เสมอ
+
+## 4. งานค้าง / ทางต่อ
+
+| งาน | เจ้าของ | หมายเหตุ |
+|---|---|---|
+| **Phase E**: GKS recursive frontmatter + false has_secret flags | task chip (รันอยู่ session แยก) | repo `G:/cognitive_system` |
+| **Phase D**: วัด hop จริงบน traceability graph → เพดานเป็น lint ได้จริง + resolution gradient เข้า context brief | หลัง graph ship | ต้นทางออกแบบไว้ครบใน UCF |
+| G-Maiden `orchestration/` stack เก่ากว่า Rwang มาก (ไม่มี cost-mode/multi-account; providers ต่าง ~246 บรรทัด) — วันนี้ port เฉพาะ B2 แบบ surgical | ตัดสินใจภายหลัง | full sync เป็นงานแยก |
+| FLIGHT UX Phase 1 build (Tauri shell + Big Board + Poll Board + Trace Drawer) | รอ Boss เปิดงาน | spec §11 มี build plan สามเฟส |
+| `governance.required=true` ใน config G-Maiden เมื่อพร้อม fail-closed | Boss | ตอนนี้ warn-path โดยตั้งใจ |
+| ~~0.6.1(→0.7.0): H0/H1 read-only ชนกับ C-0/C-1 default~~ **แก้แล้ว** — SPEC **0.7.0 active** (อนุมัติโดย Boss) (Rwang `58c4968`, branch `fix/h-tier-write-coherence`) + mirror G-Maiden (`15ac880f` on main): H คุม *reach* อย่างเดียว, `write` ไม่ถูก gate ด้วย tier (read-only เป็นเรื่อง ROLE §7.2), profile ใหม่ `bounded` (H0), guard **A5** ห้าม tier ไหน map ไป read-only. Smoke 6/6 ที่ engine จริง | **เสร็จ** — approved + merged | เป็นการใช้ RFC D2 (un-fuse) อีกชั้น ไม่ใช่ decision ใหม่ |
+
+## 4b. Phase B3 — gate owner อ่านอย่างเดียว (เพิ่มหลัง 0.7.0)
+
+พบช่องโหว่ที่**รั่วอยู่จริง** (ไม่ใช่ latent): `runReview()` เรียก `runProvider()` โดยไม่ส่ง opts → reviewer ตกไปได้ `defaultPermission` (`safe` = acceptEdits) แปลว่า **agent ที่ถูก spawn มา gate ชิ้นงาน มีสิทธิ์แก้ชิ้นงานที่ตัวเองกำลังตัดสิน** ทุกครั้งที่ review รัน — §7.2 เป็นกฎหมายมาตั้งแต่ 0.5.0b แต่ไม่เคยมี guard
+
+แก้: `permissionFor(t,{role})` รับ **bound ที่สาม** (type / H tier / role) แล้วคืนค่าที่เข้มที่สุด — reviewer เหนือ task H4 ก็ยัง read-only; profile `read` กลายเป็น role profile จริง (`acceptEdits --disallowedTools Edit Write MultiEdit NotebookEdit Bash` — ถอด tool ดีกว่าใช้ plan mode ที่จะเปลี่ยนรูปผลลัพธ์จน `parseVerdict` พัง); guard `role_readonly_check.py` R1–R4 (R4 ห้ามเรียก `runProvider` แบบไม่ส่ง opts ซ้ำอีก)
+
+ขอบเขตตั้งใจ: กดเฉพาะ agent ที่ spawn มา **gate** — architect ที่เขียนเอกสารของตัวเองไม่ถูกกด · Hotfix exception (§7.2) ยังไม่ implement (ไม่มี role Leader ใน engine)
+
+Smoke ที่ engine จริง: `WORKER perm=full` · `REVIEWER perm=read` (write tools ถอดครบ) → **Matrix 18/18 enforced** · Rwang `b01638b` · G-Maiden `12d56112`
+
+## 4c. §8 W4 super-hub gate (Matrix 20/20)
+
+§8 มาร์ก W4 (≥9 connections) ว่า "block until decomposed or approved" ตั้งแต่ 0.1.0b แต่มีแค่การวัด (hop_metrics ชี้ hub) **ไม่มี gate** — รูปเดียวกับ §7.2 ก่อน B3. Fix แบบ reuse ไม่ประดิษฐ์: `fanoutDegree` (undirected = deps ตัวเอง + task ที่ขึ้นกับมัน, **ตรงกับ hop_metrics เป๊ะ**) + `isW4`(≥9) เข้า `needsConfirm()` → W4 ผ่านประตู confirm เดิม (approved=confirm, decomposed=ลด degree<9). guard `w4_gate_check.py` G1–G4 (threshold=9 ตรง SPEC, undirected degree, needsConfirm wiring, SPEC §8 doc side).
+
+Smoke ที่ engine จริง: `H deg9 → BLOCKED "W4 super-hub (degree 9 ≥ 9) — decompose or approve"` · `M deg8 → ไม่โดน W4` · `confirm แล้วเคลียร์` — ตรงกับ super-hub จริง (`G0.1` deg9). **Matrix 20/20 enforced** · Rwang `e52afb6` · G-Maiden `600bad51`
+
+หมายเหตุ process: W4 commit ฝั่ง Rwang ลง main ตรง (ลืมสร้าง branch — ต่างจาก feature อื่นในวัน); เนื้อหาถูก lint ผ่าน 20/20, ไม่ reset เพราะ destructive ceremony เพื่อผลเท่าเดิม
+
+## 4d. §8 W3 lead-review gate (Matrix 21/21)
+
+§8 บรรทัดสุดท้ายที่ยังไม่บังคับ: W3 (6-8 connections) = "lead review required". `requireReviewFor` มี 3 ทางลัดข้าม review (global off / `requireReview:false` / `skipForDraft` สำหรับ local model) → task W3 หลบ review ได้ด้วยการถูก route ไป draft model หรือตั้ง opt-out.
+
+Fix แบบ reuse (ไม่สร้าง gate ใหม่): `fanoutDegree>=6` บังคับ `requireReviewFor=true` **เหนือทุก skip** — coupling 6-8 หลบ review ไม่ได้. guard `w3_review_check.py` V1–V4 (V2 พิสูจน์ว่า force ถูกวางก่อน skip ไม่งั้น skip ชนะ). "lead" = review gate รันโดย reviewer role (§7.2 read-only) ห้ามข้าม; ไม่ escalate เป็น architect-tier (แยก decision, ระบุไว้ไม่เลือกเงียบ).
+
+Smoke ที่ engine จริง: `W3 deg6 +requireReview:false +ollama → review FORCED` · `W2 deg2 opt-out → เคารพเดิม` — ตรงกับ `G3.4` deg6 ที่ hop_metrics ชี้. **Matrix 21/21 enforced** · Rwang `1cc9d65` · G-Maiden `c8a8e153`. (คราวนี้ทำ branch ใน Rwang ถูก hygiene แล้ว)
+
+## 4e. §8 super-hub decision (in/out classifier)
+
+§8 บังคับให้ **ตัดสิน** ต่อ super-hub: decompose หรือ approve. ข้อค้นพบที่ทำให้ตัดสินได้: **degree อย่างเดียวแยก anchor จาก god-object ไม่ได้ — in/out ratio ต่างหาก** (edge a→b = a พึ่ง b). Anchor = in สูง out ต่ำ (ทุกอย่างพึ่งมัน — schema/store/scaffold) → approve; god-object = out สูง (มันพึ่งทุกอย่าง) → decompose.
+
+`hop_metrics.py` เสริมให้รายงาน in/out + จำแนกทุก hub (self-test พิสูจน์ว่าแยก star `hub→leaves`=god-object จาก inverted `leaves→hub`=anchor). ผล: **ทั้ง 4 hub = ANCHOR** — `entity--atom-schema` in10/out0 (1.00), `feature--atom-store` (0.78), `algo--knowledge-adapter` (0.75), `G0.1` scaffold (0.67). แนะนำ approve ทั้งหมด decompose ศูนย์ (decompose schema/store = แตก single source of truth = fusion mistake เดิม).
+
+[DECISION--SUPERHUB-2026-07-10.md](docs/DECISION--SUPERHUB-2026-07-10.md) candidate — **approved by Boss** — active (T-human, §8/§10). Standing rule ใหม่: classify by in/out ก่อนตัดสิน tool พิมพ์ให้ทุก run.
+
+## 5. ตัวเลขของวัน
+
+- Multi-agent runs: 14 + 31 + 2 + 2 agents (~3.7M subagent tokens) — design study, adversarial review, verification passes
+- Findings: 45 doc fixes (25 verified + 20 consistency) + 1 code bug + 11 fresh-eyes + 9 round-2
+- Matrix: 13 → **17 enforced policies** (doc-governance, access-scope, engine-interlock + smoke)
+- Commits: Rwang ×15 · govibe ×3 (+merge) · G-Maiden ×4 — Rwang/G-Maiden push ครบ; **govibe ยังค้าง 3 commits ไม่ได้ push** (STD 2.3.0+ga, GVDOC-1003 1.4.0, POC 0.1.1 — sign-off แล้วแต่ยังไม่ขึ้น remote)

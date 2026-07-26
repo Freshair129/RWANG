@@ -1,0 +1,103 @@
+# G3 — G-Maiden FEATURE-LEDGER: generated live status doc (PRD+roadmap ⨯ reality).
+# Per Boss (2026-07-19): one live document showing feature / FR / NFR rows with
+# REAL lifecycle status on the Block Assembly P0-P6 axis — designed as an RTM
+# (requirements traceability matrix) crossed with Living Documentation: the only
+# hand-written artifact is a small manifest; every status cell is COMPUTED from
+# evidence (doc exists / code exists / tests exist+pass / review record), because
+# every hand-maintained status doc in this ecosystem has rotted
+# (PROJECT_FEATURE_MAP manual sync, ADR-15 stale migration claim, GoVibe registry
+# gaps — see docs/research/2026-07-19-govibe-gmaiden-governance-comparison.md).
+#
+# DEPENDS ON G2 (frontmatter-rules, atomic_index). RECOMMENDED AUTONOMY: supervised.
+
+goal: >
+  Give G-Maiden a generated docs/FEATURE-LEDGER.md: one row per feature/FR/NFR
+  from a small hand-written manifest, with a computed lifecycle status on the
+  P0-P6 axis (doc-only / designed / in-code / code+needs-test-or-review /
+  verified), plus drift detection ("status-inflation") when a claimed status
+  exceeds what evidence supports — so PRD, roadmap, and reality stop being
+  three different documents.
+
+target_repo: "G:/G-Maiden"
+
+autonomy: supervised
+
+constraints:
+  - "DEPENDS ON G2: tools/doc-graph/{frontmatter-rules,atomic-index}.mjs present on the target branch. Reuse G1/G2 modules — no duplicate parsing."
+  - "Dirty-tree rule SCOPE-AWARE as G1/G1.5. NEVER `git add -A`; stage by name."
+  - "Write scope: tools/doc-graph/**, docs/feature-ledger.manifest.yaml (the ONE hand-editable artifact), docs/FEATURE-LEDGER.md + a ledger section inside docs/DOC-GRAPH.json (generated). Generated files carry a header 'GENERATED — do not hand-edit; edit the manifest'. Generated files are exempt from Step-5 changelog SOP; the manifest is NOT exempt."
+  - "Manifest schema (YAML): entries: [{id, title, kind: feature|fr|nfr, phase_target: P0..P6, refs: {docs: [slug...], srs: ['§3.1'...], code: [repo-rel path...], tests: [repo-rel path or test-name...], review: [record path...]}}]. ids stable; FR/NFR ids follow SRS section numbers; feature ids follow PROJECT_FEATURE_MAP numbering where one exists."
+  - "Status computation is DETERMINISTIC and structural (no LLM): doc-only = >=1 docs ref resolves, no code refs exist on disk; designed = doc-only + the primary doc's frontmatter status is accepted/stable; in-code = >=1 code ref exists, tests refs missing/empty; code+needs-test-or-review = code exists AND (test files missing OR review refs missing); verified = all code+test refs exist AND --run-tests (optional flag) reports the mapped test commands green AND >=1 review ref exists. Without --run-tests, 'verified' downgrades to 'code+tests-present (unrun)' — never claim verified from file existence alone."
+  - "Drift rule: manifest may carry claimed_status; when claimed > computed, emit violation 'status-inflation' (blocking); claimed < computed emits informational 'status-understated'."
+  - "Bootstrap honesty: the initial manifest is EXTRACTED from PROJECT_FEATURE_MAP.md + docs/features/FEAT-G-*.md and must mark every extracted row with 'source: bootstrap-extraction' — a human (Boss/lead) prunes it before the ledger is treated as authoritative; the extraction task must not invent refs that don't exist on disk."
+  - "Performance: full ledger generation without --run-tests completes <10s; Windows realities (BOM/space paths/CRLF) as G1."
+
+epic_dod: >
+  WHEN `node tools/doc-graph/ledger.mjs` runs at repo root THE SYSTEM SHALL
+  read docs/feature-ledger.manifest.yaml, verify every ref resolves (dangling
+  ref = blocking violation), compute per-row status per the deterministic
+  rules, write docs/FEATURE-LEDGER.md (grouped: features, FRs, NFRs; columns
+  id/title/phase_target/computed status/evidence gaps) and merge a ledger
+  block into docs/DOC-GRAPH.json, AND exit 1 on any status-inflation or
+  dangling ref, else 0. Done means all verify_commands pass, the bootstrap
+  manifest covers every row of PROJECT_FEATURE_MAP sections 1-3 with no
+  invented refs, and the adversarial review confirms generated-vs-manifest
+  boundaries and the no-false-verified rule.
+
+phase_gates:
+  Verify-gate: >
+    Executable verify_command per task; fixture-seeded cases for every status
+    value and both drift directions must be caught by tests.
+  Author-gate: >
+    Executors get their task + this constraints block; the status rules are
+    pinned here — divergence must fail review, not silently reinterpret.
+  Review-gate: >
+    T3 re-runs suites, checks the manifest for invented refs by sampling 10
+    rows against disk, verifies 'verified' is unreachable without --run-tests
+    evidence, and confirms generated headers + Step-5 exemption boundaries.
+  Assemble-gate: >
+    Run branch only; human owns the merge. Never push.
+
+tasks:
+  - id: G3-T1
+    description: "Create tools/doc-graph/ledger-manifest.mjs: export loadManifest(path) parsing docs/feature-ledger.manifest.yaml (zero-dep YAML subset parser is acceptable: the manifest uses only mappings/sequences/scalars — document the subset in the header; alternatively JSON with a .yaml-compatible layout is NOT acceptable, keep YAML) with schema validation per the constraints (unknown keys = error, missing id/kind/refs = error) and resolveRefs(manifest, repoRoot) returning per-row {exists: {docs, code, tests, review}} existence maps. Include ledger-manifest.test.mjs with fixtures: valid manifest, unknown key, missing kind, dangling code ref."
+    requirement_ref: R-G3.1
+    tier_hint: T1
+    verify_command: "node --test tools/doc-graph/ledger-manifest.test.mjs"
+
+  - id: G3-T2
+    description: "Bootstrap extraction: create docs/feature-ledger.manifest.yaml by reading PROJECT_FEATURE_MAP.md (sections 1-3: backend modules, frontend pages/features, product-level planned) and docs/features/FEAT-G-*.md frontmatter. One entry per feature row with kind=feature; map the table's file links to refs.code, FEAT doc slugs to refs.docs, and the badge (SHIPPED/PARTIAL/STUB/PLANNED) to claimed_status via: SHIPPED->code+tests-present, PARTIAL->in-code, STUB->in-code, PLANNED->doc-only. Add FR/NFR entries for the 6 hard NFR constraints in PROJECT_FEATURE_MAP section 4 (kind=nfr, refs.srs from the table). EVERY entry gets source: bootstrap-extraction. Do NOT invent test/review refs — leave arrays empty when unknown. Verify: loadManifest parses it with zero schema errors and zero dangling doc/code refs."
+    requirement_ref: R-G3.2
+    tier_hint: T2
+    verify_command: "node -e \"import('./tools/doc-graph/ledger-manifest.mjs').then(async m => { const r = await m.loadManifest('docs/feature-ledger.manifest.yaml'); const rr = m.resolveRefs(r, '.'); const bad = rr.filter(x => x.dangling && x.dangling.length); if (bad.length) { console.error(bad); process.exit(1);} console.log('rows:', rr.length); })\""
+
+  - id: G3-T3
+    description: "Create tools/doc-graph/ledger.mjs: computeStatus(row, evidence, opts) implementing the pinned deterministic rules (all six statuses + the unrun-tests downgrade + both drift directions), and the CLI that loads the manifest, computes all rows, writes docs/FEATURE-LEDGER.md (GENERATED header; grouped tables; an 'evidence gaps' column listing exactly what is missing to advance, e.g. 'no tests mapped', 'review record missing') and merges {ledger: {rows, violations}} into docs/DOC-GRAPH.json without disturbing existing keys. Exit contract per epic_dod. Include ledger.test.mjs with a fixture manifest covering every status value, status-inflation (blocking), status-understated (informational), and a dangling ref."
+    requirement_ref: R-G3.3
+    tier_hint: T2
+    verify_command: "node --test tools/doc-graph/ledger.test.mjs"
+
+  - id: G3-T4
+    description: "Optional test-evidence runner: --run-tests flag maps refs.tests entries to commands — a ref ending .test.mjs runs `node --test <ref>`; a ref of the form 'cargo:<test-name>' runs `cargo test <test-name> --no-fail-fast` from src-tauri/ (spawn, capture exit). Cache results per invocation; a row only reaches 'verified' when every mapped command exits 0 AND review refs exist. Without the flag, behavior per the downgrade rule. Include ledger-runtests.test.mjs using node-test fixtures only (do not invoke cargo in tests — stub the spawner and assert command construction)."
+    requirement_ref: R-G3.4
+    tier_hint: T2
+    verify_command: "node --test tools/doc-graph/ledger-runtests.test.mjs"
+
+  - id: G3-T5
+    description: "E2E on the real repo: run `node tools/doc-graph/ledger.mjs` (no --run-tests). It must complete <10s, write both artifacts, and exit with the honest code (real-tree status-inflation findings are FINDINGS — capture the exit code + per-status row counts verbatim). Assert docs/FEATURE-LEDGER.md contains >=1 row of each kind (feature, nfr) and that `git status --porcelain` shows no modifications outside tools/doc-graph/, the manifest, and the generated artifacts."
+    requirement_ref: R-G3.5
+    tier_hint: T2
+    verify_command: "node tools/doc-graph/e2e-check-g3.mjs"
+
+  - id: G3-R-pre
+    description: "PRE-REVIEW PANEL (veto-only, per docs/SPEC--REVIEW-CASCADE.md §1.1 v0.2.0). Run FIVE independent checkers — one narrow question each, no checker sees another's output before reporting, merged by SCRIPT into tools/doc-graph/review-pre-g3.json {vetoes: [{checker, detail}], annotations: [{checker, detail}]}. L0 script checkers: [verify-rerun] re-run every prior task's verify_command, non-zero = veto; [scope-diff] git diff vs write-scope (tools/doc-graph/**, the manifest, the generated artifacts), outside = veto; [header-gates] generated files carry the GENERATED header AND the manifest carries none AND 10 sampled manifest ref paths exist on disk exactly as written, any miss = veto. L1 local checkers: [extraction-fidelity] per sampled bootstrap row, ask 'does claimed_status equal the badge mapping rule for this row's source badge?' — mismatch = veto with row id; [status-rederive] per sampled row, independently re-derive the computed status from the row's evidence using the pinned rules and ask 'does it match the ledger's output?' — mismatch = veto, ambiguity = annotation. Suspicious-but-unjudgeable = annotation, never dropped, never a pass. ANY veto = FAIL fast (R-adv never runs). Zero vetoes = escalate, never approve."
+    requirement_ref: R-G3.6a
+    tier_hint: T1
+    verify_command: "node --test \"tools/doc-graph/*.test.mjs\" && node -e \"const r=require('./tools/doc-graph/review-pre-g3.json'); process.exit(Array.isArray(r.vetoes)&&r.vetoes.length===0?0:1)\""
+
+  - id: G3-R-adv
+    depends_on: [G3-R-pre]
+    description: "ADVERSARIAL REVIEW (judgment layer — consumes review-pre-g3.json annotations): attempt to construct a manifest row that reaches 'verified' without --run-tests evidence — if possible, FAIL with the rule gap; verify the DOC-GRAPH.json merge preserved all pre-existing keys byte-compatibly; judge extraction honesty on 5 sampled bootstrap rows (claimed_status mapping faithful to the source badge, no invented refs beyond what R-pre's existence check covers — i.e. refs that exist but are IRRELEVANT to the feature). PASS/FAIL with file:line evidence."
+    requirement_ref: R-G3.6b
+    tier_hint: T3
+    verify_command: "node --test \"tools/doc-graph/*.test.mjs\""

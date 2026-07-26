@@ -1,45 +1,22 @@
-# Dependencies
-node_modules/
-studio/node_modules/
-
-# Runtime artifacts
+*.pyc
+__pycache__/
+runs/*
+!runs/.gitkeep
 state.json
-usage.jsonl
-.state.lock
-*.state.json
-*.state.json.lock
-logs/
-
-# Brain / sidecar data
-brain/failures.jsonl
-brain/*.gdb
-brain/orch.gdb/
-
-# Build output
-studio/dist/
-src-tauri/target/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Environment / secrets
-.env
-.env.local
-.env.*.local
-accounts.local.json
-store/.accounts-state.json
-store/dashboard.log
-
-# Tauri build
-*.exe
-*.msi
-*.dmg
-*.AppImage
-*.deb
+.agents/**/.brain/
+.agents/**/MEMORY.md
+node_modules/
+.turbo/
+**/.turbo/
+# approval tokens are ephemeral human-minted artifacts; the consumed ledger is
+# local audit — none of it belongs in git
+orchestrator/governance/approvals/
+# GenesisBlockDB knowledge store — runtime WAL + peer identity (store/knowledge.mjs
+# ingest populates it); a local rebuildable cache, never source. The glob also covers
+# reversible reset backups (.knowledge.bak-*), since the governance guard blocks rm -rf.
+.knowledge*
+# Local session-affinity state; contains scheduling metadata only and is rebuildable.
+store/.session-leases.json
+# External skill-distribution checkout; the harness records its immutable source in
+# adapters/host-skills/registry.json and must not track a nested checkout.
+/RWANG-PROMAX-skills/

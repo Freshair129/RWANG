@@ -1,0 +1,14 @@
+# Agent registry — machine-readable SSOT for which agents exist.
+# Per-agent detail lives in <dir>/config.yaml; this file only indexes them.
+# Conventions & prose: see .agents/README.md
+version: 1
+
+agents:
+  - id: agt-01
+    codename: anchon
+    dir: agt-01-anchon
+    role: independent architecture critic (second opinion)
+    default_loadout: fable
+    loadouts: [fable, sol, gpt55]
+    adapter: .claude/agents/anchon.md
+    status: active

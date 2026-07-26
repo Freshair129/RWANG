@@ -1,0 +1,137 @@
+# =============================================================================
+# Rwang Spec — Refactor the runner to be pause/resume-capable
+# =============================================================================
+# Derived from docs/DESIGN--pause-resume-runner.md (Design + SRS, Status: Draft).
+# TARGET = Rwang itself (self-hosting). Routing is DERIVED from this file.
+#
+# HARD RULE (design invariant): a task with NO machine-checkable verify_command
+# is NOT cheap-eligible -> floors at T2+. Most tasks here touch run.js /
+# progress.py (the runner + a deterministic-core script) = high blast radius,
+# so they sit at T2/T3 and carry review_gate=true even where a grep AC exists.
+#
+# DEPENDENCY REALITY: the three rollout phases are NOT fully parallel. Phase 2
+# (supervised) and Phase 3 (unattended) build on Phase 1's phase-split, so their
+# tasks depend_on Phase 1 tasks. Independent Phase-1 tasks DO fan out in one wave.
+# =============================================================================
+
+goal: >
+  Split the monolithic run.js into disk-checkpointed phases driven by an
+  external driver, add pause/approval state to progress.py, and make Execute
+  idempotent — so the supervised and unattended autonomy levels become
+  behaviorally real without weakening any safety invariant.
+
+target_repo: "G:/Rwang"
+
+autonomy: autonomous
+# Stops only at: external write (commit/push/PR/merge), gate-exhaustion (T3
+# fail), or any human_review task. Safety invariants never yield.
+
+constraints:
+  - "Deterministic-core purity: NO LLM/SDK calls may enter orchestrator/*.py. progress.py stays pure, deterministic file/state manipulation."
+  - "run.js sandbox: no fs/Bash/Date.now() in the script body; every timestamp + disk/shell write happens inside an agent() call or via `python orchestrator/progress.py --ts`."
+  - "Schema compatibility: extended progress.json MUST remain a superset of the current shape (USERFLOW.md) so existing readers keep working."
+  - "Safety invariants (never weaken): no external write without human approval; verify gate mandatory; gate-exhaustion halts; every run on a branch."
+  - "unattended `commit` phase is BRANCH-ONLY and reachable iff autonomy==unattended; NEVER push/merge."
+  - "Interpreter is `python` (not python3). Verify commands run from G:/Rwang in Git-Bash."
+  - "Out of scope: routing/cost/verify core logic (route.py, check_evidence.py, cost_estimate.py, cost_ledger.py), and any merge/push automation."
+
+epic_dod: >
+  EARS — WHEN the runner is split into disk-checkpointed phases driven by an
+  external driver
+  THE SYSTEM SHALL run `supervised` with a real human pause at every phase
+  boundary, run `unattended` end-to-end with an auto-commit to a branch that
+  stops at `awaiting_merge`, and resume any killed phase from durable state
+  with no repeated work on already-`passed` tasks,
+  AND keep all four safety invariants and the deterministic-core rule intact,
+  with `autonomous` behavior unchanged from today.
+  Done means: the three levels are behaviorally distinct, a killed-and-resumed
+  run reaches the same terminal state as an uninterrupted one, and a human has
+  re-checked this epic DoD at Assemble and approved the commit/merge.
+
+phase_gates:
+  Verify-gate: >
+    Every code-evidence claim (new status transitions, phase dispatch, skip
+    logic, branch-only commit) carries a resolving command (a progress.py smoke
+    run, a node --check, or a grep) that re-runs and resolves.
+  Author-gate: >
+    Each executor receives ONLY its self-contained task description and produces
+    a diff referencing only verified facts from the design doc. Every claim
+    traces to a requirement id (FR/NFR/SI/DR).
+  Review-gate: >
+    An adversarial Opus reviewer runs each task's verify_command and confirms
+    the named assertions exist and pass. Core-touching tasks (run.js /
+    progress.py) require PASS with no unresolved blocking objection.
+  Assemble-gate: >
+    Passed tasks integrated on a branch; the three-level behavioral distinction
+    + the resume-parity check are re-checked by a HUMAN; commit/merge is
+    human-approved (external write — autonomy halts here).
+
+# --- Task list ---------------------------------------------------------------
+tasks:
+  # ---- Phase 1: foundation (independent tasks fan out; T3/T2 stack the rest) ----
+  - id: PR-T1
+    description: "progress.py — extend the status vocabulary and add pause/approval state. Add subcommands `phase-done --phase <p>` (sets status phase_done:<p>), `gate --phase <p> --await` (sets awaiting_approval + records awaiting={phase}), and `approve --phase <p> --by <who>` (appends runs/<runId>/approvals.ndjson and clears the awaiting marker). Extend the status enum to include phase_done:<p>, awaiting_approval, awaiting_merge, needs_work while remaining a superset of running|blocked|done|failed. Keep it pure/deterministic (no LLM). Implements FR-5/6/7, DR-2/3/4, NFR-1/5."
+    requirement_ref: FR-5
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "bash -c 'set -e; D=$(mktemp -d); printf \"[]\" > \"$D/tasks.json\"; python orchestrator/progress.py \"$D\" init --tasks \"$D/tasks.json\"; python orchestrator/progress.py \"$D\" phase-done --phase route; grep -q \"phase_done:route\" \"$D/progress.json\"; python orchestrator/progress.py \"$D\" gate --phase execute --await; grep -q \"awaiting_approval\" \"$D/progress.json\"; python orchestrator/progress.py \"$D\" approve --phase execute --by tester; test -f \"$D/approvals.ndjson\"'"
+    depends_on: []
+    review_gate: true
+
+  - id: PR-T2
+    description: "run.js — split the monolithic runner into a phase-parameterized runner selected by args.phase (route|execute|review|commit). Each phase rehydrates ALL state from runs/<runId>/ on disk at start (no cross-invocation memory), does one phase's work, writes its terminal status via progress.py, and returns. route writes durable tasks.json; the phase functions replace the single default run(). Preserve autonomous behavior via a thin default driver that chains phases when no pause is required. Honour the sandbox rule. Implements FR-1/2/5, NFR-2."
+    requirement_ref: FR-1
+    tier_hint: T3
+    executor_model: "claude-opus-4-8"
+    verify_command: "bash -c 'set -e; node --check orchestrator/run.js; grep -q \"args.phase\" orchestrator/run.js; grep -Eq \"route|execute|review|commit\" orchestrator/run.js'"
+    depends_on: [PR-T1]
+    review_gate: true
+
+  - id: PR-T3
+    description: "run.js execute phase — durable tasks.json as source-of-truth + idempotent skip. On (re)launch, execute reads progress.json and SKIPS every task whose status is already `passed` (optionally re-running its verify_command to confirm still-green), running only pending/failed tasks, so a killed execute resumes with no repeated work. Implements FR-3/4, NFR-3."
+    requirement_ref: FR-4
+    tier_hint: T3
+    executor_model: "claude-opus-4-8"
+    verify_command: "bash -c 'set -e; node --check orchestrator/run.js; grep -Eiq \"passed|skip\" orchestrator/run.js; grep -q \"tasks.json\" orchestrator/run.js'"
+    depends_on: [PR-T2]
+    review_gate: true
+
+  - id: PR-T4
+    description: "monitor.html — render the new run statuses (awaiting_approval, awaiting_merge, needs_work, phase_done:<p>) distinctly from running/blocked/done/failed. Read-only UI change; no schema change. Implements FR-11."
+    requirement_ref: FR-11
+    tier_hint: T2
+    executor_model: "claude-sonnet-4-6"
+    verify_command: "bash -c 'grep -Eq \"awaiting_approval|awaiting_merge|needs_work\" monitor/monitor.html'"
+    depends_on: [PR-T1]
+    review_gate: false
+
+  - id: PR-T5
+    description: "Phase-1 acceptance — autonomous parity + resume parity. Prove that (a) an autonomous run built from chained phases reaches the SAME terminal progress.json as the pre-refactor monolith on a trivial scratch spec, and (b) a killed-then-relaunched execute reaches the same terminal state (idempotent skip works). This needs a scratch target + harness that does not yet exist, so it is human-validated. Implements the epic DoD parity clause + NFR-3."
+    requirement_ref: NFR-3
+    tier_hint: T3
+    executor_model: "claude-opus-4-8"
+    verify_command: "test -f docs/AUDIT--pause-resume-phase1-parity.md"
+    depends_on: [PR-T2, PR-T3]
+    review_gate: true
+    human_review: true   # parity is a judgement call on a not-yet-existing harness -> surface to a human
+
+  # ---- Phase 2: supervised (depends on Phase-1 foundation) --------------------
+  - id: PR-T6
+    description: "Supervised driver — session-owned pause at every phase boundary. Using the progress.py gate/approve API, the driver sets awaiting_approval at each boundary and launches the next phase ONLY after a matching approvals.ndjson entry exists. Document the session driver contract in AUTONOMY.md (replace the 'not yet wired' note for supervised). Implements FR-6/7."
+    requirement_ref: FR-6
+    tier_hint: T3
+    executor_model: "claude-opus-4-8"
+    verify_command: "bash -c 'set -e; D=$(mktemp -d); printf \"[]\" > \"$D/tasks.json\"; python orchestrator/progress.py \"$D\" init --tasks \"$D/tasks.json\"; python orchestrator/progress.py \"$D\" gate --phase execute --await; grep -q \"awaiting_approval\" \"$D/progress.json\"; ! grep -q \"phase_done:execute\" \"$D/progress.json\"'"
+    depends_on: [PR-T1, PR-T2, PR-T3]
+    review_gate: true
+
+  # ---- Phase 3: unattended (depends on Phase-1 foundation) --------------------
+  - id: PR-T7
+    description: "Unattended commit phase — BRANCH-ONLY auto-commit + awaiting_merge. After review passes AND iff autonomy==unattended, a `commit` phase commits verified work to the CURRENT feature branch in the target repo (aborting if on the default branch), then sets status awaiting_merge; it NEVER push/PR/merge. Guard the phase hard on the autonomy level. Update AUTONOMY.md's status note for unattended. Implements FR-9, SI-1/4. SENSITIVE: authors an auto-write capability — must clear adversarial review. NOTE: verify greps the unattended guard + node syntax, NOT `! grep git push|merge` — a naive push/merge grep FALSELY matches prohibition comments (e.g. executePrompt's own '(git push, opening a PR, merge, ...)' guard text); the true 'no push/merge' assurance is the human_review sign-off."
+    requirement_ref: FR-9
+    tier_hint: T3
+    executor_model: "claude-opus-4-8"
+    verify_command: "bash -c 'set -e; node --check orchestrator/run.js; grep -q \"awaiting_merge\" orchestrator/run.js; grep -Eq \"autonomy !== .unattended.\" orchestrator/run.js'"
+    depends_on: [PR-T2, PR-T6]
+    review_gate: true
+    human_review: true   # introduces an autonomous external write -> a human must sign off

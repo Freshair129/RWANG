@@ -70,8 +70,11 @@ Return ONLY a JSON array (no prose, no markdown fence) of tasks. Each task objec
 Rules: 3-7 tasks for a normal request; one concern per task; "accept" must be verifiable (a command, a test, an observable behaviour); order by dependency via "deps" (ids). Output the JSON array only.`;
 
 // ── H-tier planning (algo--planner-tiering): H is tool access-control, not a model picker ──
-// WBS rungs, lowest sufficient tier first. H0 = one bounded file; H5 = masterplan.
-const H_TIERS = ["H0", "H1", "H2", "H3", "H4", "H5"];
+// Access-scope tiers (RFC--H-AXIS-0.6.0 D1): five capability sets, lowest sufficient first.
+// H0 = one bounded file … H4 = full set (network) + approval. H5/H6 removed in 0.6.0a
+// (they granted nothing H4 does not); a legacy explicit "H5"/"H6" is an unknown tier and
+// falls back safe-low via the rung default below — fail-closed, guarded by doc_lint X1.
+const H_TIERS = ["H0", "H1", "H2", "H3", "H4"];
 // map an atom's WBS rung (type/hierarchy noun) → tier index. Lowest tier that suffices.
 const RUNG_TIER = {
   subtask: 0, atom: 0,
@@ -79,7 +82,7 @@ const RUNG_TIER = {
   feature: 2, story: 2,
   epic: 3,
   initiative: 4, capability: 4,
-  masterplan: 5, program: 5,
+  masterplan: 4, program: 4,
 };
 
 export function assignTier(atom = {}, { nearCap = false } = {}) {
@@ -95,8 +98,11 @@ export function assignTier(atom = {}, { nearCap = false } = {}) {
   return H_TIERS[Math.min(idx, H_TIERS.length - 1)];
 }
 
-// tierTools: capability allow-set per tier. H0 forbids glob (single bounded file, no repo-wide sweep);
-// each higher tier is a superset that progressively unlocks read→glob→multiFile→shell.
+// tierTools: capability allow-set per tier. H bounds REACH, never write authority (SPEC §5 hard
+// rule; whether an agent may write at all is a ROLE question — §7.2: Worker writes, gate-owning
+// roles are read-only). So `write` is unconditional here and every tier may edit the file(s) it
+// was handed; what climbs is discovery and blast radius: glob/grep → multiFile → shell → network.
+// H0 = one bounded file, no repo-wide sweep (the origin's "0 hop": hotfix/typo/unit-test).
 export function tierTools(tier = "H0") {
   const idx = Math.max(0, H_TIERS.indexOf(String(tier).toUpperCase()));
   return {
@@ -104,7 +110,7 @@ export function tierTools(tier = "H0") {
     glob: idx >= 1,
     grep: idx >= 1,
     multiFile: idx >= 2,
-    write: idx >= 2,
+    write: true,
     shell: idx >= 3,
     network: idx >= 4,
   };
