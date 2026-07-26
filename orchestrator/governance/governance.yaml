@@ -1,5 +1,5 @@
 # governance.yaml — machine-readable Governance Matrix
-# SSOT เชิงเนื้อหา: G:\Rwang\docs\SPEC--AGENT-RUNTIME-GOVERNANCE.md §2 (ไฟล์นี้คือ mirror ที่ lint อ่าน)
+# SSOT เชิงเนื้อหา: docs\SPEC--AGENT-RUNTIME-GOVERNANCE.md §2 (ไฟล์นี้คือ mirror ที่ lint อ่าน)
 #
 # กติกาเหล็ก (G6):
 #   - policy ที่ status != enforced ห้าม claim ว่ามีผลบังคับ (ยังเป็นแผน)
@@ -50,7 +50,7 @@ policies:
     status: enforced   # law = (1) ไม่มี credential (2) needs_external_write halt ใน run.js (3) tool_guard classifier
     intent: "system prompt ทุก agent: ห้าม push/PR/merge/deploy"
     guard: orchestrator/governance/tool_guard.py
-    guard_test: "python orchestrator/governance/tool_guard.py --self-test"
+    guard_test: "py -3 orchestrator/governance/tool_guard.py --self-test"
     check: full
     audit_event: blocked
     gp: GP4
@@ -61,7 +61,7 @@ policies:
                        # (มีผลกับ session ใหม่; canonical copy = governance/claude_settings.hook.json)
     intent: "prompt ระบุ list action ที่ต้อง confirm (reset --hard, rm -r, แก้ tests/)"
     guard: orchestrator/governance/tool_guard.py
-    guard_test: "python orchestrator/governance/tool_guard.py --self-test"
+    guard_test: "py -3 orchestrator/governance/tool_guard.py --self-test"
     check: full
     audit_event: confirm_required
     gp: GP4

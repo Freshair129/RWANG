@@ -50,10 +50,10 @@ Patterns are line-regex over the command string — argv-level matching is the
 known upgrade for false positives (see blocked_patterns.txt header).
 
 USAGE:
-    python orchestrator/governance/tool_guard.py --check "git push origin main"
-    ... | python orchestrator/governance/tool_guard.py --hook
-    python orchestrator/governance/tool_guard.py --mint "git push origin feat/x" --by boss --ttl 15
-    python orchestrator/governance/tool_guard.py --self-test
+    py -3 orchestrator/governance/tool_guard.py --check "git push origin main"
+    ... | py -3 orchestrator/governance/tool_guard.py --hook
+    py -3 orchestrator/governance/tool_guard.py --mint "git push origin feat/x" --by boss --ttl 15
+    py -3 orchestrator/governance/tool_guard.py --self-test
 EXIT (--check): 0 allow · 3 EXTERNAL · 4 DESTRUCTIVE · 2 usage
 EXIT (--hook):  0 allow/token-allow/fail-open · 2 BLOCK
 EXIT (--mint):  0 minted · 3 refused (agent shell) · 2 usage
@@ -81,7 +81,7 @@ BLOCK_MSG = {
 }
 MINT_HINT = ("To approve it, a HUMAN mints a one-shot token in a PLAIN terminal "
              "(not an agent shell):\n"
-             "  python \"G:/Rwang/orchestrator/governance/tool_guard.py\" "
+             "  py -3 \"orchestrator/governance/tool_guard.py\" "
              "--mint \"<exact command>\" --by <name> --ttl 15\n"
              "then re-run the command once within the TTL.")
 

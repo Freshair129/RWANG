@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { existsSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
@@ -40,6 +40,30 @@ test('knowledge store preserves the canonical similarity API in file mode', asyn
   knowledge.resetStore();
   assert.equal(await knowledge.embed({}, 'compatibility probe'), null);
   assert.deepEqual(await knowledge.searchSim({}, 'compatibility probe'), []);
+});
+
+test('runtime defaults and governance commands are repository-relative', () => {
+  const serverSource = readFileSync(resolve(root, 'server.mjs'), 'utf8');
+  const runnerSource = readFileSync(resolve(root, 'orchestrator', 'run.js'), 'utf8');
+  const progressSource = readFileSync(resolve(root, 'orchestrator', 'progress.py'), 'utf8');
+  const governanceSource = readFileSync(resolve(root, 'orchestrator', 'governance', 'governance.yaml'), 'utf8');
+  const restartSource = readFileSync(resolve(root, 'orchestrator', 'governance', 'restart_prompt.md'), 'utf8');
+  const guardSource = readFileSync(resolve(root, 'orchestrator', 'governance', 'tool_guard.py'), 'utf8');
+  const hook = JSON.parse(readFileSync(resolve(root, 'orchestrator', 'governance', 'claude_settings.hook.json'), 'utf8'));
+
+  assert.match(serverSource, /process\.env\.RWANG_RUNS_DIR\s*\|\|\s*join\(REPO_ROOT, ['"]runs['"]\)/);
+  assert.doesNotMatch(serverSource, /G:[/\\]Rwang/);
+  for (const source of [runnerSource, progressSource, governanceSource, restartSource, guardSource]) {
+    assert.doesNotMatch(source, /G:[/\\]Rwang/);
+  }
+  assert.equal(hook.hooks.PreToolUse[0].hooks[0].command, 'py -3 "orchestrator/governance/tool_guard.py" --hook');
+
+  const hookProbe = spawnSync('py', ['-3', 'orchestrator/governance/tool_guard.py', '--hook'], {
+    cwd: root,
+    encoding: 'utf8',
+    input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'echo wave3-probe' } }),
+  });
+  assert.equal(hookProbe.status, 0, hookProbe.stderr || hookProbe.stdout);
 });
 
 test('harness server boots with the restored runtime closure', async () => {

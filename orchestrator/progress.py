@@ -2,7 +2,7 @@
 """progress.py — maintain the Rwang SHARED PROGRESS SCHEMA for a single run.
 
 A dependency-free Python 3 CLI the Rwang runner's agents call to keep the live
-progress files in sync. Two files per run live under <runDir> (= G:/Rwang/runs/<runId>):
+progress files in sync. Two files per run live under <runDir> (= runs/<runId> from the repository root):
 
   progress.ndjson  one JSON event per line, append-only (the audit trail).
   progress.json    the rolled-up snapshot the monitor reads.
