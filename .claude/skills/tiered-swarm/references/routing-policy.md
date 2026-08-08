@@ -1,3 +1,16 @@
+---
+distribution_role: "mirror"
+source_of_truth: false
+canonical_repository: "Freshair129/govibe"
+canonical_path: "docs/STD-SLM-Tiered-Routing.md"
+canonical_doc_id: "STD-SLM-TIERED-ROUTING"
+canonical_version: "0.1.0+draft"
+sync_policy: "canonical_wins"
+mirror_note: >
+  Cross-repository semantic authority for SLM tier routing lives in the GoVibe canonical
+  document above; on conflict, canonical wins and this mirror is drifted. RWANG-internal
+  runtime-enforcement precedence (governance framework law) is unaffected by this header.
+---
 # Routing Policy — the decision rules
 
 > **SSOT:** `references/DESIGN-RATIONALE.md` (Q2, Q3, Q4). This file is the operational
